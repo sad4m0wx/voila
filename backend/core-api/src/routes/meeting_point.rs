@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse, Responder};
-use log::{error, info};
+use log::{error, info, debug};
 use serde::{Deserialize, Serialize};
 
 use crate::algorithms::meeting_point::MeetingPointFinder;
@@ -16,6 +16,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Responder {
     info!("Received meeting point request with {} addresses", request.addresses.len());
+    debug!("Request body: {:?}", request);
     
     if request.addresses.len() < 2 {
         return HttpResponse::BadRequest().json(ErrorResponse {
@@ -31,6 +32,8 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
         .cloned()
         .collect();
     
+    debug!("Valid addresses with coordinates: {}", valid_addresses.len());
+    
     if valid_addresses.len() < 2 {
         return HttpResponse::BadRequest().json(ErrorResponse {
             error: "At least two addresses with valid coordinates are required".to_string(),
@@ -40,7 +43,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     // Call the meeting point algorithm
     match MeetingPointFinder::find_optimal_meeting_point(&valid_addresses) {
         Ok(meeting_point) => {
-            // Create simple straight-line routes TODO: use the itinerary algorithm
+            // Create simple straight-line routes
             let routes: Vec<Route> = valid_addresses
                 .iter()
                 .map(|addr| {
@@ -70,7 +73,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct ErrorResponse {
     error: String,
 }

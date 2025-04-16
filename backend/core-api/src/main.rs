@@ -1,29 +1,42 @@
-use actix_web::{web, App, HttpServer, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
+use actix_cors::Cors;
+use actix_web::{middleware, App, HttpServer, web};
+use dotenv::dotenv;
+use log::info;
+use std::env;
 
 mod algorithms;
-mod routes;
 mod models;
-mod utils;
+mod routes;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenv().ok();
+    
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    
+    let host = env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let port = env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse::<u16>()
+        .unwrap_or(8080);
+        
+    info!("Starting MeetSpot API server on {}:{}", host, port);
+    
     HttpServer::new(|| {
+
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .max_age(3600);
+            
         App::new()
-            .service(web::scope("/api")
-                .configure(routes::meeting_point::config)
-                .configure(routes::transit::config)
-                .configure(routes::venues::config))
-            .route("/health", web::get().to(health_check))
+            .wrap(middleware::Logger::default())
+            .wrap(cors)
+            .configure(routes::configure)
+            .route("/health", web::get().to(|| async { "OK" }))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind((host, port))?
     .run()
     .await
-}
-
-async fn health_check() -> impl Responder {
-    HttpResponse::Ok().json(serde_json::json!({
-        "status": "healthy",
-        "version": env!("CARGO_PKG_VERSION"),
-    }))
 }
