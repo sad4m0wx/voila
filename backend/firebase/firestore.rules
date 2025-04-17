@@ -2,18 +2,101 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // This rule allows anyone with your Firestore database reference to view, edit,
-    // and delete all data in your Firestore database. It is useful for getting
-    // started, but it is configured to expire after 30 days because it
-    // leaves your app open to attackers. At that time, all client
-    // requests to your Firestore database will be denied.
-    //
-    // Make sure to write security rules for your app before that time, or else
-    // all client requests to your Firestore database will be denied until you Update
-    // your rules
+    // Check if the user is logged in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if the user ID matches the current user
+    function isCurrentUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Check if a user is a member of a group
+    function isGroupMember(groupId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/groups/$(groupId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+    
+    // Check if a user is the creator of a group
+    function isGroupCreator(groupId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/groups/$(groupId)) &&
+             request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.creatorId;
+    }
+    
+    // Check if user is friends with another user
+    function isFriendOf(userId) {
+      return isAuthenticated() && 
+             userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.friends;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own profile
+      // Users can read profiles of their friends
+      // Anyone can create their own profile (sign up)
+      // Users can only update their own profile
+      allow get: if isCurrentUser(userId) || isFriendOf(userId);
+      allow list: if isCurrentUser(userId);
+      allow create: if isCurrentUser(userId);
+      allow update: if isCurrentUser(userId);
+      allow delete: if false; // Don't allow deletion of user profiles
+    }
+    
+    // Friend requests
+    match /friendRequests/{requestId} {
+      // Users can read friend requests they sent or received
+      // Users can create friend requests
+      // Only recipients can update a request (to accept/decline)
+      allow get, list: if isAuthenticated() && 
+                          (request.auth.uid == resource.data.senderId || 
+                           request.auth.uid == resource.data.recipientId);
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.senderId;
+      allow update: if isAuthenticated() && 
+                       request.auth.uid == resource.data.recipientId &&
+                       request.resource.data.senderId == resource.data.senderId;
+      allow delete: if false; // Don't allow deletion of friend requests
+    }
+    
+    // Groups
+    match /groups/{groupId} {
+      // Group members can read the group
+      // Any authenticated user can create a group
+      // Only the creator can update or delete the group
+      allow get, list: if isGroupMember(groupId);
+      allow create: if isAuthenticated();
+      allow update: if isGroupCreator(groupId);
+      allow delete: if isGroupCreator(groupId);
+    }
+    
+    // Meeting points (created for groups to store meeting history)
+    match /meetingPoints/{pointId} {
+      // Only group members can read meeting points
+      // Only group members can create meeting points
+      function getMeetingGroup() {
+        return get(/databases/$(database)/documents/meetingPoints/$(pointId)).data.groupId;
+      }
+      
+      allow get, list: if isAuthenticated() && 
+                          resource.data.groupId != null &&
+                          isGroupMember(resource.data.groupId);
+      allow create: if isAuthenticated() && 
+                       request.resource.data.groupId != null &&
+                       isGroupMember(request.resource.data.groupId);
+      allow update: if isAuthenticated() && 
+                       resource.data.groupId != null &&
+                       isGroupMember(resource.data.groupId);
+      allow delete: if isAuthenticated() && 
+                       resource.data.groupId != null &&
+                       isGroupCreator(resource.data.groupId);
+    }
+    
+    // Default deny all
     match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2025, 5, 16);
+      allow read, write: if false;
     }
   }
 }
