@@ -20,7 +20,7 @@ async fn main() -> std::io::Result<()> {
         .parse::<u16>()
         .unwrap_or(3000);
         
-    info!("Starting MeetSpot API server on {}:{}", host, port);
+    info!("Starting Voilà! API server on {}:{}", host, port);
     
     HttpServer::new(|| {
 
