@@ -24,7 +24,7 @@ export async function findOptimalMeetingPoint(addresses) {
       console.log('Sending request to Rust API:', JSON.stringify(requestBody, null, 2));
       
       // Call the Rust API
-      const response = await fetch('http://localhost:8080/api/meeting-point', {
+      const response = await fetch('http://localhost:3000/api/meeting-point', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -89,7 +89,7 @@ export async function findOptimalMeetingPoint(addresses) {
         destination: destination
       };
       
-      const response = await fetch('http://localhost:8080/api/transit/directions', {
+      const response = await fetch('http://localhost:3000/api/transit/directions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

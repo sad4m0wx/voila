@@ -16,9 +16,9 @@ async fn main() -> std::io::Result<()> {
     
     let host = env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = env::var("PORT")
-        .unwrap_or_else(|_| "8080".to_string())
+        .unwrap_or_else(|_| "3000".to_string())
         .parse::<u16>()
-        .unwrap_or(8080);
+        .unwrap_or(3000);
         
     info!("Starting MeetSpot API server on {}:{}", host, port);
     
