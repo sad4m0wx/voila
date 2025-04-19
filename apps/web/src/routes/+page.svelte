@@ -2,9 +2,9 @@
 <script>
   import { isAuthenticated } from "$lib/stores/auth";
   import { onMount } from "svelte";
-  import MobileAddressInput from "$lib/components/MobileAddressInput.svelte";
-  import MobileGoogleMap from "$lib/components/MobileGoogleMap.svelte";
-  import SecureGoogleMapsProvider from "$lib/components/SecureGoogleMapsProvider.svelte";
+  import MobileAddressInput from "$lib/components/map/MobileAddressInput.svelte";
+  import MobileGoogleMap from "$lib/components/map/MobileGoogleMap.svelte";
+  import SecureGoogleMapsProvider from "$lib/components/map/SecureGoogleMapsProvider.svelte";
   import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
   
