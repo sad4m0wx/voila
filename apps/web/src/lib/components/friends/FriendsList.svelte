@@ -1,7 +1,7 @@
 <!-- apps/web/src/lib/components/friends/FriendsList.svelte -->
 <script>
     import { onMount } from 'svelte';
-    import { friends, loadFriends, removeUserFriend, isLoading } from '$lib/stores/friends';
+    import { friends, loadFriends, removeUserFriend, isLoading } from '$stores/friends';
   
     // Props
     export let showRemoveButton = true;

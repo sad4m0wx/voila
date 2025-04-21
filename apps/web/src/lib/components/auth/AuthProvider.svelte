@@ -1,7 +1,7 @@
 <!-- src/lib/components/auth/AuthProvider.svelte -->
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { initAuth } from '$lib/stores/auth';
+  import { initAuth } from '$stores/auth';
   
   let unsubscribe;
   

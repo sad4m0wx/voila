@@ -2,9 +2,9 @@
 <script>
   import { onMount, createEventDispatcher } from 'svelte';
   import { goto } from '$app/navigation';
-  import { currentGroup, inviteUser, isLoading } from '$lib/stores/groups';
-  import { friends, loadFriends } from '$lib/stores/friends';
-  import { searchForUsers } from '$lib/stores/friends';
+  import { currentGroup, inviteUser, isLoading } from '$stores/groups';
+  import { friends, loadFriends } from '$stores/friends';
+  import { searchForUsers } from '$stores/friends';
   
   // Props
   export let groupId;

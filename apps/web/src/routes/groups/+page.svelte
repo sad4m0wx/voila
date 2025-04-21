@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Navbar from '$lib/components/Navbar.svelte';
-  import { isAuthenticated } from '$lib/stores/auth';
+  import { isAuthenticated } from '$stores/auth';
   
   let isLoading = true;
   let error = null;

@@ -1,6 +1,6 @@
 <!-- src/routes/reset-password/+page.svelte -->
 <script>
-    import { sendPasswordReset, isAuthenticated } from "$lib/stores/auth";
+    import { sendPasswordReset, isAuthenticated } from "$stores/auth";
     import { onMount } from "svelte";
     
     // State

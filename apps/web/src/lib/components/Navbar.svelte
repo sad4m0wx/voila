@@ -1,6 +1,6 @@
 <!-- src/lib/components/Navbar.svelte -->
 <script>
-  import { isAuthenticated, logout } from "$lib/stores/auth";
+  import { isAuthenticated, logout } from "$stores/auth";
   import { onMount } from "svelte";
   
   let isMenuOpen = false;

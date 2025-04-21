@@ -2,7 +2,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { groups, loadUserGroups, isLoading } from '$lib/stores/groups';
+  import { groups, loadUserGroups, isLoading } from '$stores/groups';
   
   // Props
   export let showCreateButton = true;

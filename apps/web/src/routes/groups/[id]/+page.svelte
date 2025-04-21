@@ -3,7 +3,7 @@
   import Navbar from "$lib/components/Navbar.svelte";
   import { onMount } from "svelte";
   import { page } from "$app/stores";
-  import { authStore } from "$lib/stores/auth";
+  import { authStore } from "$stores/auth";
   import { goto } from "$app/navigation";
   
   // Group data

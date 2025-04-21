@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import { MapProvider, AddressInput, MapContainer } from '$map/web';
   import { googleMapsService } from '$map/web';
-  import { isAuthenticated } from "$lib/stores/auth";
+  import { isAuthenticated } from "$stores/auth";
   import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
   

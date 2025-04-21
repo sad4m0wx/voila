@@ -1,6 +1,6 @@
 <!-- src/routes/login/+page.svelte -->
 <script>
-  import { login, loginAsGuest, isAuthenticated } from "$lib/stores/auth";
+  import { login, loginAsGuest, isAuthenticated } from "$stores/auth";
   import { onMount } from "svelte";
   
   // State

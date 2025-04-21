@@ -1,6 +1,6 @@
 <!-- src/routes/register/+page.svelte -->
 <script>
-  import { register, isAuthenticated } from "$lib/stores/auth";
+  import { register, isAuthenticated } from "$stores/auth";
   import { onMount } from "svelte";
   
   // State

@@ -2,9 +2,9 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { isAuthenticated, isLoading, authStore, logout } from '$lib/stores/auth';
-  import { loadFriends, friends } from '$lib/stores/friends';
-  import { loadUserGroups, groups } from '$lib/stores/groups';
+  import { isAuthenticated, isLoading, authStore, logout } from '$stores/auth';
+  import { loadFriends, friends } from '$stores/friends';
+  import { loadUserGroups, groups } from '$stores/groups';
   
   let isLogoutLoading = false;
   let error = null;

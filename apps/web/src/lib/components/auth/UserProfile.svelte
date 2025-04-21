@@ -4,7 +4,7 @@
         logout,
         savedAddresses,
         setHomeAddress,
-    } from "$lib/stores/auth";
+    } from "$stores/auth";
 
     // State
     let isLoggingOut = false;

@@ -9,7 +9,7 @@
       rejectRequest,
       cancelRequest,
       isLoading
-    } from '$lib/stores/friends';
+    } from '$stores/friends';
   
     // Props
     export let showOutgoing = true;

@@ -10,8 +10,8 @@
     promoteMemberToAdmin, 
     demoteAdminToMember, 
     isLoading 
-  } from '$lib/stores/groups';
-  import { authStore } from '$lib/stores/auth';
+  } from '$stores/groups';
+  import { authStore } from '$stores/auth';
   
   // Props
   export let groupId;

@@ -15,6 +15,7 @@ export default defineConfig({
 		alias: {
 			'$firebase-auth': path.resolve(__dirname, '../../packages/firebase-auth'),
 			'$map': path.resolve(__dirname, 'src/lib/map'),
+			'$stores': path.resolve(__dirname, 'src/lib/stores'),
 		}
 	}
 });

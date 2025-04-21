@@ -4,7 +4,7 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import AuthProvider from '$lib/components/auth/AuthProvider.svelte';
-    import { authStore, isAuthenticated, isLoading as authLoading } from '$lib/stores/auth';
+    import { authStore, isAuthenticated, isLoading as authLoading } from '$stores/auth';
     import { 
       sendRequest, 
       incomingRequests, 
@@ -14,7 +14,7 @@
       cancelRequest,
       loadFriends,
       loadFriendRequests
-    } from '$lib/stores/friends';
+    } from '$stores/friends';
     import { doc, getDoc, getFirestore } from 'firebase/firestore';
   
     // State
