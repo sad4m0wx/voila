@@ -1,4 +1,3 @@
-// This is a placeholder implementation for the mobile version using Capacitor
 import { MapService } from '../core/interfaces';
 
 /**

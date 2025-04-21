@@ -95,4 +95,4 @@
  * @property {string} transitSummary - Human-readable summary of transit route
  */
 
-export {};
+export * from '.';
