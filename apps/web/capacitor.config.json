@@ -1,5 +1,18 @@
 {
   "appId": "com.example.app",
   "appName": "Voilà",
-  "webDir": "dist"
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "minSdkVersion": 22,
+    "maxSdkVersion": 34,
+    "targetSdkVersion": 34
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000
+    }
+  }
 }

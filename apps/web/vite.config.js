@@ -17,5 +17,10 @@ export default defineConfig({
 			'$map': path.resolve(__dirname, 'src/lib/map'),
 			'$stores': path.resolve(__dirname, 'src/lib/stores'),
 		}
+	},
+	build: {
+		outDir: 'dist',
+		// Ensure assets use relative paths
+		assetsInlineLimit: 0,
 	}
 });
