@@ -6,20 +6,21 @@ services:
     volumes:
       - ./graphhopper-data:/data
     environment:
-      - JAVA_OPTS=-Xmx4g -Xms1g
+      - JAVA_OPTS=-Xmx8g -Xms3g
     command: >
-      --port 8989
-      --host 0.0.0.0
-      --input /data/osm/ile-de-france-latest.osm.pbf
+      --config /data/config.yml
+
       
     
 
-  rust-api:
-    build: ./core-api
-    ports:
-      - "3000:3000"
-    depends_on:
-      - graphhopper
-    environment:
-      - GRAPHHOPPER_URL=http://localhost:8989
-    restart: always
+#  rust-api:
+#    build: ./core-api
+#    ports:
+#     - "3000:3000"
+#    depends_on:
+#      - graphhopper
+#    volumes:
+#      - ./core-api:/usr/src/core-api
+#    environment:
+#      - GRAPHHOPPER_URL=http://localhost:8989
+#   restart: always

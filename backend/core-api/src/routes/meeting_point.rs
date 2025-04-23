@@ -54,6 +54,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
                     
                     match graphhopper.get_transit_route(&from, &to, departure).await {
                         Ok((_, _, steps)) => {
+                            info!("Route found for address: {}", address.id);
                             routes.push(crate::models::location::Route {
                                 id: address.id.clone(),
                                 steps,
@@ -64,6 +65,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
                             });
                         }
                         Err(_) => {
+                            error!("Failed to find route for address: {}", address.id);
                             // Fallback to simple line if routing fails
                             routes.push(crate::models::location::Route {
                                 id: address.id.clone(),

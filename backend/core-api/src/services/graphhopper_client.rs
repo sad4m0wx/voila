@@ -6,6 +6,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Duration;
+use log::info;
 
 use crate::models::location::Location;
 use crate::models::transit::{TransitDetails, TransitLine, TransitStep};
@@ -106,9 +107,11 @@ impl GraphHopperClient {
                 walk_speed: 5.0,
             },
         };
+
+        info!("GraphHopper request: {:?}", request);
         
         let url = format!("{}/route", self.base_url);
-        
+
         let response: GraphHopperResponse = self.client
             .post(&url)
             .json(&request)
@@ -116,7 +119,8 @@ impl GraphHopperClient {
             .await?
             .json()
             .await?;
-            
+        info!("GraphHopper response: {:?}", response);
+
         if response.paths.is_empty() {
             return Err(anyhow!("No route found"));
         }
