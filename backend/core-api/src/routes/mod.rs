@@ -7,5 +7,5 @@ use actix_web::web;
 pub fn configure(cfg: &mut web::ServiceConfig) {
     meeting_point::configure(cfg);
     itinerary::configure(cfg);
-    venues::configure(cfg);
+    //venues::configure(cfg);
 }

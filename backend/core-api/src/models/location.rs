@@ -1,5 +1,8 @@
 use geo_types::{Coord, Point};
 use serde::{Deserialize, Serialize};
+use crate::models::transit::TransitStep;
+use crate::routes::venues::Venue;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {
@@ -92,12 +95,14 @@ pub struct MeetingPoint {
 pub struct MeetingPointResponse {
     pub meeting_point: MeetingPoint,
     pub routes: Vec<Route>,
+    pub venues: Option<Vec<Venue>>, // Optional list of nearby venues
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Route {
     pub id: String,
     pub geometry: LineString,
+    pub steps: Vec<TransitStep>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

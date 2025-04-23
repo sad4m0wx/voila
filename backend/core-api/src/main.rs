@@ -7,6 +7,7 @@ use std::env;
 mod algorithms;
 mod models;
 mod routes;
+mod services;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

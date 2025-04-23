@@ -1,0 +1,26 @@
+graphhopper:
+  datareader.file: /data/osm/ile-de-france-latest.osm.pbf
+  # https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
+  graph.location: /data/graphs
+  gtfs.file: /data/gtfs/IDFM-gtfs.zip
+  # https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip
+  profiles:
+    - name: car
+      vehicle: car
+      weighting: fastest
+    - name: foot
+      vehicle: foot
+      weighting: shortest
+    - name: pt
+      vehicle: pt
+  profiles_ch:
+    - name: car
+      vehicle: car 
+  gtfs:
+    feed_id: publictransit
+
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
