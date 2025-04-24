@@ -11,6 +11,20 @@ graphhopper:
       custom_model: {"speed": [{ "if": "true", "limit_to": "foot_average_speed" }]}
   graph.encoded_values: foot_access, foot_average_speed, foot_priority, foot_road_access, hike_rating, mtb_rating, country, road_class
 
+  prepare.min_network_size: 200
+  prepare.min_one_way_network_size: 0
+  
+  # GTFS-specific settings
+  gtfs.max_transfer_distance: 200
+  gtfs.walk_speed: 5.0
+  gtfs.data_import: true
+
+  datareader:
+      gtfs:
+        base-osm-filter: true
+        max-wait-time: 900  # seconds
+        walk-speed: 5.0
+
 server:
   application_connectors:
     - type: http

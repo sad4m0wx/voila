@@ -37,6 +37,7 @@ struct GraphHopperResponse {
 
 #[derive(Debug, Deserialize)]
 struct Path {
+    weight: f64,
     distance: f64,
     time: i64,
     legs: Vec<Leg>,
@@ -45,11 +46,24 @@ struct Path {
 
 #[derive(Debug, Deserialize)]
 struct Leg {
+    #[serde(rename = "type")]
+    leg_type: String,  // "walk" or "pt"
     distance: f64,
-    time: i64,
+    time: i64,         // Duration in milliseconds
+    departure_time: Option<i64>,
+    arrival_time: Option<i64>,
+    
+    // For PT legs
     trip_id: Option<String>,
     route_id: Option<String>,
-    // Other fields...
+    route_type: Option<i32>,  // 0=Tram, 1=Subway, 2=Rail, 3=Bus, ...
+    route_short_name: Option<String>,
+    route_name: Option<String>,
+    route_color: Option<String>,
+    agency_name: Option<String>,
+    
+    stops: Option<Vec<Stop>>,
+    geometry: Option<String>,  // Encoded polyline
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +73,15 @@ struct Instruction {
     distance: f64,
     sign: i32,
     // Other fields...
+}
+
+#[derive(Debug, Deserialize)]
+struct Stop {
+    stop_id: String,
+    stop_name: String,
+    geometry: Option<Vec<f64>>,  // [longitude, latitude]
+    arrival_time: Option<i64>,
+    departure_time: Option<i64>,
 }
 
 pub struct GraphHopperClient {
@@ -90,47 +113,45 @@ impl GraphHopperClient {
             .unwrap_or_else(Utc::now)
             .timestamp();
             
-        let request = GraphHopperRequest {
-            points: vec![
-                vec![from.longitude, from.latitude],
-                vec![to.longitude, to.latitude],
-            ],
-            point_hints: vec![],
-            snap_preventions: vec!["motorway".to_string()],
-            details: vec!["time".to_string(), "distance".to_string()],
-            profile: "pt".to_string(),
-            locale: "en".to_string(),
-            pt: PtSettings {
-                earliest_departure_time: departure,
-                profile_duration: true,
-                ignore_transfers: false,
-                walk_speed: 5.0,
-            },
-        };
+        let params = [
+            ("point", format!("{},{}", from.latitude, from.longitude)),
+            ("point", format!("{},{}", to.latitude, to.longitude)),
+            ("pt.earliest_departure_time", departure_time.unwrap_or_else(Utc::now).to_rfc3339()),
+            ("pt.profile", "true".to_string()),
+            ("locale", "en".to_string()),
+            ("details", "street_name".to_string()),
+        ];
 
-        info!("GraphHopper request: {:?}", request);
+        let url = format!("{}/route-pt", self.base_url);
         
-        let url = format!("{}/route", self.base_url);
 
-        let response: GraphHopperResponse = self.client
-            .post(&url)
-            .json(&request)
+        let response = self.client
+            .get(&url)
+            .query(&params)
             .send()
-            .await?
-            .json()
             .await?;
         info!("GraphHopper response: {:?}", response);
 
-        if response.paths.is_empty() {
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow!("GraphHopper PT API error: {}", error_text));
+        }
+        
+        let response_data: GraphHopperResponse = response.json().await?;
+        info!("GraphHopper PT response: {:?}", response_data);
+        if response_data.paths.is_empty() {
+            info!("No paths found in GraphHopper response");
             return Err(anyhow!("No route found"));
         }
         
-        let path = &response.paths[0];
+        let path = &response_data.paths[0];
+        info!("GraphHopper PT path: {:?}", path);
         let duration = Duration::from_millis(path.time as u64);
         let distance = path.distance;
         
-        // Convert GraphHopper instructions to our TransitStep model
-        let steps = self.convert_to_transit_steps(path)?;
+        // Convert PT legs to our TransitStep model
+        let steps = self.convert_to_transit_steps(&path)?;
         
         Ok((duration, distance, steps))
     }
