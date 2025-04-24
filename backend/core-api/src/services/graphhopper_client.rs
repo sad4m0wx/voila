@@ -4,9 +4,10 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::env;
 use std::time::Duration;
-use log::info;
+use log::{error,info};
 
 use crate::models::location::Location;
 use crate::models::transit::{TransitDetails, TransitLine, TransitStep};
@@ -33,6 +34,99 @@ struct PtSettings {
 #[derive(Debug, Deserialize)]
 struct GraphHopperResponse {
     paths: Vec<Path>,
+}
+
+
+#[derive(Debug, Deserialize)]
+struct PtRouteResponse {
+    hints: Option<Value>,
+    info: Option<Value>,
+    paths: Vec<PtPath>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PtPath {
+    distance: f64,
+    weight: f64,
+    time: i64,
+    transfers: i32,
+    points_encoded: bool,
+    bbox: Vec<f64>,
+    points: GeoJson,
+    instructions: Vec<Instruction>,
+    legs: Vec<PtLeg>,
+    details: Option<Value>,
+    ascend: Option<f64>,
+    descend: Option<f64>,
+    snapped_waypoints: Option<GeoJson>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeoJson {
+    #[serde(rename = "type")]
+    geo_type: String,
+    coordinates: Vec<Vec<f64>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Instruction {
+    distance: f64,
+    heading: Option<f64>,
+    sign: i32,
+    interval: Vec<i32>,
+    text: String,
+    time: i64,
+    street_name: Option<String>,  
+    last_heading: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PtLeg {
+    #[serde(rename = "type")]
+    leg_type: String,  // "walk" or "pt"
+    departure_location: String,
+    geometry: GeoJsonSingle,
+    distance: f64,
+    instructions: Option<Vec<Instruction>>,
+    details: Option<Value>,
+    departure_time: String,
+    arrival_time: String,
+    
+    // PT-specific fields
+    feed_id: Option<String>,
+    is_in_same_vehicle_as_previous: Option<bool>,
+    trip_headsign: Option<String>,
+    travel_time: Option<i64>,
+    stops: Option<Vec<PtStop>>,
+    trip_id: Option<String>,
+    route_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeoJsonSingle {
+    #[serde(rename = "type")]
+    geo_type: String,
+    coordinates: Vec<Vec<f64>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PtStop {
+    stop_id: String,
+    stop_name: String,
+    geometry: StopGeometry,
+    arrival_cancelled: Option<bool>,
+    departure_time: Option<String>,
+    planned_departure_time: Option<String>,
+    departure_cancelled: Option<bool>,
+    arrival_time: Option<String>,
+    planned_arrival_time: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StopGeometry {
+    #[serde(rename = "type")]
+    geo_type: String,
+    coordinates: Vec<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,14 +160,6 @@ struct Leg {
     geometry: Option<String>,  // Encoded polyline
 }
 
-#[derive(Debug, Deserialize)]
-struct Instruction {
-    text: String,
-    time: i64,
-    distance: f64,
-    sign: i32,
-    // Other fields...
-}
 
 #[derive(Debug, Deserialize)]
 struct Stop {
@@ -111,91 +197,130 @@ impl GraphHopperClient {
         // Default to current time if not provided
         let departure = departure_time
             .unwrap_or_else(Utc::now)
-            .timestamp();
+            .to_rfc3339();
             
         let params = [
             ("point", format!("{},{}", from.latitude, from.longitude)),
             ("point", format!("{},{}", to.latitude, to.longitude)),
-            ("pt.earliest_departure_time", departure_time.unwrap_or_else(Utc::now).to_rfc3339()),
+            ("pt.earliest_departure_time", departure),
             ("pt.profile", "true".to_string()),
             ("locale", "en".to_string()),
             ("details", "street_name".to_string()),
         ];
 
         let url = format!("{}/route-pt", self.base_url);
-        
 
         let response = self.client
             .get(&url)
             .query(&params)
             .send()
             .await?;
-        info!("GraphHopper response: {:?}", response);
-
-
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(anyhow!("GraphHopper PT API error: {}", error_text));
+    
+        let response_text = response.text().await?;
+    
+        match serde_json::from_str::<PtRouteResponse>(&response_text) {
+            Ok(response_data) => {
+                info!("Successfully parsed response as PtRouteResponse");
+                if response_data.paths.is_empty() {
+                    return Err(anyhow!("No route found"));
+                }
+                
+                let path = &response_data.paths[0];
+                let duration = Duration::from_millis(path.time as u64);
+                let distance = path.distance;
+                
+                let steps = self.convert_pt_legs_to_steps(&path.legs)?;
+                
+                Ok((duration, distance, steps))
+            }
+            Err(e) => {
+                error!("Failed to parse response as PtRouteResponse: {}", e);
+                //error!("Response was: {}", response_text);
+                return Err(anyhow!("Failed to parse GraphHopper response: {}", e));
+            }
         }
-        
-        let response_data: GraphHopperResponse = response.json().await?;
-        info!("GraphHopper PT response: {:?}", response_data);
-        if response_data.paths.is_empty() {
-            info!("No paths found in GraphHopper response");
-            return Err(anyhow!("No route found"));
-        }
-        
-        let path = &response_data.paths[0];
-        info!("GraphHopper PT path: {:?}", path);
-        let duration = Duration::from_millis(path.time as u64);
-        let distance = path.distance;
-        
-        // Convert PT legs to our TransitStep model
-        let steps = self.convert_to_transit_steps(&path)?;
-        
-        Ok((duration, distance, steps))
     }
     
-    fn convert_to_transit_steps(&self, path: &Path) -> Result<Vec<TransitStep>> {
+    fn convert_pt_legs_to_steps(&self, legs: &[PtLeg]) -> Result<Vec<TransitStep>> {
         let mut steps = Vec::new();
         
-        // Simplified conversion - in reality, you'd need to handle different instruction types
-        for (i, instruction) in path.instructions.iter().enumerate() {
-            let is_transit = path.legs.get(i)
-                .map(|leg| leg.trip_id.is_some())
-                .unwrap_or(false);
-                
-            let step = if is_transit {
-                // This is a transit segment
-                let leg = &path.legs[i];
-                
-                TransitStep {
-                    distance: instruction.distance,
-                    duration: (instruction.time / 1000) as u32, // Convert ms to seconds
-                    mode: "transit".to_string(),
-                    instructions: Some(instruction.text.clone()),
-                    transit_details: Some(TransitDetails {
-                        line: TransitLine {
-                            name: leg.route_id.clone().unwrap_or_default(),
-                            short_name: None,
-                            color: "#1a73e8".to_string(), // Default color
-                            vehicle_type: "bus".to_string(), // Default type
-                        },
-                        departure_stop: "".to_string(), // Would need to extract from instruction
-                        arrival_stop: "".to_string(),   // Would need to extract from instruction
-                        departure_time: None,           // Would need to extract from leg
-                        arrival_time: None,             // Would need to extract from leg
-                        num_stops: 0,                   // Would need to calculate
-                    }),
-                }
-            } else {
-                // This is a walking segment
-                TransitStep {
-                    distance: instruction.distance,
-                    duration: (instruction.time / 1000) as u32, // Convert ms to seconds
-                    mode: "walking".to_string(),
-                    instructions: Some(instruction.text.clone()),
-                    transit_details: None,
+        for leg in legs {
+            let step = match leg.leg_type.as_str() {
+                "pt" => {
+                    // Extract route information
+                    let route_id = leg.route_id.clone().unwrap_or_default();
+                    let trip_headsign = leg.trip_headsign.clone().unwrap_or_default();
+                    
+                    // Determine vehicle type from route_id
+                    let vehicle_type = if route_id.contains("M") || trip_headsign.contains("Métro") {
+                        "subway"
+                    } else if route_id.contains("T") {
+                        "tram"
+                    } else if route_id.contains("RER") {
+                        "rail"
+                    } else {
+                        "bus"
+                    };
+                    
+                    // Build instruction text
+                    let instruction = if let Some(stops) = &leg.stops {
+                        let from_stop = stops.first().map(|s| s.stop_name.as_str()).unwrap_or("Unknown");
+                        let to_stop = stops.last().map(|s| s.stop_name.as_str()).unwrap_or("Unknown");
+                        format!("Take {} {} from {} to {}", vehicle_type, trip_headsign, from_stop, to_stop)
+                    } else {
+                        format!("Take {}", trip_headsign)
+                    };
+                    
+                    TransitStep {
+                        distance: leg.distance,
+                        duration: leg.travel_time.unwrap_or(0) as u32 / 1000, // Convert ms to seconds
+                        mode: "transit".to_string(),
+                        instructions: Some(instruction),
+                        transit_details: Some(TransitDetails {
+                            line: TransitLine {
+                                name: trip_headsign,
+                                short_name: Some(route_id.clone()),
+                                color: "#1a73e8".to_string(), // Default color
+                                vehicle_type: vehicle_type.to_string(),
+                            },
+                            departure_stop: leg.stops.as_ref()
+                                .and_then(|s| s.first())
+                                .map(|s| s.stop_name.clone())
+                                .unwrap_or_default(),
+                            arrival_stop: leg.stops.as_ref()
+                                .and_then(|s| s.last())
+                                .map(|s| s.stop_name.clone())
+                                .unwrap_or_default(),
+                            departure_time: Some(leg.departure_time.clone()),
+                            arrival_time: Some(leg.arrival_time.clone()),
+                            num_stops: leg.stops.as_ref().map(|s| s.len() as u32).unwrap_or(0),
+                        }),
+                    }
+                },
+                "walk" => {
+                    let instruction = leg.instructions.as_ref()
+                        .and_then(|instructions| instructions.first())
+                        .map(|inst| inst.text.clone())
+                        .unwrap_or_else(|| format!("Walk for {:.1} meters", leg.distance));
+                    
+                    TransitStep {
+                        distance: leg.distance,
+                        duration: leg.instructions.as_ref()
+                            .and_then(|instructions| instructions.iter().map(|i| i.time).sum::<i64>().checked_div(1000))
+                            .unwrap_or(0) as u32, // Convert ms to seconds
+                        mode: "walking".to_string(),
+                        instructions: Some(instruction),
+                        transit_details: None,
+                    }
+                },
+                _ => {
+                    TransitStep {
+                        distance: leg.distance,
+                        duration: 0,
+                        mode: leg.leg_type.clone(),
+                        instructions: Some(format!("{} for {:.1} meters", leg.leg_type, leg.distance)),
+                        transit_details: None,
+                    }
                 }
             };
             
