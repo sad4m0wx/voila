@@ -7,6 +7,7 @@ services:
       - ./graphhopper-data:/data
     environment:
       - JAVA_OPTS=-Xmx8g -Xms3g
+      - GRAPHHOPPER_OPTS=-Dgraphhopper.graph.flagEncoders=foot,pt|turn_costs=true
     command: >
       --config /data/config.yml
 
