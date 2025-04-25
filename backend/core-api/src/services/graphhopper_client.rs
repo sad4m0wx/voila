@@ -211,8 +211,6 @@ impl GraphHopperClient {
         info!("Request to GraphHopper took {:?}", elapsed_time);
 
         let response_text = response.text().await?;
-        elapsed_time = start_time.elapsed() - elapsed_time;
-        info!("Response from GraphHopper textawait took {:?}", elapsed_time);
     
         match serde_json::from_str::<PtRouteResponse>(&response_text) {
             Ok(response_data) => {
@@ -246,22 +244,25 @@ impl GraphHopperClient {
                     let route_id = leg.route_id.clone().unwrap_or_default();
                     let trip_headsign = leg.trip_headsign.clone().unwrap_or_default();
                     
-                    // Determine vehicle type from route_id
-                    let vehicle_type = if route_id.contains("M") || trip_headsign.contains("Métro") {
+                    // Determine vehicle type from route_id or trip_headsign
+                    let vehicle_type = if route_id.contains("M") || trip_headsign.contains("Métro") || route_id.starts_with("PT:M") {
                         "subway"
-                    } else if route_id.contains("T") {
+                    } else if route_id.contains("T") || route_id.starts_with("PT:T") {
                         "tram"
-                    } else if route_id.contains("RER") {
+                    } else if route_id.contains("RER") || route_id.starts_with("PT:RER") {
                         "rail"
                     } else {
                         "bus"
                     };
                     
+                    // Extract line name properly
+                    let line_name = route_id.trim_start_matches("PT:").to_string();
+                    
                     // Build instruction text
                     let instruction = if let Some(stops) = &leg.stops {
                         let from_stop = stops.first().map(|s| s.stop_name.as_str()).unwrap_or("Unknown");
                         let to_stop = stops.last().map(|s| s.stop_name.as_str()).unwrap_or("Unknown");
-                        format!("Take {} {} from {} to {}", vehicle_type, trip_headsign, from_stop, to_stop)
+                        format!("Take {} {} from {} to {}", vehicle_type, line_name, from_stop, to_stop)
                     } else {
                         format!("Take {}", trip_headsign)
                     };
@@ -274,7 +275,7 @@ impl GraphHopperClient {
                         transit_details: Some(TransitDetails {
                             line: TransitLine {
                                 name: trip_headsign,
-                                short_name: Some(route_id.clone()),
+                                short_name: Some(line_name),
                                 color: "#1a73e8".to_string(), // Default color
                                 vehicle_type: vehicle_type.to_string(),
                             },

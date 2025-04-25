@@ -77,40 +77,44 @@ export async function findOptimalMeetingPoint(addresses) {
         })),
         routes: rustResponse.routes.map(route => ({
           id: route.id,
-          geometry: route.geometry,
-          steps: route.steps.map(step => ({
-            distance: step.distance,
-            duration: step.duration,
-            mode: step.mode,
-            instructions: step.instructions,
-            transitDetails: step.transit_details,
-            geometry: step.geometry
-          }))
+          geometry: {
+            type: "LineString",
+            coordinates: route.geometry.coordinates
+          },
+          steps: route.steps,
+          // Map to format expected by Google Maps
+          color: getRouteColor(rustResponse.routes.indexOf(route)),
+          weight: 5
         }))
       };
-  } catch (rustApiError) {
-    console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
+    } catch (rustApiError) {
+      console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
 
-    // Fall back to the SvelteKit server endpoint
-    const fallbackResponse = await fetch('/api/meetingPoint', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ addresses: requestBody.addresses })
-    });
+      // Fall back to the SvelteKit server endpoint
+      const fallbackResponse = await fetch('/api/meetingPoint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ addresses: requestBody.addresses })
+      });
 
-    if (!fallbackResponse.ok) {
-      const errorText = await fallbackResponse.text();
-      throw new Error(errorText || 'Failed to calculate meeting point');
+      if (!fallbackResponse.ok) {
+        const errorText = await fallbackResponse.text();
+        throw new Error(errorText || 'Failed to calculate meeting point');
+      }
+
+      return await fallbackResponse.json();
     }
-
-    return await fallbackResponse.json();
+  } catch (error) {
+    console.error('Error finding optimal meeting point:', error);
+    throw error;
   }
-} catch (error) {
-  console.error('Error finding optimal meeting point:', error);
-  throw error;
 }
+
+function getRouteColor(index) {
+  const colors = ['#1a73e8', '#e53935', '#43a047', '#fb8c00', '#8e24aa'];
+  return colors[index % colors.length];
 }
 
 /**

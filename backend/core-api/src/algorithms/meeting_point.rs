@@ -1,4 +1,4 @@
-use crate::models::location::{AddressInput, Location, MeetingPoint, TravelTime};
+use crate::models::location::{AddressInput, Location, MeetingPoint, TravelTime, LineString, Route};
 use crate::services::graphhopper_client::GraphHopperClient;
 use geo::algorithm::centroid::Centroid;
 use geo_types::{MultiPoint, Point};
@@ -12,7 +12,7 @@ impl MeetingPointFinder {
     pub async fn find_optimal_meeting_point(
         addresses: &[AddressInput],
         departure_time: Option<i64>,
-    ) -> anyhow::Result<MeetingPoint> {
+    ) -> anyhow::Result<(MeetingPoint, Vec<Route>)> {
         // Validate input
         if addresses.len() < 2 {
             return Err(anyhow::anyhow!("At least two addresses are required"));
@@ -45,7 +45,6 @@ impl MeetingPointFinder {
         let candidate_points = Self::generate_candidate_points(&centroid);
         info!("Generated {} candidate points", candidate_points.len());
 
-        // 3. For each candidate, evaluate total transit time using GraphHopper
         let graphhopper = GraphHopperClient::new();
         let departure = departure_time.map(|ts| 
             chrono::DateTime::<Utc>::from_timestamp(ts, 0).unwrap()
@@ -54,16 +53,38 @@ impl MeetingPointFinder {
         let mut best_point = centroid.clone();
         let mut best_score = f64::MAX;
         let mut best_travel_times = Vec::new();
+        let mut best_routes = Vec::new();
 
         for candidate in candidate_points {
             let mut total_time = 0.0;
             let mut travel_times = Vec::new();
+            let mut routes = Vec::new();
 
             for (id, location) in &locations {
                 match graphhopper.get_transit_route(location, &candidate, departure).await {
-                    Ok((duration, distance, _steps)) => {
+                    Ok((duration, distance, steps)) => {
                         let duration_minutes = duration.as_secs() as f64 / 60.0;
                         total_time += duration_minutes;
+
+                        // Create transit summary
+                        let transit_summary = if steps.iter().any(|s| s.mode == "transit") {
+                            steps.iter()
+                                .filter(|s| s.mode == "transit" && s.transit_details.is_some())
+                                .map(|s| {
+                                    if let Some(details) = &s.transit_details {
+                                        format!("{} {}", 
+                                            Self::get_transit_icon(&details.line.vehicle_type),
+                                            details.line.short_name.as_deref().unwrap_or(&details.line.name)
+                                        )
+                                    } else {
+                                        String::new()
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        } else {
+                            "🚶 Walking".to_string()
+                        };
 
                         travel_times.push(TravelTime {
                             id: id.clone(),
@@ -71,8 +92,18 @@ impl MeetingPointFinder {
                             duration: duration_minutes.round() as u32,
                             distance,
                             estimated: false,
-                            transit_summary: Some(format!("{:.1} minutes via transit", duration_minutes)),
+                            transit_summary: Some(transit_summary),
                         });
+
+                        // Create route with steps
+                        let route = Route {
+                            id: id.clone(),
+                            geometry: LineString::new(
+                                Self::extract_route_geometry(&steps, location, &candidate)
+                            ),
+                            steps,
+                        };
+                        routes.push(route);
                     }
                     Err(_) => {
                         // Fallback to direct distance if transit routing fails
@@ -88,29 +119,87 @@ impl MeetingPointFinder {
                             duration: duration_minutes.round() as u32,
                             distance,
                             estimated: true,
-                            transit_summary: None,
+                            transit_summary: Some("🚶 Walking (estimated)".to_string()),
+                        });
+
+                        // Create fallback route with just start and end points
+                        routes.push(Route {
+                            id: id.clone(),
+                            geometry: LineString::new(vec![
+                                (location.longitude, location.latitude),
+                                (candidate.longitude, candidate.latitude),
+                            ]),
+                            steps: vec![],
                         });
                     }
                 }
             }
 
-            // Score this candidate (lower is better)
-            // We could use other factors like POI quality, transfer count, etc.
             let score = total_time;
 
             if score < best_score {
                 best_score = score;
                 best_point = candidate;
                 best_travel_times = travel_times;
+                best_routes = routes;
             }
         }
 
-        // 4. Return the optimal meeting point
-        Ok(MeetingPoint {
+        let meeting_point = MeetingPoint {
             name: "Optimal Transit Meeting Point".to_string(),
             coordinates: (best_point.longitude, best_point.latitude),
             travel_times: best_travel_times,
-        })
+        };
+
+        Ok((meeting_point, best_routes))
+    }
+
+
+    fn get_transit_icon(vehicle_type: &str) -> &'static str {
+        match vehicle_type.to_lowercase().as_str() {
+            "subway" | "metro" => "🚇",
+            "bus" => "🚌",
+            "train" | "rail" => "🚆",
+            "tram" | "light_rail" => "🚊",
+            "ferry" => "⛴️",
+            _ => "🚋",
+        }
+    }
+
+
+    fn extract_route_geometry(
+        steps: &[crate::models::transit::TransitStep],
+        from: &Location,
+        to: &Location,
+    ) -> Vec<(f64, f64)> {
+        let mut coordinates = Vec::new();
+        
+        // Start with the origin
+        coordinates.push((from.longitude, from.latitude));
+        
+        // Extract coordinates from steps if available
+        for step in steps {
+            if let Some(geometry) = &step.geometry {
+                coordinates.extend(geometry.coordinates.iter().map(|coord| {
+                    (coord[0], coord[1])
+                }));
+            }
+        }
+        // End with the destination
+        coordinates.push((to.longitude, to.latitude));
+        
+        // Remove duplicates while preserving order
+        let mut unique_coords = Vec::new();
+        let mut last_coord: Option<(f64, f64)> = None;
+        
+        for &coord in &coordinates {
+            if last_coord.map_or(true, |last| last != coord) {
+                unique_coords.push(coord);
+                last_coord = Some(coord);
+            }
+        }
+        
+        unique_coords
     }
 
     fn find_centroid(locations: &[(String, Location)]) -> Location {

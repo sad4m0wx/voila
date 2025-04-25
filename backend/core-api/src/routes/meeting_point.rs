@@ -35,9 +35,9 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     
     // Find optimal meeting point with transit times
     match MeetingPointFinder::find_optimal_meeting_point(&request.addresses, request.departure_time).await {
-        Ok(meeting_point) => {
+        Ok((meeting_point, routes)) => {
             // Get detailed transit routes for each participant
-            let graphhopper = GraphHopperClient::new();
+            /*let graphhopper = GraphHopperClient::new();
             let mut routes = Vec::new();
             
             let departure = request.departure_time.map(|ts| 
@@ -79,7 +79,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
                         }
                     }
                 }
-            }
+            }*/
             
             // Optionally get venue recommendations
             let venues = if request.include_venues.unwrap_or(false) {
