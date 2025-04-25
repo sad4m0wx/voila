@@ -7,6 +7,7 @@ use crate::algorithms::meeting_point::MeetingPointFinder;
 use crate::models::location::{AddressInput, MeetingPointResponse};
 use crate::routes::venues;
 use crate::services::graphhopper_client::GraphHopperClient;
+use crate::models::transit::GeoJson;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -65,7 +66,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
                             });
                         }
                         Err(_) => {
-                            error!("Failed to find route for address: {}", address.id);
+                            error!("Failed to find route for address: {}, from {},{} to {},{}", address.id, coords.1, coords.0, meeting_point.coordinates.1, meeting_point.coordinates.0);
                             // Fallback to simple line if routing fails
                             routes.push(crate::models::location::Route {
                                 id: address.id.clone(),

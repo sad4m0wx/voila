@@ -8,6 +8,14 @@ pub struct TransitStep {
     pub mode: String,  // "walking", "transit", etc.
     pub instructions: Option<String>,
     pub transit_details: Option<TransitDetails>,
+    pub geometry: Option<GeoJson>, // Polyline or GeoJSON
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GeoJson {
+    #[serde(rename = "type")]
+    pub geo_type: String,
+    pub coordinates: Vec<Vec<f64>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

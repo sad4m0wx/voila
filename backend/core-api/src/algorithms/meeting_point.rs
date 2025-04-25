@@ -38,12 +38,12 @@ impl MeetingPointFinder {
 
         // Start with a simple geometric center (centroid)
         let centroid = Self::find_centroid(&locations);
-        debug!("Initial centroid: {:?}", centroid);
+        info!("Initial centroid: {:?}", centroid);
 
         // Find POIs near the centroid that could serve as good meeting points
         // (in a real implementation, you'd query for transit stations, cafes, etc.)
         let candidate_points = Self::generate_candidate_points(&centroid);
-        debug!("Generated {} candidate points", candidate_points.len());
+        info!("Generated {} candidate points", candidate_points.len());
 
         // 3. For each candidate, evaluate total transit time using GraphHopper
         let graphhopper = GraphHopperClient::new();
@@ -135,7 +135,7 @@ impl MeetingPointFinder {
         let mut candidates = vec![initial_point.clone()];
         
         // Add some points around the initial point (simplified example)
-        for i in 1..5 {
+        for i in 1..2 {
             let offset = 0.002 * i as f64; // About 200m per offset
             candidates.push(Location::new(
                 initial_point.latitude + offset,

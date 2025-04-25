@@ -12,14 +12,14 @@ export async function findOptimalMeetingPoint(addresses) {
     if (!addresses || addresses.length < 2) {
       throw new Error('At least two addresses are required');
     }
-    
+
     // Make sure all addresses have coordinates
     const addressesWithCoordinates = await Promise.all(
       addresses.map(async (addr) => {
         if (addr.coordinates) {
           return addr;
         }
-        
+
         // Geocode addresses without coordinates
         try {
           const geocodeResult = await googleMapsService.geocodeAddress(addr.value);
@@ -33,7 +33,7 @@ export async function findOptimalMeetingPoint(addresses) {
         }
       })
     );
-    
+
     // Format the request body for the API
     const requestBody = {
       addresses: addressesWithCoordinates.map(addr => ({
@@ -44,7 +44,7 @@ export async function findOptimalMeetingPoint(addresses) {
       departure_time: Math.floor(Date.now() / 1000), // Current time as Unix timestamp
       include_venues: false, // Don't include venue recommendations for now
     };
-    
+
     // Call the API server
     try {
       const response = await fetch(CORE_API_URL + '/api/meeting-point', {
@@ -54,14 +54,15 @@ export async function findOptimalMeetingPoint(addresses) {
         },
         body: JSON.stringify(requestBody)
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || 'Failed to calculate meeting point using Rust API');
       }
-      
+
       const rustResponse = await response.json();
-      
+      console.log('Rust API response:', rustResponse);
+
       // Transform the Rust API response to match what our frontend expects
       return {
         name: rustResponse.meeting_point.name,
@@ -74,31 +75,42 @@ export async function findOptimalMeetingPoint(addresses) {
           estimated: tt.estimated,
           transitSummary: tt.transit_summary
         })),
-        routes: rustResponse.routes || []
+        routes: rustResponse.routes.map(route => ({
+          id: route.id,
+          geometry: route.geometry,
+          steps: route.steps.map(step => ({
+            distance: step.distance,
+            duration: step.duration,
+            mode: step.mode,
+            instructions: step.instructions,
+            transitDetails: step.transit_details,
+            geometry: step.geometry
+          }))
+        }))
       };
-    } catch (rustApiError) {
-      console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
-      
-      // Fall back to the SvelteKit server endpoint
-      const fallbackResponse = await fetch('/api/meetingPoint', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ addresses: requestBody.addresses })
-      });
-      
-      if (!fallbackResponse.ok) {
-        const errorText = await fallbackResponse.text();
-        throw new Error(errorText || 'Failed to calculate meeting point');
-      }
-      
-      return await fallbackResponse.json();
+  } catch (rustApiError) {
+    console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
+
+    // Fall back to the SvelteKit server endpoint
+    const fallbackResponse = await fetch('/api/meetingPoint', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ addresses: requestBody.addresses })
+    });
+
+    if (!fallbackResponse.ok) {
+      const errorText = await fallbackResponse.text();
+      throw new Error(errorText || 'Failed to calculate meeting point');
     }
-  } catch (error) {
-    console.error('Error finding optimal meeting point:', error);
-    throw error;
+
+    return await fallbackResponse.json();
   }
+} catch (error) {
+  console.error('Error finding optimal meeting point:', error);
+  throw error;
+}
 }
 
 /**
@@ -113,19 +125,19 @@ export async function getTransitDirections(origin, destination) {
       origin: origin,
       destination: destination
     };
-    
-    const response = await fetch(CORE_API_URL+'/api/itinerary', {
+
+    const response = await fetch(CORE_API_URL + '/api/itinerary', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('API error response:', errorText);
-      
+
       try {
         // Try to parse as JSON
         const errorData = JSON.parse(errorText);
@@ -135,23 +147,23 @@ export async function getTransitDirections(origin, destination) {
         throw new Error(`API Error (${response.status}): ${errorText.substring(0, 100)}`);
       }
     }
-    
+
     const data = await response.json();
-    
+
     // Convert to the format expected by the app
     return {
       duration: data.duration,
       distance: data.distance,
       transitAvailable: !!data.steps?.some(step => step.mode === 'transit'),
       walkingOnly: !data.steps?.some(step => step.mode !== 'walking'),
-      transitSummary: data.steps?.some(step => step.mode === 'transit') 
+      transitSummary: data.steps?.some(step => step.mode === 'transit')
         ? data.steps
-            .filter(step => step.transit_details)
-            .map(step => {
-              const line = step.transit_details.line;
-              const icon = getTransitIcon(line.vehicle_type);
-              return `${icon} ${line.short_name || line.name}`;
-            }).join(', ')
+          .filter(step => step.transit_details)
+          .map(step => {
+            const line = step.transit_details.line;
+            const icon = getTransitIcon(line.vehicle_type);
+            return `${icon} ${line.short_name || line.name}`;
+          }).join(', ')
         : '🚶 Walking',
       transitLines: data.steps
         ?.filter(step => step.transit_details)

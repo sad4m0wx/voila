@@ -8,9 +8,10 @@ use serde_json::Value;
 use std::env;
 use std::time::Duration;
 use log::{error,info};
+use std::time::Instant;
 
 use crate::models::location::Location;
-use crate::models::transit::{TransitDetails, TransitLine, TransitStep};
+use crate::models::transit::{TransitDetails, TransitLine, TransitStep, GeoJson};
 
 #[derive(Debug, Serialize)]
 struct GraphHopperRequest {
@@ -61,12 +62,7 @@ struct PtPath {
     snapped_waypoints: Option<GeoJson>,
 }
 
-#[derive(Debug, Deserialize)]
-struct GeoJson {
-    #[serde(rename = "type")]
-    geo_type: String,
-    coordinates: Vec<Vec<f64>>,
-}
+
 
 #[derive(Debug, Deserialize)]
 struct Instruction {
@@ -85,7 +81,7 @@ struct PtLeg {
     #[serde(rename = "type")]
     leg_type: String,  // "walk" or "pt"
     departure_location: String,
-    geometry: GeoJsonSingle,
+    geometry: GeoJson,
     distance: f64,
     instructions: Option<Vec<Instruction>>,
     details: Option<Value>,
@@ -102,12 +98,6 @@ struct PtLeg {
     route_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct GeoJsonSingle {
-    #[serde(rename = "type")]
-    geo_type: String,
-    coordinates: Vec<Vec<f64>>,
-}
 
 #[derive(Debug, Deserialize)]
 struct PtStop {
@@ -210,13 +200,19 @@ impl GraphHopperClient {
 
         let url = format!("{}/route-pt", self.base_url);
 
+        let start_time = Instant::now();
         let response = self.client
             .get(&url)
             .query(&params)
             .send()
             .await?;
-    
+        
+        let mut elapsed_time = start_time.elapsed(); 
+        info!("Request to GraphHopper took {:?}", elapsed_time);
+
         let response_text = response.text().await?;
+        elapsed_time = start_time.elapsed() - elapsed_time;
+        info!("Response from GraphHopper textawait took {:?}", elapsed_time);
     
         match serde_json::from_str::<PtRouteResponse>(&response_text) {
             Ok(response_data) => {
@@ -235,7 +231,6 @@ impl GraphHopperClient {
             }
             Err(e) => {
                 error!("Failed to parse response as PtRouteResponse: {}", e);
-                //error!("Response was: {}", response_text);
                 return Err(anyhow!("Failed to parse GraphHopper response: {}", e));
             }
         }
@@ -295,6 +290,7 @@ impl GraphHopperClient {
                             arrival_time: Some(leg.arrival_time.clone()),
                             num_stops: leg.stops.as_ref().map(|s| s.len() as u32).unwrap_or(0),
                         }),
+                        geometry: Some(leg.geometry.clone())
                     }
                 },
                 "walk" => {
@@ -311,6 +307,7 @@ impl GraphHopperClient {
                         mode: "walking".to_string(),
                         instructions: Some(instruction),
                         transit_details: None,
+                        geometry: Some(leg.geometry.clone())
                     }
                 },
                 _ => {
@@ -320,6 +317,7 @@ impl GraphHopperClient {
                         mode: leg.leg_type.clone(),
                         instructions: Some(format!("{} for {:.1} meters", leg.leg_type, leg.distance)),
                         transit_details: None,
+                        geometry: Some(leg.geometry.clone()),
                     }
                 }
             };
