@@ -1,4 +1,5 @@
 services:
+  
   graphhopper:
     image: israelhikingmap/graphhopper:latest
     ports:
@@ -6,10 +7,23 @@ services:
     volumes:
       - ./graphhopper-data:/data
     environment:
-      - JAVA_OPTS=-Xmx8g -Xms3g
+      - JAVA_OPTS=-Xmx8g -Xms3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
       - GRAPHHOPPER_OPTS=-Dgraphhopper.graph.flagEncoders=foot,pt|turn_costs=true
     command: >
       --config /data/config.yml
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: always
+    depends_on:
+      - graphhopper
+
+volumes:
+  redis-data:
 
       
     
@@ -24,4 +38,5 @@ services:
 #      - ./core-api:/usr/src/core-api
 #    environment:
 #      - GRAPHHOPPER_URL=http://localhost:8989
+#      - REDIS_URL=redis://redis:6379
 #   restart: always

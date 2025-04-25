@@ -9,6 +9,9 @@ use std::env;
 use std::time::Duration;
 use log::{error,info};
 use std::time::Instant;
+use crate::services::redis_client::{RedisClient};
+use std::sync::Arc;
+
 
 use crate::models::location::Location;
 use crate::models::transit::{TransitDetails, TransitLine, TransitStep, GeoJson};
@@ -160,9 +163,17 @@ struct Stop {
     departure_time: Option<i64>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CachedTransitResult {
+    duration_secs: u64,
+    distance: f64,
+    steps: Vec<TransitStep>,
+}
+
 pub struct GraphHopperClient {
     client: Client,
     base_url: String,
+    redis: Arc<RedisClient>,
 }
 
 impl GraphHopperClient {
@@ -172,13 +183,76 @@ impl GraphHopperClient {
             
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
+            .pool_max_idle_per_host(10) 
+            .pool_idle_timeout(Duration::from_secs(60))
+            .tcp_keepalive(Duration::from_secs(30))
             .build()
             .expect("Failed to create HTTP client");
-            
-        Self { client, base_url }
+        
+        let redis = Arc::new(RedisClient::new().expect("Failed to create Redis client"));
+
+        Self { client, base_url, redis }
     }
     
     pub async fn get_transit_route(
+        &self,
+        from: &Location,
+        to: &Location,
+        departure_time: Option<DateTime<Utc>>,
+    ) -> Result<(Duration, f64, Vec<TransitStep>)> {
+        // Generate a cache key
+        let cache_key = self.generate_cache_key(from, to, departure_time);
+        
+        // Try to get from cache first
+        match self.redis.get::<CachedTransitResult>(&cache_key).await {
+            Some(cached) => {
+                info!("Cache hit for route: {}", cache_key);
+                // Verify the cached data is complete
+                if cached.steps.is_empty() {
+                    error!("Cached data has empty steps for key: {}", cache_key);
+                    // Fall through to recalculate
+                } else {
+                    return Ok((
+                        Duration::from_secs(cached.duration_secs),
+                        cached.distance,
+                        cached.steps,
+                    ));
+                }
+            }
+            None => {
+                info!("Cache miss for route: {}", cache_key);
+            }
+        }
+        
+        // If not in cache, calculate the route
+        let result = self.get_transit_route_uncached(from, to, departure_time).await?;
+        
+        // Cache the result for future requests
+        println!("Caching result: {:?}", result.2.clone());
+
+        if result.2.is_empty() {
+            error!("Calculated route has no steps, not caching");
+        } else {
+            let cache_data = CachedTransitResult {
+                duration_secs: result.0.as_secs(),
+                distance: result.1,
+                steps: result.2.clone(),
+            };
+            
+            // Debug log to check what we're caching
+            info!("Caching {} steps for key: {}", cache_data.steps.len(), cache_key);
+            
+            match self.redis.set(&cache_key, &cache_data, 900).await {
+                Ok(_) => info!("Successfully cached route with {} steps", cache_data.steps.len()),
+                Err(e) => error!("Failed to cache route: {}", e),
+            }
+        }
+        
+        
+        Ok(result)
+    }
+
+    pub async fn get_transit_route_uncached(
         &self,
         from: &Location,
         to: &Location,
@@ -233,6 +307,23 @@ impl GraphHopperClient {
             }
         }
     }
+
+    fn generate_cache_key(
+        &self, 
+        from: &Location, 
+        to: &Location, 
+        departure_time: Option<DateTime<Utc>>
+    ) -> String {
+        
+        format!(
+            "transit:{}:{}-{}:{}",
+            from.latitude,
+            from.longitude,
+            to.latitude,
+            to.longitude
+               )
+    }
+
     
     fn convert_pt_legs_to_steps(&self, legs: &[PtLeg]) -> Result<Vec<TransitStep>> {
         let mut steps = Vec::new();

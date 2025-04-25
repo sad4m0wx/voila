@@ -5,6 +5,7 @@ use geo_types::{MultiPoint, Point};
 use log::{debug, info};
 use std::time::Duration;
 use chrono::Utc;
+use futures::future::join_all;
 
 pub struct MeetingPointFinder;
 
@@ -99,7 +100,7 @@ impl MeetingPointFinder {
                         let route = Route {
                             id: id.clone(),
                             geometry: LineString::new(
-                                Self::extract_route_geometry(&steps, location, &candidate)
+                                Self::extract_route_geometry(&steps, &location, &candidate)
                             ),
                             steps,
                         };
