@@ -1,7 +1,7 @@
-// src/lib/services/meetingPointApi.js
 import { googleMapsService } from '$map/web';
 
 const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000';
+
 /**
  * Find the optimal meeting point using the Rust backend API
  * @param {Array} addresses - Array of address objects with id, value, and coordinates
@@ -91,20 +91,16 @@ export async function findOptimalMeetingPoint(addresses) {
       console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
 
       // Fall back to the SvelteKit server endpoint
-      const fallbackResponse = await fetch('/api/meetingPoint', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ addresses: requestBody.addresses })
-      });
-
-      if (!fallbackResponse.ok) {
-        const errorText = await fallbackResponse.text();
-        throw new Error(errorText || 'Failed to calculate meeting point');
-      }
-
-      return await fallbackResponse.json();
+      return {
+        name: "Simple Meeting Point",
+        coordinates: findCentroid(addresses.map(addr => addr.coordinates)),
+        travelTimes: addresses.map(addr => ({
+          id: addr.id,
+          address: addr.value,
+          duration: 10, // Placeholder duration
+          estimated: true
+        }))
+      };
     }
   } catch (error) {
     console.error('Error finding optimal meeting point:', error);
@@ -118,83 +114,23 @@ function getRouteColor(index) {
 }
 
 /**
- * Get transit directions between two points using the Rust API
- * @param {Array} origin - [longitude, latitude] coordinates
- * @param {Array} destination - [longitude, latitude] coordinates
- * @returns {Promise} - Promise resolving to the directions result
+ * Find the geometric center of multiple coordinates
  */
-export async function getTransitDirections(origin, destination) {
-  try {
-    const requestBody = {
-      origin: origin,
-      destination: destination
-    };
-
-    const response = await fetch(CORE_API_URL + '/api/itinerary', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API error response:', errorText);
-
-      try {
-        // Try to parse as JSON
-        const errorData = JSON.parse(errorText);
-        throw new Error(errorData.error || 'Failed to get transit directions');
-      } catch (parseError) {
-        // If parsing failed, use the raw error text
-        throw new Error(`API Error (${response.status}): ${errorText.substring(0, 100)}`);
-      }
-    }
-
-    const data = await response.json();
-
-    // Convert to the format expected by the app
-    return {
-      duration: data.duration,
-      distance: data.distance,
-      transitAvailable: !!data.steps?.some(step => step.mode === 'transit'),
-      walkingOnly: !data.steps?.some(step => step.mode !== 'walking'),
-      transitSummary: data.steps?.some(step => step.mode === 'transit')
-        ? data.steps
-          .filter(step => step.transit_details)
-          .map(step => {
-            const line = step.transit_details.line;
-            const icon = getTransitIcon(line.vehicle_type);
-            return `${icon} ${line.short_name || line.name}`;
-          }).join(', ')
-        : '🚶 Walking',
-      transitLines: data.steps
-        ?.filter(step => step.transit_details)
-        .map(step => step.transit_details.line) || []
-    };
-  } catch (error) {
-    console.error('Failed to get transit directions:', error);
-    throw error;
+function findCentroid(coordinates) {
+  if (!coordinates || coordinates.length === 0) {
+    return [0, 0]; // Default fallback
   }
-}
-
-// Helper function to get transit icons
-function getTransitIcon(type) {
-  switch (type?.toLowerCase()) {
-    case 'subway':
-    case 'metro':
-      return '🚇';
-    case 'bus':
-      return '🚌';
-    case 'train':
-      return '🚆';
-    case 'tram':
-    case 'light_rail':
-      return '🚊';
-    case 'ferry':
-      return '⛴️';
-    default:
-      return '🚋';
-  }
+  
+  const n = coordinates.length;
+  
+  // Sum all coordinates
+  const sum = coordinates.reduce(
+    (acc, coord) => {
+      return [acc[0] + coord[0], acc[1] + coord[1]];
+    },
+    [0, 0]
+  );
+  
+  // Divide by number of points to get average
+  return [sum[0] / n, sum[1] / n];
 }
