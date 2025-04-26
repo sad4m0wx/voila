@@ -22,5 +22,14 @@ export default defineConfig({
 		outDir: 'dist',
 		// Ensure assets use relative paths
 		assetsInlineLimit: 0,
+		rollupOptions: {
+			output: {
+			  manualChunks: {
+				'vendor': ['firebase', 'svelte'],
+				'maps': ['@googlemaps/js-api-loader'],
+				'mobile': [/mobile\/.*\.svelte$/]
+			  }
+			}
+		  }
 	}
 });
