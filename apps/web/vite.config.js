@@ -22,7 +22,7 @@ export default defineConfig({
 		outDir: 'dist',
 		// Ensure assets use relative paths
 		assetsInlineLimit: 0,
-		rollupOptions: {
+		/*rollupOptions: {
 			output: {
 			  manualChunks: {
 				'vendor': ['firebase', 'svelte'],
@@ -30,6 +30,6 @@ export default defineConfig({
 				'mobile': [/mobile\/.*\.svelte$/]
 			  }
 			}
-		  }
+		  }*/
 	}
 });
