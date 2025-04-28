@@ -3,7 +3,6 @@
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
-    import AuthProvider from '$lib/components/auth/AuthProvider.svelte';
     import { authStore, isAuthenticated, isLoading as authLoading } from '$stores/auth';
     import { 
       sendRequest, 
@@ -215,7 +214,7 @@
     <meta name="description" content="View user profile on Voilà" />
   </svelte:head>
   
-  <AuthProvider>
+
     <div class="user-profile-page">
       {#if loading}
         <div class="loading-state">
@@ -425,7 +424,7 @@
         {/if}
       {/if}
     </div>
-  </AuthProvider>
+
   
   <style>
     .user-profile-page {
