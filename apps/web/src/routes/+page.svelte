@@ -6,6 +6,7 @@
   import { isAuthenticated } from "$stores/auth";
   import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
+  import MobileHeader from "$lib/components/mobile/MobileHeader.svelte";
   
   // State
   let addresses = [{ id: 1, value: '', coordinates: null }];
@@ -104,6 +105,14 @@
   
   function toggleResults() {
     showResults = !showResults;
+    if (showResults) {
+      // Scroll to the results section
+      const resultsSection = document.querySelector('.results-section');
+      resultsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      // Scroll back to the top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }
 </script>
 
@@ -111,7 +120,11 @@
   <title>Voilà! | Find the perfect place to meet</title>
 </svelte:head>
 
+
 <div class="bg-gradient-to-b from-primary-50 to-white">
+  {#if isMobile}
+    <MobileHeader />
+  {:else}
   <div class="container mx-auto px-4 py-12 md:py-20">
     <div class="text-center max-w-3xl mx-auto mb-12">
       <div class="flex justify-center items-center mb-4">
@@ -126,8 +139,8 @@
         </div>
       {/if}
     </div>
-
-    
+  </div>
+  {/if}
     <div class="max-w-4xl mx-auto">
       <MapProvider>
         <div slot="loading" class="text-center py-10">
@@ -145,8 +158,6 @@
         
         <!-- Address Entry Card -->
         <div class="card p-4 md:p-6 mb-6 shadow-md">
-          <h2 class="text-xl font-semibold mb-6">Enter Addresses</h2>
-          
           {#if error}
             <div class="alert alert-error mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" class="alert-icon" viewBox="0 0 20 20" fill="currentColor">
@@ -226,7 +237,7 @@
           
           {#if isMobile && meetingPoint}
             <button 
-              class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-10 
+              class="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-10 
                      bg-white shadow-lg rounded-full py-2 px-6 flex items-center
                      border border-neutral-200"
               on:click={toggleResults}
@@ -294,4 +305,3 @@
       </MapProvider>
     </div>
   </div>
-</div>

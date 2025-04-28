@@ -3,7 +3,7 @@
   import '../app.css';
   import Navbar from '$lib/components/Navbar.svelte';
   import AuthProvider from '$lib/components/auth/AuthProvider.svelte';
-  import MobileNavbar from '$lib/components/MobileNavbar.svelte';
+  import MobileNavbar from '$lib/components/mobile/MobileNavbar.svelte';
   import { onMount } from 'svelte';
   import { isMobileDevice } from '$lib/services/responsive';
   
