@@ -1,8 +1,6 @@
-<!-- src/routes/+page.svelte -->
 <script>
   import { onMount } from "svelte";
-  import { MapProvider, AddressInput, MapContainer } from '$map/web';
-  import { googleMapsService } from '$map/web';
+  import { MapProvider, AddressInput, MapContainer, googleMapsService, isGoogleMapsLoaded } from '$map';
   import { isAuthenticated } from "$stores/auth";
   import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
@@ -62,7 +60,7 @@
         throw new Error("All addresses must be filled");
       }
       
-      if (!googleMapsService.isReady()) {
+      if (!isGoogleMapsLoaded()) {
         throw new Error("Map is not ready yet. Please wait a moment and try again.");
       }
       

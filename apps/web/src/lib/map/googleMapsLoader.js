@@ -116,26 +116,6 @@ export function loadGoogleMapsScript(apiKey = null) {
 }
 
 /**
- * Wait for Google Maps to be available
- * @param {number} [timeoutMs=10000] - Timeout in milliseconds
- * @returns {Promise<any>} - Promise resolving to window.google
- */
-export async function waitForGoogleMaps(timeoutMs = 10000) {
-    // If already loaded, return immediately
-    if (isGoogleMapsLoaded()) {
-        return window.google;
-    }
-
-    // If we're in the process of loading, wait for the promise to resolve
-    if (mapsLoadState.isLoading && mapsLoadState.loadPromise) {
-        return mapsLoadState.loadPromise;
-    }
-
-    // Otherwise, fail as we should have started loading first
-    throw new Error('Google Maps not loading. Call loadGoogleMapsScript first.');
-}
-
-/**
  * Reset the loader state (primarily for testing)
  * @private
  */

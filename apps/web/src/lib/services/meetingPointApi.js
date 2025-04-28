@@ -1,4 +1,4 @@
-import { googleMapsService } from '$map/web';
+import { googleMapsService } from '$map';
 
 const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000';
 
