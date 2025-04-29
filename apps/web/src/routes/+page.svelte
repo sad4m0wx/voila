@@ -130,12 +130,6 @@
         <h1 class="text-4xl md:text-5xl font-bold text-primary-700">Voilà!</h1>
       </div>
       <p class="text-xl md:text-2xl text-neutral-700 mb-6">Find the perfect place to meet with your friends.</p>
-      {#if !$isAuthenticated}
-        <div class="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-          <a href="/register" class="btn btn-primary">Create Account</a>
-          <a href="/login" class="btn btn-outline">Sign In</a>
-        </div>
-      {/if}
     </div>
   </div>
   {/if}

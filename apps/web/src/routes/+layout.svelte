@@ -1,10 +1,9 @@
-<!-- src/routes/+layout.svelte -->
 <script>
   import "../app.css";
   import Navbar from "$lib/components/Navbar.svelte";
   import AuthProvider from "$lib/components/auth/AuthProvider.svelte";
   import MobileNavbar from "$lib/components/mobile/MobileNavbar.svelte";
-  import { onMount } from "svelte";
+  import { onMount, setContext } from "svelte";
 
   let isMobile = false;
 
@@ -19,6 +18,8 @@
       /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     );
   }
+
+  setContext("isMobile", isMobile);
 </script>
 
 <AuthProvider>

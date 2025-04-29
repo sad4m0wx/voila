@@ -3,13 +3,13 @@
   import Navbar from "$lib/components/Navbar.svelte";
   import { onMount } from "svelte";
   import { page } from "$app/stores";
-  import { authStore } from "$stores/auth";
-  import { goto } from "$app/navigation";
+  import AuthProvider from "$lib/components/auth/AuthProvider.svelte";
   
+  const { user, profile, isLoading } = getContext('auth');
+
   // Group data
   let group = null;
   let members = [];
-  let isLoading = true;
   let error = null;
   
   // Group settings
@@ -24,14 +24,8 @@
   let calculationError = null;
   
   onMount(async () => {
-    // Redirect if not logged in
-    if (!$authStore.user) {
-      goto("/login?redirect=" + $page.url.pathname);
-      return;
-    }
     
     const groupId = $page.params.id;
-    isLoading = true;
     
     try {
       // Simulate API calls
@@ -66,9 +60,7 @@
     } catch (err) {
       error = "Failed to load group data";
       console.error(err);
-    } finally {
-      isLoading = false;
-    }
+    } 
   });
   
   // Calculate optimal meeting point
@@ -155,6 +147,7 @@
 
 <Navbar />
 
+<AuthProvider requireAuth={true}>
 <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
   {#if isLoading}
     <div class="flex justify-center items-center h-64">
@@ -469,3 +462,4 @@
     {/if}
   {/if}
 </main>
+</AuthProvider>
