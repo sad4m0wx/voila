@@ -1,7 +1,7 @@
 graphhopper:
-  datareader.file: /data/osm/ile-de-france-latest.osm.pbf  # https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
+  datareader.file: /data/osm/ile-de-france-foot-transit.osm.pbf  # https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
   graph.location: /data/graphs
-  gtfs.file: /data/gtfs/IDFM-gtfs.zip   # https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip
+  gtfs.file: /data/gtfs/simplified-idfm-gtfs.zip   # https://www.data.gouv.fr/fr/datasets/r/f9fff5b1-f9e4-4ec2-b8b3-8ad7005d869c
   import.osm.ignored_highways: motorway,trunk
   profiles:
     - name: foot
@@ -13,7 +13,8 @@ graphhopper:
     - profile: foot
     - profile: pt
   graph.encoded_values: foot_access, foot_average_speed, foot_priority, foot_road_access, hike_rating, mtb_rating, country, road_class
-
+  graph.dataaccess: MMAP_STORE
+  
   prepare.min_network_size: 200
   prepare.min_one_way_network_size: 0
   

@@ -1,4 +1,4 @@
 
 /default-gh/
-/osm/
-/gtfs/
+/osm/*.osm.pbf
+/gtfs/*.zip

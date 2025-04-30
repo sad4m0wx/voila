@@ -1,0 +1,34 @@
+{
+    "tags": {
+      "keep_nodes": [
+        "railway",
+        "public_transport",
+        "amenity=bus_station",
+        "highway=bus_stop"
+      ],
+      "keep_ways": [
+        "highway=pedestrian",
+        "highway=footway",
+        "highway=path",
+        "highway=steps",
+        "highway=residential",
+        "highway=unclassified",
+        "highway=tertiary",
+        "highway=service",
+        "railway",
+        "public_transport"
+      ],
+      "drop_ways": [
+        "highway=motorway",
+        "highway=motorway_link",
+        "highway=trunk",
+        "highway=trunk_link", 
+        "highway=primary",
+        "highway=primary_link",
+        "highway=secondary",
+        "highway=secondary_link",
+        "highway=track",
+        "access=private"
+      ]
+    }
+  }
