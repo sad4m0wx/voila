@@ -24,7 +24,7 @@ services:
     volumes:
       - ./graphhopper-data:/data
     environment:
-      - JAVA_OPTS=-Xmx7g -Xms5g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      - JAVA_OPTS=-Xmx14g -Xms12g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
       - GRAPHHOPPER_OPTS=-Dgraphhopper.graph.flagEncoders=foot,pt|turn_costs=true
     command: >
       --config /data/config.yml
