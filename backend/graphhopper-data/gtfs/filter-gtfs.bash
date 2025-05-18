@@ -10,7 +10,7 @@ OUTPUT_FILE="simplified-idfm-gtfs.zip"
 # -e: Default-value error handling
 
 echo "Processing GTFS feed: $INPUT_GTFS"
-gtfstidy -T -c -m -e $INPUT_GTFS -o $OUTPUT_FILE
+gtfstidy -T -c -m -e -D -R -C $INPUT_GTFS -o $OUTPUT_FILE
 
 # Verify the file was created
 if [ -f "$OUTPUT_FILE" ]; then
