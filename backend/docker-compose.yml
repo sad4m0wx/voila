@@ -1,42 +1,47 @@
 services:
-  
+
+  rust-api:
+    build: ./core-api
+    restart: always
+    ports:
+      - "3000:3000" 
+    depends_on:
+      - graphhopper
+      - redis
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - GRAPHHOPPER_URL=http://graphhopper:8989
+      - REDIS_URL=redis://redis:6379
+    networks:
+      - voila-network
+
   graphhopper:
     image: israelhikingmap/graphhopper:latest
+    restart: always
     ports:
-      - "8989:8989"
+      - "8989:8989"  # Directly expose the API port for testing
     volumes:
       - ./graphhopper-data:/data
     environment:
-      - JAVA_OPTS=-Xmx8g -Xms3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      - JAVA_OPTS=-Xmx7g -Xms5g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
       - GRAPHHOPPER_OPTS=-Dgraphhopper.graph.flagEncoders=foot,pt|turn_costs=true
     command: >
       --config /data/config.yml
+    networks:
+      - voila-network
 
   redis:
     image: redis:alpine
-    ports:
-      - "6379:6379"
+    restart: always
     volumes:
       - redis-data:/data
-    restart: always
-    depends_on:
-      - graphhopper
+    networks:
+      - voila-network
+
+networks:
+  voila-network:
+    
 
 volumes:
   redis-data:
-
-      
-    
-
-#  rust-api:
-#    build: ./core-api
-#    ports:
-#     - "3000:3000"
-#    depends_on:
-#      - graphhopper
-#    volumes:
-#      - ./core-api:/usr/src/core-api
-#    environment:
-#      - GRAPHHOPPER_URL=http://localhost:8989
-#      - REDIS_URL=redis://redis:6379
-#   restart: always
