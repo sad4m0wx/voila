@@ -31,8 +31,17 @@ graphhopper:
   datareader:
       gtfs:
         base-osm-filter: true
-        max-wait-time: 900  # seconds
+        max-wait-time: 300  # seconds
         walk-speed: 5.0
+        use-optimized-transfers: true  
+        transfers-min-transfer-time: 60
+
+        cluster-stops: true  
+        cluster-stops-max-distance: 100  # meters
+        cluster-stops-max-transfer-time: 90
+        fare-approximation: false
+        transfer-time-cutoff: 1800
+        memory-mapped: true
 
 server:
   application_connectors:
