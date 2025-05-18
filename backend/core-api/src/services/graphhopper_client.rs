@@ -11,10 +11,14 @@ use log::{error,info};
 use std::time::Instant;
 use crate::services::redis_client::{RedisClient};
 use std::sync::Arc;
-
+use tokio::sync::Semaphore;
+use once_cell::sync::Lazy;
 
 use crate::models::location::Location;
 use crate::models::transit::{TransitDetails, TransitLine, TransitStep, GeoJson};
+
+
+static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {Semaphore::new(20)});
 
 #[derive(Debug, Serialize)]
 struct GraphHopperRequest {
@@ -183,7 +187,7 @@ impl GraphHopperClient {
             
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
-            .pool_max_idle_per_host(10) 
+            .pool_max_idle_per_host(20) 
             .pool_idle_timeout(Duration::from_secs(60))
             .tcp_keepalive(Duration::from_secs(30))
             .build()
@@ -224,11 +228,13 @@ impl GraphHopperClient {
             }
         }
         
+        let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
         // If not in cache, calculate the route
-        let result = self.get_transit_route_uncached(from, to, departure_time).await?;
+        let result = self.get_transit_route_uncached(from, to, departure_time).await;
+        drop(permit);
+        let result = result?;
         
         // Cache the result for future requests
-        println!("Caching result: {:?}", result.2.clone());
 
         if result.2.is_empty() {
             error!("Calculated route has no steps, not caching");
@@ -239,15 +245,11 @@ impl GraphHopperClient {
                 steps: result.2.clone(),
             };
             
-            // Debug log to check what we're caching
-            info!("Caching {} steps for key: {}", cache_data.steps.len(), cache_key);
-            
             match self.redis.set(&cache_key, &cache_data, 900).await {
-                Ok(_) => info!("Successfully cached route with {} steps", cache_data.steps.len()),
+                Ok(_) => info!("Cached route: {}", cache_key),
                 Err(e) => error!("Failed to cache route: {}", e),
             }
         }
-        
         
         Ok(result)
     }
@@ -258,7 +260,7 @@ impl GraphHopperClient {
         to: &Location,
         departure_time: Option<DateTime<Utc>>,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
-        // Default to current time if not provided
+
         let departure = departure_time
             .unwrap_or_else(Utc::now)
             .to_rfc3339();
@@ -281,7 +283,7 @@ impl GraphHopperClient {
             .send()
             .await?;
         
-        let mut elapsed_time = start_time.elapsed(); 
+        let elapsed_time = start_time.elapsed(); 
         info!("Request to GraphHopper took {:?}", elapsed_time);
 
         let response_text = response.text().await?;
