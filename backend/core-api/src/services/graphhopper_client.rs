@@ -18,7 +18,7 @@ use crate::models::location::Location;
 use crate::models::transit::{TransitDetails, TransitLine, TransitStep, GeoJson};
 
 
-static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {Semaphore::new(20)});
+static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {Semaphore::new(30)});
 
 #[derive(Debug, Serialize)]
 struct GraphHopperRequest {
@@ -187,7 +187,7 @@ impl GraphHopperClient {
             
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
-            .pool_max_idle_per_host(20) 
+            .pool_max_idle_per_host(30) 
             .pool_idle_timeout(Duration::from_secs(60))
             .tcp_keepalive(Duration::from_secs(30))
             .build()
