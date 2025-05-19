@@ -1,8 +1,8 @@
 graphhopper:
   datareader.file: /data/osm/ile-de-france-foot-transit.osm.pbf  # https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
   graph.location: /data/graphs
-  gtfs.file: /data/gtfs/simplified-idfm-gtfs.zip   # https://www.data.gouv.fr/fr/datasets/r/f9fff5b1-f9e4-4ec2-b8b3-8ad7005d869c
-  import.osm.ignored_highways: motorway,trunk
+  gtfs.file: /data/gtfs/IDFM-gtfs-filtered.zip   # https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip
+  import.osm.ignored_highways: motorway,trunk,primary,secondary
   profiles:
     - name: foot
       custom_model_files:
@@ -22,29 +22,40 @@ graphhopper:
   gtfs.max_transfer_distance: 400
   gtfs.walk_speed: 5.0
   gtfs.data_import: true
+  
 
+  gtfs.create_virtual_schedule: true  # Creates synthetic schedules
+  gtfs.default_headway: 300  # 5-minute default frequency
+  
   graph.do_sort: true
   graph.optimize_storage: true
-
   graph.import_threads: 4
   
   datareader:
-      gtfs:
-        base-osm-filter: true
-        max-wait-time: 300  # seconds
-        walk-speed: 5.0
-        use-optimized-transfers: true  
-        transfers-min-transfer-time: 60
+    gtfs:
+      base-osm-filter: true
+      max-wait-time: 600  # Increased since we're using approximations
+      walk-speed: 5.0
+      use-optimized-transfers: true
+      transfers-min-transfer-time: 60
+      
 
-        cluster-stops: true  
-        cluster-stops-max-distance: 100  # meters
-        cluster-stops-max-transfer-time: 90
-        fare-approximation: false
-        transfer-time-cutoff: 1800
-        memory-mapped: true
+      cluster-stops: true
+      cluster-stops-max-distance: 50  # Reduced clustering
+      cluster-stops-max-transfer-time: 60
+      fare-approximation: false
+      memory-mapped: true
+      skip-stops-outside-border: true
+      
+      skip-shapes: true
+      generate-synthetic-schedule: true
+      default-service-frequency: 300  # 5 minutes
 
 server:
   application_connectors:
     - type: http
       port: 8989
       bind_host: 0.0.0.0
+  request_log:
+    appenders: []
+  max_threads: 32
