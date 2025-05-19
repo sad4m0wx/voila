@@ -12,14 +12,14 @@ graphhopper:
   profiles_ch:
     - profile: foot
     - profile: pt
-  graph.encoded_values: foot_access, foot_average_speed, foot_priority, foot_road_access, hike_rating, mtb_rating, country, road_class
+  graph.encoded_values: foot_access, foot_average_speed, foot_priority, foot_road_access, hike_rating, mtb_rating, country, road_class, road_environment
   graph.dataaccess: MMAP_STORE
   
   prepare.min_network_size: 200
   prepare.min_one_way_network_size: 0
   
   # GTFS-specific settings optimized for frequency-based routing
-  gtfs.max_transfer_distance: 400
+  gtfs.max_transfer_distance: 800  
   gtfs.walk_speed: 5.0
   gtfs.data_import: true
   
@@ -43,20 +43,20 @@ graphhopper:
       use-optimized-transfers: true  
       transfers-min-transfer-time: 60
       
-      # Frequency-based optimizations
       use-frequencies: true
-      ignore-stop-times: false  # Keep minimal stop_times for connectivity
-      default-headway: 600  # Default 10-minute headway
+      ignore-stop-times: false 
+      default-headway: 600 
       
-      # Clustering and simplification
-      cluster-stops: true  
-      cluster-stops-max-distance: 100
-      cluster-stops-max-transfer-time: 90
+      
+      max-transfer-distance: 800  
+      create-walk-connections: true 
+      cluster-stops: false 
+      
       fare-approximation: false
       transfer-time-cutoff: 1200
       memory-mapped: true
       skip-stops-outside-border: true
-      skip-shapes: false  # Keep shapes for route visualization
+      skip-shapes: false 
       skip-trips-without-shapes: false
 
 server:
