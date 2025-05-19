@@ -2,11 +2,16 @@ use crate::models::location::{AddressInput, Location, MeetingPoint, TravelTime, 
 use crate::services::graphhopper_client::GraphHopperClient;
 use geo::algorithm::centroid::Centroid;
 use geo_types::{MultiPoint, Point};
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::time::Duration;
 use chrono::Utc;
 use futures::future::{join_all, try_join_all};
 use std::sync::Arc;
+use std::collections::HashMap;
+use tokio::time::timeout;
+
+const GRAPHHOPPER_TIMEOUT: Duration = Duration::from_secs(30); // Max 5s per route
+const MAX_CANDIDATES: usize = 5; // Never more than 3 candidates
 
 pub struct MeetingPointFinder;
 
@@ -38,203 +43,74 @@ impl MeetingPointFinder {
             return Err(anyhow::anyhow!("At least two valid locations are required"));
         }
 
-        // Start with a simple geometric center (centroid)
-        let centroid = Self::find_centroid(&locations);
-        info!("Initial centroid: {:?}", centroid);
-
-        // Find POIs near the centroid that could serve as good meeting points
-        let candidate_points = Self::generate_candidate_points(&centroid);
-        info!("Generated {} candidate points", candidate_points.len());
-
+        // Simple approach: just 3 candidates maximum
+        let candidates = Self::generate_minimal_candidates(&locations);
         let graphhopper = Arc::new(GraphHopperClient::new());
         let departure = departure_time.map(|ts| 
             chrono::DateTime::<Utc>::from_timestamp(ts, 0).unwrap()
         );
 
-        let mut best_point = centroid.clone();
-        let mut best_score = f64::MAX;
-        let mut best_travel_times = Vec::new();
-        let mut best_routes = Vec::new();
+        info!("Evaluating {} candidates for {} addresses", candidates.len(), locations.len());
 
-        // Process candidates in parallel
-        let candidate_results = join_all(candidate_points.iter().map(|candidate| {
-            let candidate = candidate.clone();
+        // Evaluate all candidates in parallel with timeout protection
+        let candidate_futures: Vec<_> = candidates.into_iter().map(|candidate| {
             let locations = locations.clone();
             let graphhopper = Arc::clone(&graphhopper);
             let departure = departure.clone();
-
+            
             async move {
-                let mut total_time = 0.0;
-                let mut travel_times = Vec::new();
-                let mut routes = Vec::new();
-
-                // Process all routes to this candidate in parallel
-                let route_results: Vec<Result<(TravelTime, Route, f64), _>> = join_all(locations.iter().map(|(id, location)| {
-                    let id = id.clone();
-                    let location = location.clone();
-                    let candidate = candidate.clone();
-                    let graphhopper = Arc::clone(&graphhopper);
-                    let departure = departure.clone();
-                    
-                    async move {
-                        match graphhopper.get_transit_route(&location, &candidate, departure).await {
-                            Ok((duration, distance, steps)) => {
-                                let duration_minutes = duration.as_secs() as f64 / 60.0;
-                                
-                                // Create transit summary
-                                let transit_summary = if steps.iter().any(|s| s.mode == "transit") {
-                                    steps.iter()
-                                        .filter(|s| s.mode == "transit" && s.transit_details.is_some())
-                                        .map(|s| {
-                                            if let Some(details) = &s.transit_details {
-                                                format!("{} {}", 
-                                                    Self::get_transit_icon(&details.line.vehicle_type),
-                                                    details.line.short_name.as_deref().unwrap_or(&details.line.name)
-                                                )
-                                            } else {
-                                                String::new()
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join(", ")
-                                } else {
-                                    "🚶 Walking".to_string()
-                                };
-
-                                let travel_time = TravelTime {
-                                    id: id.clone(),
-                                    address: location.address.clone().unwrap_or_default(),
-                                    duration: duration_minutes.round() as u32,
-                                    distance,
-                                    estimated: false,
-                                    transit_summary: Some(transit_summary),
-                                };
-
-                                // Create route with steps
-                                let route = Route {
-                                    id: id.clone(),
-                                    geometry: LineString::new(
-                                        Self::extract_route_geometry(&steps, &location, &candidate)
-                                    ),
-                                    steps,
-                                };
-                                
-                                Ok::<(TravelTime, Route, f64), Box<dyn std::error::Error>>((travel_time, route, duration_minutes))
-
-                            }
-                            Err(_) => {
-                                // Fallback to direct distance if transit routing fails
-                                let distance = location.distance_to(&candidate);
-                                let avg_speed_ms = 5.0 * 1000.0 / 3600.0; // 5 km/h walking speed
-                                let duration_seconds = distance / avg_speed_ms;
-                                let duration_minutes = duration_seconds / 60.0;
-
-                                let travel_time = TravelTime {
-                                    id: id.clone(),
-                                    address: location.address.clone().unwrap_or_default(),
-                                    duration: duration_minutes.round() as u32,
-                                    distance,
-                                    estimated: true,
-                                    transit_summary: Some("🚶 Walking (estimated)".to_string()),
-                                };
-
-                                // Create fallback route with just start and end points
-                                let route = Route {
-                                    id: id.clone(),
-                                    geometry: LineString::new(vec![
-                                        (location.longitude, location.latitude),
-                                        (candidate.longitude, candidate.latitude),
-                                    ]),
-                                    steps: vec![],
-                                };
-                                
-                                Ok((travel_time, route, duration_minutes))
-                            }
-                        }
-                    }
-                })).await;
-                
-                // Process results
-                for result in route_results {
-                    if let Ok((travel_time, route, duration_minutes)) = result {
-                        total_time += duration_minutes;
-                        travel_times.push(travel_time);
-                        routes.push(route);
+                // Wrap the entire evaluation in a timeout
+                match timeout(
+                    Duration::from_secs(30), // Max 15s total per candidate
+                    Self::evaluate_candidate_fast(candidate, locations, graphhopper, departure)
+                ).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        warn!("Candidate evaluation timed out");
+                        Err(anyhow::anyhow!("Evaluation timeout"))
                     }
                 }
-
-                (candidate, total_time, travel_times, routes)
             }
-        })).await;
+        }).collect();
 
-        // Find the best candidate
-        for (candidate, score, travel_times, routes) in candidate_results {
-            if score < best_score {
-                best_score = score;
-                best_point = candidate;
-                best_travel_times = travel_times;
-                best_routes = routes;
+        let results = join_all(candidate_futures).await;
+        
+        // Find best result or use fallback
+        let mut best_result = None;
+        let mut best_score = f64::MAX;
+
+        for result in results {
+            if let Ok((meeting_point, routes, score)) = result {
+                if score < best_score {
+                    best_score = score;
+                    best_result = Some((meeting_point, routes));
+                }
             }
         }
 
-        let meeting_point = MeetingPoint {
-            name: "Optimal Transit Meeting Point".to_string(),
-            coordinates: (best_point.longitude, best_point.latitude),
-            travel_times: best_travel_times,
-        };
-
-        Ok((meeting_point, best_routes))
-    }
-
-
-    fn get_transit_icon(vehicle_type: &str) -> &'static str {
-        match vehicle_type.to_lowercase().as_str() {
-            "subway" | "metro" => "🚇",
-            "bus" => "🚌",
-            "train" | "rail" => "🚆",
-            "tram" | "light_rail" => "🚊",
-            "ferry" => "⛴️",
-            _ => "🚋",
+        match best_result {
+            Some((meeting_point, routes)) => Ok((meeting_point, routes)),
+            None => {
+                warn!("All candidates failed, using geometric fallback");
+                Self::geometric_fallback(&locations)
+            }
         }
     }
 
-
-    fn extract_route_geometry(
-        steps: &[crate::models::transit::TransitStep],
-        from: &Location,
-        to: &Location,
-    ) -> Vec<(f64, f64)> {
-        let mut coordinates = Vec::new();
+    fn generate_minimal_candidates(locations: &[(String, Location)]) -> Vec<Location> {
+        // Just use 3 simple candidates
+        let centroid = Self::geometric_centroid(locations);
         
-        // Start with the origin
-        coordinates.push((from.longitude, from.latitude));
-        
-        // Extract coordinates from steps if available
-        for step in steps {
-            if let Some(geometry) = &step.geometry {
-                coordinates.extend(geometry.coordinates.iter().map(|coord| {
-                    (coord[0], coord[1])
-                }));
-            }
-        }
-        // End with the destination
-        coordinates.push((to.longitude, to.latitude));
-        
-        // Remove duplicates while preserving order
-        let mut unique_coords = Vec::new();
-        let mut last_coord: Option<(f64, f64)> = None;
-        
-        for &coord in &coordinates {
-            if last_coord.map_or(true, |last| last != coord) {
-                unique_coords.push(coord);
-                last_coord = Some(coord);
-            }
-        }
-        
-        unique_coords
+        vec![
+            centroid.clone(),
+            // One point 500m north
+            Location::new(centroid.latitude + 0.0045, centroid.longitude),
+            // One point 500m east  
+            Location::new(centroid.latitude, centroid.longitude + 0.0045),
+        ]
     }
 
-    fn find_centroid(locations: &[(String, Location)]) -> Location {
+    fn geometric_centroid(locations: &[(String, Location)]) -> Location {
         let points: Vec<Point<f64>> = locations
             .iter()
             .map(|(_, loc)| loc.to_point())
@@ -242,43 +118,209 @@ impl MeetingPointFinder {
 
         let multi_point = MultiPoint::new(points);
         let centroid_point = multi_point.centroid().unwrap();
-                
         Location::new(centroid_point.y(), centroid_point.x())
     }
 
-    fn generate_candidate_points(initial_point: &Location) -> Vec<Location> {
-        //TODO: BETTER
-        // In a real implementation, you would:
-        // 1. Query for transit stations near the initial point
-        // 2. Add popular meeting places (cafes, libraries, etc.)
-        // For now, we'll just use the initial point and some nearby points
-        
-        let mut candidates = vec![initial_point.clone()];
-        
-        // Create a grid of points around the centroid
-        // Covering approximately a 1km radius (0.01 degrees is roughly 1.11km)
-        let grid_size = 5; // 5x5 grid
-        let step = 0.002; // About 200m per step
-        
-        for i in -(grid_size/2)..(grid_size/2 + 1) {
-            for j in -(grid_size/2)..(grid_size/2 + 1) {
-                // Skip the center point as we already added it
-                if i == 0 && j == 0 {
-                    continue;
+    async fn evaluate_candidate_fast(
+        candidate: Location,
+        locations: Vec<(String, Location)>,
+        graphhopper: Arc<GraphHopperClient>,
+        departure: Option<chrono::DateTime<Utc>>,
+    ) -> anyhow::Result<(MeetingPoint, Vec<Route>, f64)> {
+        // Process ALL routes in parallel with individual timeouts
+        let route_futures: Vec<_> = locations.into_iter().map(|(id, location)| {
+            let candidate = candidate.clone();
+            let graphhopper = Arc::clone(&graphhopper);
+            let departure = departure.clone();
+            
+            async move {
+                // Individual timeout per route
+                let route_result = timeout(
+                    GRAPHHOPPER_TIMEOUT,
+                    graphhopper.get_transit_route(&location, &candidate, departure)
+                ).await;
+
+                match route_result {
+                    Ok(Ok((duration, distance, steps))) => {
+                        // Success case
+                        let duration_minutes = duration.as_secs() as f64 / 60.0;
+                        
+                        let transit_summary = Self::build_transit_summary(&steps);
+                        
+                        let travel_time = TravelTime {
+                            id: id.clone(),
+                            address: location.address.clone().unwrap_or_default(),
+                            duration: duration_minutes.round() as u32,
+                            distance,
+                            estimated: false,
+                            transit_summary: Some(transit_summary),
+                        };
+
+                        let route = Route {
+                            id: id.clone(),
+                            geometry: LineString::new(Self::simple_geometry(&steps, &location, &candidate)),
+                            steps,
+                        };
+                        
+                        (travel_time, route, duration_minutes, false)
+                    }
+                    _ => {
+                        // Timeout or error - use geometric fallback
+                        let distance = location.distance_to(&candidate);
+                        let duration_minutes = distance / (5.0 * 1000.0 / 60.0); // 5 km/h walking
+                        
+                        let travel_time = TravelTime {
+                            id: id.clone(),
+                            address: location.address.clone().unwrap_or_default(),
+                            duration: duration_minutes.round() as u32,
+                            distance,
+                            estimated: true,
+                            transit_summary: Some("🚶 Walking (estimated)".to_string()),
+                        };
+
+                        let route = Route {
+                            id: id.clone(),
+                            geometry: LineString::new(vec![
+                                (location.longitude, location.latitude),
+                                (candidate.longitude, candidate.latitude),
+                            ]),
+                            steps: vec![],
+                        };
+                        
+                        (travel_time, route, duration_minutes, true)
+                    }
                 }
-                
-                // Add a point with offset from the centroid
-                candidates.push(Location::new(
-                    initial_point.latitude + (i as f64 * step),
-                    initial_point.longitude + (j as f64 * step),
-                ));
+            }
+        }).collect();
+
+        // Wait for all routes to complete
+        let route_results = join_all(route_futures).await;
+        
+        let mut travel_times = Vec::new();
+        let mut routes = Vec::new();
+        let mut total_time = 0.0;
+        let mut estimated_count = 0;
+
+        for (travel_time, route, duration_minutes, is_estimated) in route_results {
+            travel_times.push(travel_time);
+            routes.push(route);
+            total_time += duration_minutes;
+            if is_estimated {
+                estimated_count += 1;
+            }
+        }
+
+        // Calculate score with penalty for estimates
+        let avg_time = total_time / travel_times.len() as f64;
+        let estimation_penalty = estimated_count as f64 * 10.0; // 10 min penalty per estimate
+        let score = avg_time + estimation_penalty;
+
+        let meeting_point = MeetingPoint {
+            name: if estimated_count == 0 {
+                "Optimal Transit Meeting Point".to_string()
+            } else {
+                format!("Meeting Point ({} estimated)", estimated_count)
+            },
+            coordinates: (candidate.longitude, candidate.latitude),
+            travel_times,
+        };
+
+        Ok((meeting_point, routes, score))
+    }
+
+    fn build_transit_summary(steps: &[crate::models::transit::TransitStep]) -> String {
+        let transit_steps: Vec<String> = steps
+            .iter()
+            .filter(|s| s.mode == "transit" && s.transit_details.is_some())
+            .map(|s| {
+                if let Some(details) = &s.transit_details {
+                    format!("{} {}", 
+                        Self::get_transit_icon(&details.line.vehicle_type),
+                        details.line.short_name.as_deref().unwrap_or(&details.line.name)
+                    )
+                } else {
+                    String::new()
+                }
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if transit_steps.is_empty() {
+            "🚶 Walking".to_string()
+        } else {
+            transit_steps.join(" → ")
+        }
+    }
+
+    fn simple_geometry(
+        steps: &[crate::models::transit::TransitStep],
+        from: &Location,
+        to: &Location,
+    ) -> Vec<(f64, f64)> {
+        // Simplified geometry extraction
+        let mut coords = vec![(from.longitude, from.latitude)];
+        
+        // Just extract a few key points, don't be too detailed
+        for step in steps.iter().take(5) { // Max 5 steps to keep it simple
+            if let Some(geometry) = &step.geometry {
+                if let Some(first_coord) = geometry.coordinates.first() {
+                    coords.push((first_coord[0], first_coord[1]));
+                }
+                if let Some(last_coord) = geometry.coordinates.last() {
+                    coords.push((last_coord[0], last_coord[1]));
+                }
             }
         }
         
-        // Add some points at major intersections or transit hubs if we had that data
-        // For now, this is a placeholder for future improvement
+        coords.push((to.longitude, to.latitude));
+        coords
+    }
+
+    fn geometric_fallback(locations: &[(String, Location)]) -> anyhow::Result<(MeetingPoint, Vec<Route>)> {
+        let centroid = Self::geometric_centroid(locations);
         
-        info!("Generated {} candidate points around centroid", candidates.len());
-        candidates
+        let travel_times: Vec<TravelTime> = locations.iter().map(|(id, location)| {
+            let distance = location.distance_to(&centroid);
+            let duration_minutes = distance / (5.0 * 1000.0 / 60.0); // 5 km/h walking
+            
+            TravelTime {
+                id: id.clone(),
+                address: location.address.clone().unwrap_or_default(),
+                duration: duration_minutes.round() as u32,
+                distance,
+                estimated: true,
+                transit_summary: Some("🚶 Walking (fallback)".to_string()),
+            }
+        }).collect();
+
+        let routes: Vec<Route> = locations.iter().map(|(id, location)| {
+            Route {
+                id: id.clone(),
+                geometry: LineString::new(vec![
+                    (location.longitude, location.latitude),
+                    (centroid.longitude, centroid.latitude),
+                ]),
+                steps: vec![],
+            }
+        }).collect();
+
+        let meeting_point = MeetingPoint {
+            name: "Geometric Center (Fallback)".to_string(),
+            coordinates: (centroid.longitude, centroid.latitude),
+            travel_times,
+        };
+
+        Ok((meeting_point, routes))
+    }
+
+    fn get_transit_icon(vehicle_type: &str) -> &'static str {
+        match vehicle_type.to_lowercase().as_str() {
+            "subway" | "metro" => "🚇",
+            "bus" => "🚌", 
+            "train" | "rail" => "🚆",
+            "tram" | "light_rail" => "🚊",
+            "ferry" => "⛴️",
+            _ => "🚋",
+        }
     }
 }
