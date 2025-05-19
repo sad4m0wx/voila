@@ -204,8 +204,14 @@ impl GraphHopperClient {
         to: &Location,
         departure_time: Option<DateTime<Utc>>,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
+        let today = Utc::now().date_naive();
+        let departure_time = today
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc();
+
         // Generate a cache key
-        let cache_key = self.generate_cache_key(from, to, departure_time);
+        let cache_key = self.generate_cache_key(from, to, Some(departure_time));
         
         // Try to get from cache first
         match self.redis.get::<CachedTransitResult>(&cache_key).await {
@@ -230,7 +236,7 @@ impl GraphHopperClient {
         
         let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
         // If not in cache, calculate the route
-        let result = self.get_transit_route_uncached(from, to, departure_time).await;
+        let result = self.get_transit_route_uncached(from, to, Some(departure_time)).await;
         drop(permit);
         let result = result?;
         

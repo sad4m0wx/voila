@@ -36,50 +36,6 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     // Find optimal meeting point with transit times
     match MeetingPointFinder::find_optimal_meeting_point(&request.addresses, request.departure_time).await {
         Ok((meeting_point, routes)) => {
-            // Get detailed transit routes for each participant
-            /*let graphhopper = GraphHopperClient::new();
-            let mut routes = Vec::new();
-            
-            let departure = request.departure_time.map(|ts| 
-                chrono::DateTime::<Utc>::from_timestamp(ts, 0).unwrap()
-            );
-            
-            // Calculate detailed routes
-            for address in &request.addresses {
-                if let Some(coords) = address.coordinates {
-                    let from = crate::models::location::Location::new(coords.1, coords.0);
-                    let to = crate::models::location::Location::new(
-                        meeting_point.coordinates.1, 
-                        meeting_point.coordinates.0
-                    );
-                    
-                    match graphhopper.get_transit_route(&from, &to, departure).await {
-                        Ok((_, _, steps)) => {
-                            info!("Route found for address: {}", address.id);
-                            routes.push(crate::models::location::Route {
-                                id: address.id.clone(),
-                                steps,
-                                geometry: crate::models::location::LineString::new(vec![
-                                    coords,
-                                    meeting_point.coordinates,
-                                ]),
-                            });
-                        }
-                        Err(_) => {
-                            error!("Failed to find route for address: {}, from {},{} to {},{}", address.id, coords.1, coords.0, meeting_point.coordinates.1, meeting_point.coordinates.0);
-                            // Fallback to simple line if routing fails
-                            routes.push(crate::models::location::Route {
-                                id: address.id.clone(),
-                                steps: Vec::new(),
-                                geometry: crate::models::location::LineString::new(vec![
-                                    coords,
-                                    meeting_point.coordinates,
-                                ]),
-                            });
-                        }
-                    }
-                }
-            }*/
             
             // Optionally get venue recommendations
             let venues = if request.include_venues.unwrap_or(false) {

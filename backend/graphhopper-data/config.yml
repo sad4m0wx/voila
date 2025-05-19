@@ -18,38 +18,46 @@ graphhopper:
   prepare.min_network_size: 200
   prepare.min_one_way_network_size: 0
   
-  # GTFS-specific settings
+  # GTFS-specific settings optimized for frequency-based routing
   gtfs.max_transfer_distance: 400
   gtfs.walk_speed: 5.0
   gtfs.data_import: true
   
-
-  gtfs.create_virtual_schedule: true  # Creates synthetic schedules
-  gtfs.default_headway: 300  # 5-minute default frequency
+  # Frequency-based routing settings
+  gtfs.max_wait_time: 600  # Maximum wait time (10 minutes)
+  gtfs.min_transfer_time: 120  # Minimum transfer time (2 minutes)
+  gtfs.use_frequencies: true  # Enable frequency-based routing
+  gtfs.ignore_real_time: true  # Ignore schedule variations
   
+  # Optimize for frequency-based queries
   graph.do_sort: true
   graph.optimize_storage: true
   graph.import_threads: 4
+  graph.precalculate: true
+  graph.precalculate_distance: 500
   
   datareader:
     gtfs:
       base-osm-filter: true
-      max-wait-time: 600  # Increased since we're using approximations
       walk-speed: 5.0
-      use-optimized-transfers: true
+      use-optimized-transfers: true  
       transfers-min-transfer-time: 60
       
-
-      cluster-stops: true
-      cluster-stops-max-distance: 50  # Reduced clustering
-      cluster-stops-max-transfer-time: 60
+      # Frequency-based optimizations
+      use-frequencies: true
+      ignore-stop-times: false  # Keep minimal stop_times for connectivity
+      default-headway: 600  # Default 10-minute headway
+      
+      # Clustering and simplification
+      cluster-stops: true  
+      cluster-stops-max-distance: 100
+      cluster-stops-max-transfer-time: 90
       fare-approximation: false
+      transfer-time-cutoff: 1200
       memory-mapped: true
       skip-stops-outside-border: true
-      
-      skip-shapes: true
-      generate-synthetic-schedule: true
-      default-service-frequency: 300  # 5 minutes
+      skip-shapes: false  # Keep shapes for route visualization
+      skip-trips-without-shapes: false
 
 server:
   application_connectors:
