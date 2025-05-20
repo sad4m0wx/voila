@@ -92,80 +92,121 @@ async fn fetch_venues_from_google(
     let client = Client::new();
     let (lng, lat) = location;
     
-    let request_body = serde_json::json!({
-        "includedTypes": types,
-        "maxResultCount": 15,
-        "locationRestriction": {
-            "circle": {
-                "center": {
-                    "latitude": lat,
-                    "longitude": lng
-                },
-                "radius": radius
+    // Use the passed types parameter instead of hardcoded values
+    let venue_types = if types.is_empty() {
+        vec!["restaurant".to_string(), "cafe".to_string(), "bar".to_string()]
+    } else {
+        types
+    };
+    
+    let field_mask = "places.displayName,places.id,places.photos,places.googleMapsLinks,places.location";
+
+    info!("Fetching venues for types: {:?} at location: ({}, {})", venue_types, lat, lng);
+
+    // Query each venue type separately and merge results
+    let all_venues = futures::future::join_all(venue_types.iter().map(|venue_type| {
+        let request_body = serde_json::json!({
+            "includedTypes": [venue_type],
+            "maxResultCount": 10,
+            "locationRestriction": {
+                "circle": {
+                    "center": {
+                        "latitude": lat,
+                        "longitude": lng
+                    },
+                    "radius": radius
+                }
+            }
+        });
+
+        let client = client.clone();
+        let api_key = api_key.clone();
+        let field_mask = field_mask.to_string();
+        let venue_type = venue_type.clone();
+        
+        async move {
+            let response = client.post("https://places.googleapis.com/v1/places:searchNearby")
+                .header("Content-Type", "application/json")
+                .header("X-Goog-Api-Key", api_key)
+                .header("X-Goog-FieldMask", field_mask)
+                .json(&request_body)
+                .send()
+                .await
+                .map_err(|e| anyhow::anyhow!("Google Places API request failed for {}: {}", venue_type, e))?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                return Err(anyhow::anyhow!("Google Places API returned error for {}: {}", venue_type, error_text));
+            }
+
+            let places_response: GooglePlacesResponse = response.json()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to parse Google Places API response for {}: {}", venue_type, e))?;
+
+            // Return both the places and the venue type
+            Ok::<Vec<(PlaceResult, String)>, anyhow::Error>(
+                places_response.places.into_iter()
+                    .map(|place| (place, venue_type.clone()))
+                    .collect()
+            )
+        }
+    }))
+    .await
+    .into_iter()
+    .filter_map(|result| {
+        match result {
+            Ok(venues) => Some(venues),
+            Err(e) => {
+                error!("Error fetching venues: {}", e);
+                None
             }
         }
-    });
-
-    let field_mask = "places.displayName,places.id,places.photos,places.googleMapsLinks,places.location";
+    })
+    .flatten()
+    .collect::<Vec<_>>();
     
-    let response = client.post("https://places.googleapis.com/v1/places:searchNearby")
-        .header("Content-Type", "application/json")
-        .header("X-Goog-Api-Key", api_key)
-        .header("X-Goog-FieldMask", field_mask)
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Google Places API request failed: {}", e))?;
-    
-    let places_response: GooglePlacesResponse = response.json()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to parse Google Places API response: {}", e))?;
-    
-    if places_response.status != "OK" && places_response.status != "ZERO_RESULTS" {
-        return Err(anyhow::anyhow!("Google Places API error: {}", 
-                                  places_response.error_message.unwrap_or_else(|| places_response.status)));
-    }
-    
-    let venues = places_response.places.into_iter()
-        .map(|place| Venue {
+    let venues: Vec<Venue> = all_venues.into_iter()
+        .map(|(place, venue_type)| Venue {
             id: place.id,
-            name: place.display_name.text,
+            name: place.displayName.text,
             location: (place.location.latitude, place.location.longitude),
             photo_reference: place.photos.and_then(|photos| 
                 photos.first().map(|p| p.name.clone())),
-            google_maps_links: place.google_maps_links.map(|links| vec![
-                links.directions_uri,
-                links.place_uri,
-                links.write_a_review_uri,
-                links.reviews_uri,
-                links.photos_uri
+            google_maps_links: place.googleMapsLinks.map(|links| vec![
+                links.directionsUri,
+                links.placeUri,
+                links.writeAReviewUri,
+                links.reviewsUri,
+                links.photosUri
             ]),
+            types: venue_type,
         })
         .collect();
-    
+
+    info!("Fetched {} venues", venues.len());
     Ok(venues)
 }
 
 #[derive(Debug, Deserialize)]
 struct GooglePlacesResponse {
     places: Vec<PlaceResult>,
-    status: String,
-    error_message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PlaceResult {
     id: String,
-    display_name: DisplayName,
-    photos: Option<Vec<Photo>>,
-    google_maps_links: Option<GoogleMapsLinks>,
     location: Location,
+    displayName: DisplayName,
+    photos: Option<Vec<Photo>>,
+    googleMapsLinks: Option<GoogleMapsLinks>,
+    #[serde(default)]
+    types: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DisplayName {
     text: String,
-    language_code: String,
+    languageCode: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -177,27 +218,27 @@ struct Location {
 #[derive(Debug, Deserialize)]
 struct Photo {
     name: String,
-    width_px: i32,
-    height_px: i32,
-    author_attributions: Vec<AuthorAttribution>,
-    flag_content_uri: String,
-    google_maps_uri: String,
+    widthPx: i32,
+    heightPx: i32,
+    authorAttributions: Vec<AuthorAttribution>,
+    flagContentUri: String,
+    googleMapsUri: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct AuthorAttribution {
-    display_name: String,
+    displayName: String,
     uri: String,
-    photo_uri: String,
+    photoUri: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct GoogleMapsLinks {
-    directions_uri: String,
-    place_uri: String,
-    write_a_review_uri: String,
-    reviews_uri: String,
-    photos_uri: String,
+    directionsUri: String,
+    placeUri: String,
+    writeAReviewUri: String,
+    reviewsUri: String,
+    photosUri: String,
 }
 
 #[derive(Serialize)]
