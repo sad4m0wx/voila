@@ -88,7 +88,12 @@ async fn fetch_venues_from_google(
     let api_key = env::var("MAPS_PLACES_API_KEY")
         .map_err(|_| anyhow::anyhow!("Google Places API key not configured"))?;
     
-    let client = Client::new();
+    // Create a custom client with proper SSL configuration
+    let client = Client::builder()
+        .use_rustls_tls() // Use rustls instead of native-tls
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
+    
     let (lng, lat) = location; // Convert to lat,lng for Google API
     
     let type_param = types.join("|");
