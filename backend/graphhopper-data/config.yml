@@ -17,6 +17,8 @@ graphhopper:
   
   prepare.min_network_size: 200
   prepare.min_one_way_network_size: 0
+
+  isochrone: true
   
   # GTFS-specific settings optimized for frequency-based routing
   gtfs.max_transfer_distance: 800  
