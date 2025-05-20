@@ -124,9 +124,6 @@ pub struct Venue {
     pub id: String,
     pub name: String,
     pub location: (f64, f64),
-    pub address: String,
-    pub types: Vec<String>,
-    pub rating: Option<f64>,
     pub photo_reference: Option<String>,
-    pub price_level: Option<i32>,
+    pub google_maps_links: Option<Vec<String>>,
 }
