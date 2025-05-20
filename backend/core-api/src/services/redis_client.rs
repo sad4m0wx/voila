@@ -1,4 +1,4 @@
-use redis::{AsyncCommands, Client, RedisError};
+use redis::{AsyncCommands, Client};
 use serde::{Deserialize, Serialize};
 use std::env;
 use anyhow::Result;

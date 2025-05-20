@@ -20,25 +20,6 @@ use crate::models::transit::{TransitDetails, TransitLine, TransitStep, GeoJson};
 
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {Semaphore::new(30)});
 
-#[derive(Debug, Serialize)]
-struct GraphHopperRequest {
-    points: Vec<Vec<f64>>,          // [[lon1,lat1], [lon2,lat2], ...]
-    point_hints: Vec<String>,       // Optional hints
-    snap_preventions: Vec<String>,  // E.g., ["motorway"]
-    details: Vec<String>,           // Additional details to return
-    profile: String,                // "pt" for public transport
-    locale: String,                 // "en"
-    pt: PtSettings,
-}
-
-#[derive(Debug, Serialize)]
-struct PtSettings {
-    earliest_departure_time: i64,  // Unix timestamp
-    profile_duration: bool,
-    ignore_transfers: bool,
-    walk_speed: f64,               // In km/h
-}
-
 #[derive(Debug, Deserialize)]
 struct GraphHopperResponse {
     paths: Vec<Path>,
@@ -68,8 +49,6 @@ struct PtPath {
     descend: Option<f64>,
     snapped_waypoints: Option<GeoJson>,
 }
-
-
 
 #[derive(Debug, Deserialize)]
 struct Instruction {
@@ -202,7 +181,6 @@ impl GraphHopperClient {
         &self,
         from: &Location,
         to: &Location,
-        departure_time: Option<DateTime<Utc>>,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
         let today = Utc::now().date_naive();
         let departure_time = today

@@ -37,7 +37,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     }
     
     // Find optimal meeting point with transit times
-    match MeetingPointFinder::find_optimal_meeting_point(&request.addresses, request.departure_time).await {
+    match MeetingPointFinder::find_optimal_meeting_point(&request.addresses).await {
         Ok((meeting_point, routes)) => {
 
             let venues = if !request.exclude_venues.unwrap_or(false) {
@@ -168,16 +168,16 @@ async fn fetch_venues_from_google(
     let venues: Vec<Venue> = all_venues.into_iter()
         .map(|(place, venue_type)| Venue {
             id: place.id,
-            name: place.displayName.text,
+            name: place.display_name.text,
             location: (place.location.latitude, place.location.longitude),
             photo_reference: place.photos.and_then(|photos| 
                 photos.first().map(|p| p.name.clone())),
-            google_maps_links: place.googleMapsLinks.map(|links| vec![
-                links.directionsUri,
-                links.placeUri,
-                links.writeAReviewUri,
-                links.reviewsUri,
-                links.photosUri
+            google_maps_links: place.google_maps_links.map(|links| vec![
+                links.directions_uri,
+                links.place_uri,
+                links.write_a_review_uri,
+                links.reviews_uri,
+                links.photos_uri
             ]),
             types: venue_type,
         })
@@ -196,9 +196,9 @@ struct GooglePlacesResponse {
 struct PlaceResult {
     id: String,
     location: Location,
-    displayName: DisplayName,
+    display_name: DisplayName,
     photos: Option<Vec<Photo>>,
-    googleMapsLinks: Option<GoogleMapsLinks>,
+    google_maps_links: Option<GoogleMapsLinks>,
     #[serde(default)]
     types: Option<String>,
 }
@@ -206,7 +206,6 @@ struct PlaceResult {
 #[derive(Debug, Deserialize)]
 struct DisplayName {
     text: String,
-    languageCode: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -234,11 +233,11 @@ struct AuthorAttribution {
 
 #[derive(Debug, Deserialize)]
 struct GoogleMapsLinks {
-    directionsUri: String,
-    placeUri: String,
-    writeAReviewUri: String,
-    reviewsUri: String,
-    photosUri: String,
+    directions_uri: String,
+    place_uri: String,
+    write_a_review_uri: String,
+    reviews_uri: String,
+    photos_uri: String,
 }
 
 #[derive(Serialize)]

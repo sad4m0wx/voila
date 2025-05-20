@@ -2,23 +2,19 @@ use crate::models::location::{AddressInput, Location, MeetingPoint, TravelTime, 
 use crate::services::graphhopper_client::GraphHopperClient;
 use geo::algorithm::centroid::Centroid;
 use geo_types::{MultiPoint, Point};
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::time::Duration;
-use chrono::Utc;
-use futures::future::{join_all, try_join_all};
+use futures::future::{join_all};
 use std::sync::Arc;
-use std::collections::HashMap;
 use tokio::time::timeout;
 
 const GRAPHHOPPER_TIMEOUT: Duration = Duration::from_secs(30); // Max 5s per route
-const MAX_CANDIDATES: usize = 5; // Never more than 3 candidates
 
 pub struct MeetingPointFinder;
 
 impl MeetingPointFinder {
     pub async fn find_optimal_meeting_point(
         addresses: &[AddressInput],
-        departure_time: Option<i64>,
     ) -> anyhow::Result<(MeetingPoint, Vec<Route>)> {
         // Validate input
         if addresses.len() < 2 {
@@ -46,9 +42,6 @@ impl MeetingPointFinder {
         // Simple approach: just 3 candidates maximum
         let candidates = Self::generate_minimal_candidates(&locations);
         let graphhopper = Arc::new(GraphHopperClient::new());
-        let departure = departure_time.map(|ts| 
-            chrono::DateTime::<Utc>::from_timestamp(ts, 0).unwrap()
-        );
 
         info!("Evaluating {} candidates for {} addresses", candidates.len(), locations.len());
 
@@ -56,13 +49,12 @@ impl MeetingPointFinder {
         let candidate_futures: Vec<_> = candidates.into_iter().map(|candidate| {
             let locations = locations.clone();
             let graphhopper = Arc::clone(&graphhopper);
-            let departure = departure.clone();
             
             async move {
                 // Wrap the entire evaluation in a timeout
                 match timeout(
                     Duration::from_secs(30), // Max 15s total per candidate
-                    Self::evaluate_candidate_fast(candidate, locations, graphhopper, departure)
+                    Self::evaluate_candidate_fast(candidate, locations, graphhopper)
                 ).await {
                     Ok(result) => result,
                     Err(_) => {
@@ -125,19 +117,17 @@ impl MeetingPointFinder {
         candidate: Location,
         locations: Vec<(String, Location)>,
         graphhopper: Arc<GraphHopperClient>,
-        departure: Option<chrono::DateTime<Utc>>,
     ) -> anyhow::Result<(MeetingPoint, Vec<Route>, f64)> {
         // Process ALL routes in parallel with individual timeouts
         let route_futures: Vec<_> = locations.into_iter().map(|(id, location)| {
             let candidate = candidate.clone();
             let graphhopper = Arc::clone(&graphhopper);
-            let departure = departure.clone();
             
             async move {
                 // Individual timeout per route
                 let route_result = timeout(
                     GRAPHHOPPER_TIMEOUT,
-                    graphhopper.get_transit_route(&location, &candidate, departure)
+                    graphhopper.get_transit_route(&location, &candidate)
                 ).await;
 
                 match route_result {

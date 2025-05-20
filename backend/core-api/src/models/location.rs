@@ -25,20 +25,8 @@ impl Location {
         self
     }
 
-    pub fn with_place_id(mut self, place_id: impl Into<String>) -> Self {
-        self.place_id = Some(place_id.into());
-        self
-    }
-
     pub fn to_point(&self) -> Point<f64> {
         Point::new(self.longitude, self.latitude)
-    }
-    
-    pub fn to_coord(&self) -> Coord<f64> {
-        Coord {
-            x: self.longitude,
-            y: self.latitude,
-        }
     }
     
     pub fn distance_to(&self, other: &Location) -> f64 {
