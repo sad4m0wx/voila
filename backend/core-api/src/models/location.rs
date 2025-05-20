@@ -1,8 +1,6 @@
 use geo_types::{Coord, Point};
 use serde::{Deserialize, Serialize};
 use crate::models::transit::TransitStep;
-use crate::routes::venues::Venue;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {
@@ -118,4 +116,17 @@ impl LineString {
             coordinates,
         }
     }
+}
+
+// Add the Venue struct definition here
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Venue {
+    pub id: String,
+    pub name: String,
+    pub location: (f64, f64),
+    pub address: String,
+    pub types: Vec<String>,
+    pub rating: Option<f64>,
+    pub photo_reference: Option<String>,
+    pub price_level: Option<i32>,
 }

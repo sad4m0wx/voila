@@ -13,6 +13,7 @@ services:
       - PORT=3000
       - GRAPHHOPPER_URL=http://graphhopper:8989
       - REDIS_URL=redis://redis:6379
+      - MAPS_PLACES_API_KEY=AIzaSyDkvrPYpYXbfaYxCcJDNUHAWplyQuRHgb4
     networks:
       - voila-network
 

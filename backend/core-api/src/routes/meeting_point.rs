@@ -1,13 +1,14 @@
+// backend/core-api/src/routes/meeting_point.rs - Modified version
+
 use actix_web::{web, HttpResponse, Responder};
 use chrono::Utc;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
+use reqwest::Client;
+use std::env;
 
 use crate::algorithms::meeting_point::MeetingPointFinder;
-use crate::models::location::{AddressInput, MeetingPointResponse};
-use crate::routes::venues;
-use crate::services::graphhopper_client::GraphHopperClient;
-use crate::models::transit::GeoJson;
+use crate::models::location::{AddressInput, MeetingPointResponse, Venue};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -19,9 +20,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(Debug, Deserialize)]
 struct MeetingPointRequest {
     addresses: Vec<AddressInput>,
-    departure_time: Option<i64>,      // Unix timestamp
-    include_venues: Option<bool>,     // Whether to include venue recommendations
-    transport_mode: Option<String>,   // For future use: "transit", "car", etc.
+    departure_time: Option<i64>,     
+    venue_types: Option<Vec<String>>,
+    venue_radius: Option<f64>,
+    exclude_venues: Option<bool>,
 }
 
 async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Responder {
@@ -36,19 +38,25 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     // Find optimal meeting point with transit times
     match MeetingPointFinder::find_optimal_meeting_point(&request.addresses, request.departure_time).await {
         Ok((meeting_point, routes)) => {
-            
-            // Optionally get venue recommendations
-            let venues = if request.include_venues.unwrap_or(false) {
-                // Call the venues endpoint (simplified)
-                let venue_request = venues::NearbyVenuesRequest {
-                    location: meeting_point.coordinates,
-                    radius: Some(500.0),
-                    types: Some(vec!["restaurant".to_string(), "cafe".to_string()]),
-                };
+
+            let venues = if !request.exclude_venues.unwrap_or(false) {
+
+                let venue_types = request.venue_types.clone()
+                    .unwrap_or_else(|| vec!["restaurant".to_string()]);
                 
-                match venues::find_nearby_venues(venue_request).await {
-                    Ok(venue_resp) => Some(venue_resp.venues),
-                    Err(_) => None,
+
+                let radius = request.venue_radius.unwrap_or(500.0);
+                
+                match fetch_venues_from_google(
+                    meeting_point.coordinates,
+                    venue_types,
+                    radius
+                ).await {
+                    Ok(venues) => Some(venues),
+                    Err(e) => {
+                        error!("Error fetching venues: {}", e);
+                        None
+                    }
                 }
             } else {
                 None
@@ -70,6 +78,92 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
             })
         }
     }
+}
+
+async fn fetch_venues_from_google(
+    location: (f64, f64), 
+    types: Vec<String>,
+    radius: f64
+) -> anyhow::Result<Vec<Venue>> {
+    let api_key = env::var("MAPS_PLACES_API_KEY")
+        .map_err(|_| anyhow::anyhow!("Google Places API key not configured"))?;
+    
+    let client = Client::new();
+    let (lng, lat) = location; // Convert to lat,lng for Google API
+    
+    let type_param = types.join("|");
+    
+    let url = format!(
+        "https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={},{}&radius={}&type={}&key={}",
+        lat, lng, radius, type_param, api_key
+    );
+    
+    let response = client.get(&url)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Google Places API request failed: {}", e))?;
+    
+    let places_response: GooglePlacesResponse = response.json()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to parse Google Places API response: {}", e))?;
+    
+    if places_response.status != "OK" && places_response.status != "ZERO_RESULTS" {
+        return Err(anyhow::anyhow!("Google Places API error: {}", 
+                                  places_response.error_message.unwrap_or_else(|| places_response.status)));
+    }
+    
+    let venues = places_response.results.into_iter()
+        .map(|place| Venue {
+            id: place.place_id,
+            name: place.name,
+            location: (place.geometry.location.lng, place.geometry.location.lat),
+            address: place.vicinity,
+            types: place.types,
+            rating: place.rating,
+            photo_reference: place.photos.and_then(|photos| 
+                                                 photos.first().map(|p| p.photo_reference.clone())),
+            price_level: place.price_level,
+        })
+        .collect();
+    
+    Ok(venues)
+}
+
+#[derive(Debug, Deserialize)]
+struct GooglePlacesResponse {
+    results: Vec<PlaceResult>,
+    status: String,
+    error_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaceResult {
+    place_id: String,
+    name: String,
+    vicinity: String,
+    geometry: Geometry,
+    types: Vec<String>,
+    rating: Option<f64>,
+    photos: Option<Vec<Photo>>,
+    price_level: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Geometry {
+    location: Location,
+}
+
+#[derive(Debug, Deserialize)]
+struct Location {
+    lat: f64,
+    lng: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct Photo {
+    photo_reference: String,
+    height: i32,
+    width: i32,
 }
 
 #[derive(Serialize)]
