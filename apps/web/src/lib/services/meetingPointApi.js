@@ -100,7 +100,8 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
           // Map to format expected by Google Maps
           color: getRouteColor(rustResponse.routes.indexOf(route)),
           weight: 5
-        }))
+        })),
+        venues: rustResponse.venues || []
       };
     } catch (rustApiError) {
       console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
@@ -114,7 +115,9 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
           address: addr.value,
           duration: 10, // Placeholder duration
           estimated: true
-        }))
+        })),
+        routes: [],
+        venues: []
       };
     }
   } catch (error) {
