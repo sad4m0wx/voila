@@ -77,7 +77,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: Copy docker-compose files to server
+      - name: Copy necessary files to server
         run: |
           scp -o StrictHostKeyChecking=no -r backend/docker-compose.yml backend/graphhopper-data/ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/voila/
 
@@ -92,14 +92,16 @@ jobs:
             # Update docker-compose.yml to use the new image
             sed -i 's|build: ./core-api|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g' docker-compose.yml
             
-            # Pull latest images and restart services
+            # Export the API key as an environment variable
+            export MAPS_PLACES_API_KEY="${{ secrets.MAPS_PLACES_API_KEY }}"
+            
+            # Pull latest images and restart all services
             docker compose pull rust-api
-            docker compose up -d rust-api
+            docker compose up -d
             
             # Clean up old images
             docker image prune -af
             
-            # Wait for health check
-            sleep 30
+            # Show running services
             docker compose ps
           EOF
