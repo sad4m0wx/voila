@@ -1,10 +1,9 @@
-import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import path from 'path';
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [sveltekit()],
 	server: {
 		fs: {
 			// Allow serving files from one level up from the project root
@@ -22,14 +21,17 @@ export default defineConfig({
 		outDir: 'dist',
 		// Ensure assets use relative paths
 		assetsInlineLimit: 0,
-		/*rollupOptions: {
+		cssCodeSplit: false,
+
+		rollupOptions: {
 			output: {
-			  manualChunks: {
+			  manualChunks: undefined 
+			  /*{
 				'vendor': ['firebase', 'svelte'],
 				'maps': ['@googlemaps/js-api-loader'],
 				'mobile': [/mobile\/.*\.svelte$/]
-			  }
+			  }*/
 			}
-		  }*/
+		}
 	}
 });
