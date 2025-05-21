@@ -5,13 +5,24 @@ const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000
 /**
  * Find the optimal meeting point using the Rust backend API
  * @param {Array} addresses - Array of address objects with id, value, and coordinates
+ * @param {Object} options - Options for the meeting point calculation
+ * @param {Array} options.venueTypes - Array of venue types to search for
+ * @param {Number} options.venueRadius - Radius in meters to search for venues
+ * @param {Boolean} options.showVenues - Whether to include venues in the result
  * @returns {Promise} - Promise resolving to the meeting point result
  */
-export async function findOptimalMeetingPoint(addresses) {
+export async function findOptimalMeetingPoint(addresses, options = {}) {
   try {
     if (!addresses || addresses.length < 2) {
       throw new Error('At least two addresses are required');
     }
+
+    // Set default options
+    const { 
+      venueTypes = ["restaurant"], 
+      venueRadius = 500, 
+      showVenues = true 
+    } = options;
 
     // Make sure all addresses have coordinates
     const addressesWithCoordinates = await Promise.all(
@@ -42,8 +53,13 @@ export async function findOptimalMeetingPoint(addresses) {
         coordinates: addr.coordinates ? [addr.coordinates[0], addr.coordinates[1]] : null
       })),
       departure_time: Math.floor(Date.now() / 1000), // Current time as Unix timestamp
-      include_venues: false, // Don't include venue recommendations for now
+      include_venues: showVenues,
+      venue_options: {
+        types: venueTypes,
+        radius: venueRadius
+      }
     };
+
 
     // Call the API server
     try {
@@ -61,7 +77,6 @@ export async function findOptimalMeetingPoint(addresses) {
       }
 
       const rustResponse = await response.json();
-      console.log('Rust API response:', rustResponse);
 
       // Transform the Rust API response to match what our frontend expects
       return {
