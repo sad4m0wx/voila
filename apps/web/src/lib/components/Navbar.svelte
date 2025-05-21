@@ -47,8 +47,8 @@
           <a href="/profile" class="text-neutral-700 hover:text-primary-600 font-medium">Profile</a>
           <button on:click={handleLogout} class="text-neutral-700 hover:text-primary-600 font-medium">Sign Out</button>
         {:else}
-          <a href="/login" class="text-neutral-700 hover:text-primary-600 font-medium">Sign In</a>
-          <a href="/register" class="btn btn-primary">Sign Up</a>
+          <a href="/auth/login" class="text-neutral-700 hover:text-primary-600 font-medium">Sign In</a>
+          <a href="/auth/register" class="btn btn-primary">Sign Up</a>
         {/if}
       </nav>
       
@@ -76,8 +76,8 @@
             <a href="/profile" class="text-neutral-700 hover:text-primary-600 font-medium py-2">Profile</a>
             <button on:click={handleLogout} class="text-neutral-700 hover:text-primary-600 font-medium text-left py-2">Sign Out</button>
           {:else}
-            <a href="/login" class="text-neutral-700 hover:text-primary-600 font-medium py-2">Sign In</a>
-            <a href="/register" class="btn btn-primary w-full">Sign Up</a>
+            <a href="/auth/login" class="text-neutral-700 hover:text-primary-600 font-medium py-2">Sign In</a>
+            <a href="/auth/register" class="btn btn-primary w-full">Sign Up</a>
           {/if}
         </div>
       </div>

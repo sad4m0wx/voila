@@ -20,7 +20,7 @@
   onMount(async () => {
     // Check if user is authenticated
     if (!$isAuthenticated) {
-      goto('/login?redirect=/groups');
+      goto('/auth/login?redirect=/groups');
       return;
     }
     

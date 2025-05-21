@@ -102,7 +102,7 @@
         <div class="mb-6">
           <div class="flex justify-between items-center mb-2">
             <label for="password" class="block text-neutral-700 font-medium">Password</label>
-            <a href="/reset-password" class="text-sm text-primary-600 hover:text-primary-700">Forgot password?</a>
+            <a href="/auth/reset-password" class="text-sm text-primary-600 hover:text-primary-700">Forgot password?</a>
           </div>
           <input 
             type="password" 
@@ -146,7 +146,7 @@
       <div class="text-center">
         <p class="text-neutral-600">
           Don't have an account? 
-          <a href="/register" class="text-primary-600 hover:text-primary-700 font-medium">Create account</a>
+          <a href="/auth/register" class="text-primary-600 hover:text-primary-700 font-medium">Create account</a>
         </p>
       </div>
     </div>

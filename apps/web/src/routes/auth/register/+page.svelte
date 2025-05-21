@@ -153,7 +153,7 @@
       <div class="text-center">
         <p class="text-neutral-600">
           Already have an account? 
-          <a href="/login" class="text-primary-600 hover:text-primary-700 font-medium">Sign in</a>
+          <a href="/auth/login" class="text-primary-600 hover:text-primary-700 font-medium">Sign in</a>
         </p>
       </div>
     </div>

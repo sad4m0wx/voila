@@ -157,7 +157,7 @@
                   </p>
                   <div class="mt-2">
                     <a
-                      href="/register"
+                      href="/auth/register"
                       class="px-4 py-2 bg-yellow-700 text-white text-sm rounded-md inline-block font-medium"
                     >
                       Create Full Account
@@ -492,7 +492,7 @@
                   You're using a temporary guest account. Your data will be lost
                   when you sign out.
                 </p>
-                <a href="/register" class="btn btn-warning"
+                <a href="/auth/register" class="btn btn-warning"
                   >Upgrade to Full Account</a
                 >
               </div>

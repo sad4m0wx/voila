@@ -104,7 +104,7 @@
         <div class="text-center">
           <p class="text-neutral-600">
             Remember your password? 
-            <a href="/login" class="text-primary-600 hover:text-primary-700 font-medium">Sign in</a>
+            <a href="/auth/login" class="text-primary-600 hover:text-primary-700 font-medium">Sign in</a>
           </p>
         </div>
       </div>
