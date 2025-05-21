@@ -168,16 +168,16 @@ async fn fetch_venues_from_google(
     let venues: Vec<Venue> = all_venues.into_iter()
         .map(|(place, venue_type)| Venue {
             id: place.id,
-            name: place.display_name.text,
+            name: place.displayName.text,
             location: (place.location.latitude, place.location.longitude),
             photo_reference: place.photos.and_then(|photos| 
                 photos.first().map(|p| p.name.clone())),
-            google_maps_links: place.google_maps_links.map(|links| vec![
-                links.directions_uri,
-                links.place_uri,
-                links.write_a_review_uri,
-                links.reviews_uri,
-                links.photos_uri
+            google_maps_links: place.googleMapsLinks.map(|links| vec![
+                links.directionsUri,
+                links.placeUri,
+                links.writeAReviewUri,
+                links.reviewsUri,
+                links.photosUri
             ]),
             types: venue_type,
         })
@@ -196,9 +196,9 @@ struct GooglePlacesResponse {
 struct PlaceResult {
     id: String,
     location: Location,
-    display_name: DisplayName,
+    displayName: DisplayName,
     photos: Option<Vec<Photo>>,
-    google_maps_links: Option<GoogleMapsLinks>,
+    googleMapsLinks: Option<GoogleMapsLinks>,
     #[serde(default)]
     types: Option<String>,
 }
@@ -233,11 +233,11 @@ struct AuthorAttribution {
 
 #[derive(Debug, Deserialize)]
 struct GoogleMapsLinks {
-    directions_uri: String,
-    place_uri: String,
-    write_a_review_uri: String,
-    reviews_uri: String,
-    photos_uri: String,
+    directionsUri: String,
+    placeUri: String,
+    writeAReviewUri: String,
+    reviewsUri: String,
+    photosUri: String,
 }
 
 #[derive(Serialize)]
