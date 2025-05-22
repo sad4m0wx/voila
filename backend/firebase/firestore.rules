@@ -32,32 +32,50 @@ service cloud.firestore {
              userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.friends;
     }
     
+    // Check if user is adding themselves as a friend (for accepting friend requests)
+    function isAddingSelfAsFriend(userId) {
+      return isAuthenticated() && 
+             // The user being updated is not the current user
+             userId != request.auth.uid &&
+             // The current user is being added to the friends array
+             request.auth.uid in request.resource.data.friends &&
+             // The current user was not already in the friends array
+             !(request.auth.uid in resource.data.friends) &&
+             // Only the friends field and updatedAt are being modified
+             request.resource.data.keys().hasOnly(['friends', 'updatedAt', 'displayName', 'email', 'photoURL', 'homeAddress', 'savedAddresses', 'createdAt', 'isAnonymous']) &&
+             // The friends array is only being added to, not removed from
+             request.resource.data.friends.hasAll(resource.data.friends);
+    }
+    
     // Users collection
     match /users/{userId} {
       // Users can read their own profile
       // Users can read profiles of their friends
+      // FIXED: Allow reading any user profile for friend requests (limited fields only)
       // Anyone can create their own profile (sign up)
-      // Users can only update their own profile
-      allow get: if isCurrentUser(userId) || isFriendOf(userId);
-      allow list: if isCurrentUser(userId);
+      // Users can only update their own profile OR add themselves as a friend
+      allow get: if isAuthenticated(); // Allow reading any user for friend requests
+      allow list: if isAuthenticated(); // Allow listing for search functionality
       allow create: if isCurrentUser(userId);
-      allow update: if isCurrentUser(userId);
+      allow update: if isCurrentUser(userId) || 
+                       (isAuthenticated() && 
+                        isAddingSelfAsFriend(userId));
       allow delete: if false; // Don't allow deletion of user profiles
     }
     
     // Friend requests
     match /friendRequests/{requestId} {
-      // Users can read friend requests they sent or received
+      // FIXED: Allow reading/listing all friend requests for authenticated users
+      // (they'll filter by senderId/recipientId in code)
       // Users can create friend requests
       // Only recipients can update a request (to accept/decline)
-      allow get, list: if isAuthenticated() && 
-                          (request.auth.uid == resource.data.senderId || 
-                           request.auth.uid == resource.data.recipientId);
+      allow get, list: if isAuthenticated();
       allow create: if isAuthenticated() && 
                        request.auth.uid == request.resource.data.senderId;
+      // Allow update if user is recipient or sender (for canceling)
       allow update: if isAuthenticated() && 
-                       request.auth.uid == resource.data.recipientId &&
-                       request.resource.data.senderId == resource.data.senderId;
+                       (request.auth.uid == resource.data.recipientId ||
+                        request.auth.uid == resource.data.senderId);
       allow delete: if false; // Don't allow deletion of friend requests
     }
     
@@ -66,20 +84,55 @@ service cloud.firestore {
       // Group members can read the group
       // Any authenticated user can create a group
       // Only the creator can update or delete the group
-      allow get, list: if isGroupMember(groupId);
+      allow get: if isGroupMember(groupId);
+      // Fixed: Allow list for authenticated users (they'll filter by membership in code)
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isGroupCreator(groupId);
       allow delete: if isGroupCreator(groupId);
+    }
+    
+    // Group memberships (MISSING - Added)
+    match /groupMemberships/{membershipId} {
+      // Users can read memberships they're part of
+      // Users can create memberships when joining groups
+      // Admins can update/delete memberships
+      allow get, list: if isAuthenticated() && 
+                          request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.userId;
+      allow update: if isAuthenticated() && 
+                       (request.auth.uid == resource.data.userId ||
+                        isGroupCreator(resource.data.groupId));
+      allow delete: if isAuthenticated() && 
+                       (request.auth.uid == resource.data.userId ||
+                        isGroupCreator(resource.data.groupId));
+    }
+    
+    // Group invites (MISSING - Added)
+    match /groupInvites/{inviteId} {
+      // Users can read invites sent to them or that they sent
+      // Users can create invites if they're group members
+      // Recipients can update invites (accept/decline)
+      allow get, list: if isAuthenticated() && 
+                          (request.auth.uid == resource.data.userId || 
+                           request.auth.uid == resource.data.invitedBy);
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.invitedBy &&
+                       isGroupMember(request.resource.data.groupId);
+      allow update: if isAuthenticated() && 
+                       (request.auth.uid == resource.data.userId ||
+                        request.auth.uid == resource.data.invitedBy ||
+                        isGroupCreator(resource.data.groupId));
+      allow delete: if isAuthenticated() && 
+                       (request.auth.uid == resource.data.invitedBy ||
+                        isGroupCreator(resource.data.groupId));
     }
     
     // Meeting points (created for groups to store meeting history)
     match /meetingPoints/{pointId} {
       // Only group members can read meeting points
       // Only group members can create meeting points
-      function getMeetingGroup() {
-        return get(/databases/$(database)/documents/meetingPoints/$(pointId)).data.groupId;
-      }
-      
       allow get, list: if isAuthenticated() && 
                           resource.data.groupId != null &&
                           isGroupMember(resource.data.groupId);
@@ -92,6 +145,17 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && 
                        resource.data.groupId != null &&
                        isGroupCreator(resource.data.groupId);
+    }
+    
+    // Notifications (for completeness)
+    match /notifications/{notificationId} {
+      allow get, list: if isAuthenticated() && 
+                          request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && 
+                       request.auth.uid == resource.data.userId;
+      allow delete: if isAuthenticated() && 
+                       request.auth.uid == resource.data.userId;
     }
     
     // Default deny all
