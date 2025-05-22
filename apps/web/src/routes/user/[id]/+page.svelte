@@ -2,8 +2,6 @@
 <script>
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
-    import { goto } from '$app/navigation';
-    import { authStore, isAuthenticated, isLoading as authLoading } from '$stores/auth';
     import { 
       sendRequest, 
       incomingRequests, 
@@ -16,9 +14,9 @@
     } from '$stores/friends';
     import { doc, getDoc, getFirestore } from 'firebase/firestore';
   
+    const { user, profile, isLoading } = getContext('auth');
+
     // State
-    let loading = true;
-    let userProfile = null;
     let error = null;
     let friendStatus = 'none'; // 'none', 'self', 'friends', 'pending_outgoing', 'pending_incoming'
     let pendingRequestId = null;
@@ -30,66 +28,15 @@
     // Get user ID from URL parameter
     const userId = $page.params.id;
   
-    onMount(async () => {
-      // Redirect if not authenticated after loading completes
-      const unsubscribe = isAuthenticated.subscribe(value => {
-        if (!$authLoading && !value) {
-          goto('/login?redirect=' + window.location.pathname);
-        }
-      });
+    $:if ($user && !$isLoading) {
+        loadUserProfile();
+        loadFriendshipStatus();
+      };
   
-      // Load user profile when authenticated
-      if ($authStore.user) {
-        await loadUserProfile();
-        await loadFriendshipStatus();
-      }
-  
-      return unsubscribe;
-    });
-  
-    // Watch auth state to load profile when user logs in
-    $: if ($authStore.user && loading && !userProfile) {
-      loadUserProfile();
-      loadFriendshipStatus();
-    }
-  
-    // Load user profile data
-    async function loadUserProfile() {
-      loading = true;
-      error = null;
-  
-      try {
-        const db = getFirestore();
-        const userDoc = await getDoc(doc(db, 'users', userId));
-  
-        if (!userDoc.exists()) {
-          error = 'User not found';
-          loading = false;
-          return;
-        }
-  
-        // Get user data excluding sensitive information
-        const userData = userDoc.data();
-        userProfile = {
-          id: userId,
-          displayName: userData.displayName || 'User',
-          photoURL: userData.photoURL || null,
-          email: userData.email || null,
-          bio: userData.bio || null,
-          // We intentionally don't include saved addresses, home address, etc.
-        };
-  
-      } catch (err) {
-        console.error('Error loading user profile:', err);
-        error = 'Failed to load user profile';
-      } finally {
-        loading = false;
-      }
-    }
   
     // Determine friendship status
     async function loadFriendshipStatus() {
-      if (!$authStore.user || !userId) return;
+      if (!$user || !userId) return;
   
       // Load friendship data if not already loaded
       await Promise.all([
@@ -98,7 +45,7 @@
       ]);
   
       // Check if viewing own profile
-      if (userId === $authStore.user.uid) {
+      if (userId === $user.uid) {
         friendStatus = 'self';
         return;
       }

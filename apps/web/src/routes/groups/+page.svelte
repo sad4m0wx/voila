@@ -3,12 +3,20 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Navbar from '$lib/components/Navbar.svelte';
-  import { isAuthenticated } from '$stores/auth';
+  import { authStore } from '$stores/auth';
+  import { 
+    groups, 
+    groupInvites,
+    isLoading,
+    error as groupsError,
+    loadUserGroups,
+    loadGroupInvites,
+    createNewGroup,
+    acceptInvite,
+    declineInvite
+  } from '$stores/groups';
   
-  let isLoading = true;
   let error = null;
-  let groups = [];
-  let groupInvites = [];
   let showCreateGroupModal = false;
   
   // Form state for create group
@@ -19,16 +27,22 @@
   
   onMount(async () => {
     // Check if user is authenticated
-    if (!$isAuthenticated) {
+    if (!$authStore.user) {
       goto('/auth/login?redirect=/groups');
       return;
     }
     
-    // Simulate loading data
-    setTimeout(() => {
-      isLoading = false;
-    }, 1000);
+    // Load real data
+    try {
+      await loadUserGroups();
+      await loadGroupInvites();
+    } catch (err) {
+      error = err.message;
+    }
   });
+  
+  // Subscribe to store errors
+  $: error = $groupsError || error;
   
   function openCreateGroupModal() {
     newGroupName = '';
@@ -41,7 +55,7 @@
     showCreateGroupModal = false;
   }
   
-  async function createGroup() {
+  async function handleCreateGroup() {
     if (!newGroupName.trim()) {
       createError = 'Group name is required';
       return;
@@ -51,21 +65,12 @@
     createError = null;
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Add group to list
-      const newGroup = {
-        id: `group${groups.length + 1}`,
+      const groupData = {
         name: newGroupName,
         description: newGroupDescription,
-        memberCount: 1,
-        createdAt: new Date()
       };
       
-      groups = [newGroup, ...groups];
-      
-      // Close modal
+      await createNewGroup(groupData);
       closeCreateGroupModal();
     } catch (err) {
       createError = err.message || 'Failed to create group';
@@ -78,26 +83,20 @@
     goto(`/groups/${groupId}`);
   }
   
-  function acceptGroupInvite(inviteId) {
-    // Mock accepting invite
-    const invite = groupInvites.find(inv => inv.id === inviteId);
-    if (invite) {
-      groups = [
-        ...groups,
-        {
-          id: invite.groupId,
-          name: invite.groupName,
-          description: invite.description || '',
-          memberCount: invite.memberCount || 2,
-          createdAt: new Date()
-        }
-      ];
-      groupInvites = groupInvites.filter(inv => inv.id !== inviteId);
+  async function handleAcceptInvite(inviteId) {
+    try {
+      await acceptInvite(inviteId);
+    } catch (err) {
+      error = err.message;
     }
   }
   
-  function declineGroupInvite(inviteId) {
-    groupInvites = groupInvites.filter(inv => inv.id !== inviteId);
+  async function handleDeclineInvite(inviteId) {
+    try {
+      await declineInvite(inviteId);
+    } catch (err) {
+      error = err.message;
+    }
   }
 </script>
 
@@ -121,7 +120,7 @@
           </button>
         </div>
         
-        {#if isLoading}
+        {#if $isLoading}
           <div class="flex justify-center py-12">
             <svg class="animate-spin h-10 w-10 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -143,11 +142,11 @@
           </div>
         {:else}
           <!-- Group Invites Section -->
-          {#if groupInvites.length > 0}
+          {#if $groupInvites.length > 0}
             <div class="bg-white rounded-lg shadow-md p-6 mb-6">
               <h2 class="text-lg font-medium text-gray-900 mb-4">Group Invitations</h2>
               <ul class="divide-y divide-gray-200">
-                {#each groupInvites as invite (invite.id)}
+                {#each $groupInvites as invite (invite.id)}
                   <li class="py-4">
                     <div class="flex justify-between items-start">
                       <div>
@@ -159,13 +158,13 @@
                       </div>
                       <div class="flex space-x-2">
                         <button
-                          on:click={() => acceptGroupInvite(invite.id)}
+                          on:click={() => handleAcceptInvite(invite.id)}
                           class="px-3 py-1 bg-primary-100 text-primary-700 rounded-md text-sm font-medium hover:bg-primary-200"
                         >
                           Accept
                         </button>
                         <button
-                          on:click={() => declineGroupInvite(invite.id)}
+                          on:click={() => handleDeclineInvite(invite.id)}
                           class="px-3 py-1 bg-gray-100 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-200"
                         >
                           Decline
@@ -182,7 +181,7 @@
           <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-lg font-medium text-gray-900 mb-4">My Groups</h2>
             
-            {#if groups.length === 0}
+            {#if $groups.length === 0}
               <div class="text-center py-12">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -198,20 +197,30 @@
               </div>
             {:else}
               <ul class="divide-y divide-gray-200">
-                {#each groups as group (group.id)}
-                  <li class="py-4 group cursor-pointer" on:click={() => viewGroup(group.id)}>
-                    <div class="flex justify-between items-start">
-                      <div>
-                        <h3 class="text-base font-medium text-gray-900 group-hover:text-primary-600">{group.name}</h3>
-                        {#if group.description}
-                          <p class="text-sm text-gray-500 mt-1">{group.description}</p>
-                        {/if}
-                        <p class="text-xs text-gray-400 mt-2">{group.memberCount} members</p>
+                {#each $groups as group (group.id)}
+                  <li class="py-4">
+                    <button
+                      on:click={() => viewGroup(group.id)}
+                      class="w-full text-left"
+                    >
+                      <div class="flex justify-between items-center">
+                        <div>
+                          <h3 class="text-lg font-medium text-gray-900">{group.name}</h3>
+                          {#if group.description}
+                            <p class="text-sm text-gray-500 mt-1">{group.description}</p>
+                          {/if}
+                          <p class="text-xs text-gray-500 mt-2">
+                            {group.members?.length || 0} members
+                            {#if group.createdAt}
+                              • Created {new Date(group.createdAt).toLocaleDateString()}
+                            {/if}
+                          </p>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                        </svg>
                       </div>
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 group-hover:text-primary-600" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                      </svg>
-                    </div>
+                    </button>
                   </li>
                 {/each}
               </ul>
@@ -222,77 +231,100 @@
     </div>
   </main>
   
+  <!-- Create Group Modal -->
   {#if showCreateGroupModal}
-    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg mx-4">
-        <h2 class="text-xl font-semibold text-gray-900 mb-4">Create a New Group</h2>
-        
-        {#if createError}
-          <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-            <div class="flex">
-              <div class="flex-shrink-0">
-                <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                </svg>
-              </div>
-              <div class="ml-3">
-                <p class="text-sm text-red-700">{createError}</p>
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+      <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div
+          class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+          on:click={closeCreateGroupModal}
+          aria-hidden="true"
+        ></div>
+
+        <!-- Modal panel -->
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+          <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+            <div class="sm:flex sm:items-start">
+              <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                  Create a New Group
+                </h3>
+                <div class="mt-4 space-y-4">
+                  {#if createError}
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4">
+                      <div class="flex">
+                        <div class="flex-shrink-0">
+                          <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                          </svg>
+                        </div>
+                        <div class="ml-3">
+                          <p class="text-sm text-red-700">{createError}</p>
+                        </div>
+                      </div>
+                    </div>
+                  {/if}
+
+                  <div>
+                    <label for="group-name" class="block text-sm font-medium text-gray-700">
+                      Group Name <span class="text-red-500">*</span>
+                    </label>
+                    <div class="mt-1">
+                      <input
+                        type="text"
+                        id="group-name"
+                        bind:value={newGroupName}
+                        placeholder="Enter group name"
+                        class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label for="group-description" class="block text-sm font-medium text-gray-700">
+                      Description (optional)
+                    </label>
+                    <div class="mt-1">
+                      <textarea
+                        id="group-description"
+                        bind:value={newGroupDescription}
+                        rows="3"
+                        placeholder="Describe your group's purpose"
+                        class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                      ></textarea>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        {/if}
-        
-        <div class="space-y-4">
-          <div>
-            <label for="group-name" class="block text-sm font-medium text-gray-700">Group Name*</label>
-            <input
-              id="group-name"
-              type="text"
-              bind:value={newGroupName}
-              placeholder="Enter group name"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            />
+          <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+            <button
+              type="button"
+              on:click={handleCreateGroup}
+              disabled={isCreating}
+              class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+            >
+              {#if isCreating}
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Creating...
+              {:else}
+                Create Group
+              {/if}
+            </button>
+            <button
+              type="button"
+              on:click={closeCreateGroupModal}
+              class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+            >
+              Cancel
+            </button>
           </div>
-          
-          <div>
-            <label for="group-description" class="block text-sm font-medium text-gray-700">Description (optional)</label>
-            <textarea
-              id="group-description"
-              bind:value={newGroupDescription}
-              placeholder="What's this group about?"
-              rows="3"
-              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            ></textarea>
-          </div>
-          
-          <div>
-            <p class="block text-sm font-medium text-gray-700">Initial Members</p>
-            <p class="text-sm text-gray-500 mt-1">You can invite members after creating the group</p>
-          </div>
-        </div>
-        
-        <div class="mt-6 flex justify-end space-x-3">
-          <button
-            on:click={closeCreateGroupModal}
-            class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            on:click={createGroup}
-            class="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isCreating || !newGroupName.trim()}
-          >
-            {#if isCreating}
-              <svg class="animate-spin -ml-1 mr-3 h-5 w-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Creating...
-            {:else}
-              Create Group
-            {/if}
-          </button>
         </div>
       </div>
     </div>

@@ -46,11 +46,12 @@ const initialState = {
 // Create the store
 const authStore = writable(initialState);
 
-// Initialize auth listener
+// Initialize auth listener (call this ONCE in your root component)
+let unsubscribe;
 export function initAuth() {
-  const unsubscribe = subscribeToAuthChanges(auth, async (user) => {
+  if (unsubscribe) return unsubscribe;
+  unsubscribe = subscribeToAuthChanges(auth, async (user) => {
     if (user) {
-      // User is signed in
       authStore.update(state => ({
         ...state,
         user: {
@@ -60,33 +61,25 @@ export function initAuth() {
           photoURL: user.photoURL,
           isAnonymous: user.isAnonymous
         },
-        isLoading: true, // Still loading profile
+        isLoading: true,
         error: null
       }));
-      
       try {
-        // Get the user profile from Firestore
         const profile = await getUserProfile(db, user.uid);
-        
         if (profile) {
-          // Profile exists
           authStore.update(state => ({
             ...state,
             profile,
             isLoading: false
           }));
         } else {
-          // No profile - create one if missing
-          // This should normally happen via Firebase Functions, but this is a backup
           await createUserProfile(db, user.uid, {
             displayName: user.displayName || '',
             email: user.email || '',
             photoURL: user.photoURL || '',
             isAnonymous: user.isAnonymous
           });
-          
           const newProfile = await getUserProfile(db, user.uid);
-          
           authStore.update(state => ({
             ...state,
             profile: newProfile,
@@ -102,7 +95,6 @@ export function initAuth() {
         }));
       }
     } else {
-      // User is signed out
       authStore.set({
         user: null,
         profile: null,
@@ -111,8 +103,6 @@ export function initAuth() {
       });
     }
   });
-  
-  // Return the unsubscribe function
   return unsubscribe;
 }
 
