@@ -4,7 +4,8 @@
   import { onMount } from "svelte";
   import { page } from "$app/stores";
   import AuthProvider from "$lib/components/auth/AuthProvider.svelte";
-  
+  import { getContext } from "svelte";
+
   const { user, profile, isLoading } = getContext('auth');
 
   // Group data
@@ -23,44 +24,35 @@
   let isCalculating = false;
   let calculationError = null;
   
+  import { getFirestore } from "firebase/firestore";
+  import { getGroup, getGroupMembers } from "$lib/firebase-auth/groups.js";
+
   onMount(async () => {
-    
     const groupId = $page.params.id;
-    
+    if (!user || !user.uid) return;
     try {
-      // Simulate API calls
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock group data based on the ID
-      group = {
-        id: parseInt(groupId),
-        name: ["College Friends", "Work Team", "Family"][parseInt(groupId) % 3],
-        description: ["Friends from university", "Colleagues from work", "Family members"][parseInt(groupId) % 3],
-        createdAt: new Date(2023, 5, 15),
-        creatorId: "user123"
-      };
-      
-      // Mock members data
-      members = [
-        { id: "user123", name: "You", email: "you@example.com", avatar: null, isCreator: true, isAdmin: true },
-        { id: "user1", name: "Jane Smith", email: "jane@example.com", avatar: null, isAdmin: false },
-        { id: "user2", name: "John Doe", email: "john@example.com", avatar: null, isAdmin: true },
-        { id: "user3", name: "Alice Johnson", email: "alice@example.com", avatar: null, isAdmin: false }
-      ];
-      
-      // Prepare addresses from members for the meeting calculator
+      const db = getFirestore();
+      group = await getGroup(db, groupId);
+      const memberProfiles = await getGroupMembers(db, groupId, user.uid);
+      members = memberProfiles.map(member => ({
+        id: member.id,
+        name: member.displayName,
+        email: member.email,
+        avatar: member.photoURL,
+        isCreator: member.isCreator,
+        isAdmin: member.isAdmin
+      }));
       addresses = members.map(member => ({
         id: member.id,
         value: `${member.name}'s Location`,
-        selected: member.id === "user123" // Select current user by default
+        selected: member.id === user.uid
       }));
-      
       editName = group.name;
       editDescription = group.description;
     } catch (err) {
       error = "Failed to load group data";
       console.error(err);
-    } 
+    }
   });
   
   // Calculate optimal meeting point
