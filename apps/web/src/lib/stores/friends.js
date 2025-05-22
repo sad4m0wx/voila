@@ -1,6 +1,6 @@
 // apps/web/src/lib/stores/friends.js
 import { writable, derived, get } from 'svelte/store';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import { authStore } from './auth';
 import { 
   getFriends, 
@@ -150,9 +150,10 @@ export async function sendRequest(recipientId, message = '') {
     const db = getFirestore();
     const requestId = await sendFriendRequest(db, auth.user.uid, recipientId, message);
     
-    // Get recipient details to display in the UI
-    const recipientDoc = await db.collection('users').doc(recipientId).get();
-    const recipientName = recipientDoc.exists ? recipientDoc.data().displayName : 'User';
+    // Get recipient details to display in the UI - FIXED: Use v9+ syntax
+    const recipientRef = doc(db, 'users', recipientId);
+    const recipientDoc = await getDoc(recipientRef);
+    const recipientName = recipientDoc.exists() ? recipientDoc.data().displayName : 'User';
     
     // Add to outgoing requests in store
     friendsStore.update(state => {
