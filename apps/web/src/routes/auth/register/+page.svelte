@@ -1,16 +1,21 @@
 <script>
-  import { register, isAuthenticated } from "$stores/auth";
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import BackButton from "$lib/components/auth/BackButton.svelte";
+  import PhoneVerification from "$lib/components/auth/PhoneVerification.svelte";
+  import AddressSetup from "$lib/components/auth/AddressSetup.svelte";
+  import { createAddress, createUserProfile } from "$lib/stores/auth.js";
   
   // State
-  let email = "";
-  let password = "";
-  let confirmPassword = "";
-  let displayName = "";
+  let step = 'phone'; // 'phone', 'profile', 'address', 'complete'
+  let phoneNumber = '';
+  let displayName = '';
   let isSubmitting = false;
-  let error = "";
+  let error = '';
   let redirectUrl = "/";
+  let verifiedPhoneNumber = '';
+  let verifiedUser = null;
   
   // Get redirect URL from query parameter if present
   onMount(() => {
@@ -19,42 +24,77 @@
     if (redirect) {
       redirectUrl = redirect;
     }
-    
-    // Redirect if already authenticated
-    if ($isAuthenticated) {
-      window.location.href = redirectUrl;
-    }
   });
   
-  // Handle form submission
-  async function handleSubmit() {
-    error = "";
-    
-    // Validate passwords match
-    if (password !== confirmPassword) {
-      error = "Passwords do not match";
+  // Handle phone verification completion
+  function handlePhoneVerified(event) {
+    const { phoneNumber: phone, user, mode } = event.detail;
+    verifiedPhoneNumber = phone;
+    phoneNumber = phone;
+    verifiedUser = user; // Store the user object
+    step = 'profile';
+  }
+
+  // Handle profile setup
+  async function handleProfileSetup() {
+    if (!displayName.trim()) {
+      error = 'Please enter your name';
       return;
     }
-    
-    // Validate password length
-    if (password.length < 6) {
-      error = "Password must be at least 6 characters";
-      return;
-    }
+
+    step = 'address';
+    error = '';
+  }
+
+  // Handle address setup completion
+  async function handleAddressSetup(event) {
+    const { address } = event.detail;
     
     isSubmitting = true;
-    
+    error = '';
+
     try {
-      const success = await register(email, password, displayName);
+      // Create user profile with UID as ID
+      const profileResult = await createUserProfile(verifiedUser.uid, verifiedPhoneNumber, displayName);
       
-      if (success) {
-        // Redirect after successful registration
-        window.location.href = redirectUrl;
+      if (!profileResult.success) {
+        throw new Error(profileResult.error || 'Failed to create user profile');
       }
+
+      // Create the first address using the user's UID
+      const addressResult = await createAddress(verifiedUser.uid, address);
+      
+      if (!addressResult.success) {
+        throw new Error(addressResult.error || 'Failed to save address');
+      }
+
+      step = 'complete';
+      
+      // Redirect after a short delay
+      setTimeout(() => {
+        goto(redirectUrl, { replaceState: true });
+      }, 2000);
+
     } catch (err) {
-      error = err.message;
-    } finally {
+      console.error('Registration error:', err);
+      error = err.message || 'Failed to complete registration. Please try again.';
       isSubmitting = false;
+    }
+  }
+
+  // Go back to previous step
+  function goBack() {
+    error = '';
+    
+    switch (step) {
+      case 'profile':
+        step = 'phone';
+        break;
+      case 'address':
+        step = 'profile';
+        break;
+      default:
+        goto('/auth/login');
     }
   }
 </script>
@@ -67,11 +107,28 @@
 
 <div class="min-h-screen flex flex-col justify-center px-4 py-6 sm:py-12">
   <div class="max-w-md w-full mx-auto">
-    <BackButton href="/auth/login" label="Back to Sign In" />
+    {#if step !== 'complete'}
+      <BackButton 
+        href={step === 'phone' ? '/auth/login' : null} 
+        label={step === 'phone' ? 'Back to Sign In' : 'Back'}
+        on:click={step !== 'phone' ? goBack : null}
+      />
+    {/if}
     
     <div class="text-center mb-6 sm:mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Create Account</h1>
-      <p class="text-neutral-600">Join Voilà and start finding perfect meeting spots!</p>
+      {#if step === 'phone'}
+        <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Create Account</h1>
+        <p class="text-neutral-600">Enter your phone number to get started</p>
+      {:else if step === 'profile'}
+        <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Tell us about yourself</h1>
+        <p class="text-neutral-600">What should we call you?</p>
+      {:else if step === 'address'}
+        <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Almost done!</h1>
+        <p class="text-neutral-600">Add your first address to start finding meeting spots</p>
+      {:else if step === 'complete'}
+        <h1 class="text-2xl sm:text-3xl font-bold text-green-600 mb-2">Welcome to Voilà!</h1>
+        <p class="text-neutral-600">Your account has been created successfully</p>
+      {/if}
     </div>
     
     <div class="card p-5 sm:p-6 shadow-md rounded-xl">
@@ -84,85 +141,150 @@
         </div>
       {/if}
       
-      <form on:submit|preventDefault={handleSubmit} class="space-y-4">
-        <div>
-          <label for="displayName" class="block text-neutral-700 font-medium text-sm mb-1.5">Full Name</label>
-          <input 
-            type="text" 
-            id="displayName" 
-            class="input w-full p-3 rounded-lg text-base" 
-            bind:value={displayName}
-            placeholder="Enter your name"
-            required
-            disabled={isSubmitting}
-            autocomplete="name"
-          />
-        </div>
+      {#if step === 'phone'}
+        <!-- Phone Verification Step -->
+        <PhoneVerification 
+          mode="register"
+          on:verified={handlePhoneVerified}
+        />
         
-        <div>
-          <label for="email" class="block text-neutral-700 font-medium text-sm mb-1.5">Email</label>
-          <input 
-            type="email" 
-            id="email" 
-            class="input w-full p-3 rounded-lg text-base" 
-            bind:value={email}
-            placeholder="Enter your email"
-            required
-            disabled={isSubmitting}
-            autocomplete="email"
-          />
-        </div>
+      {:else if step === 'profile'}
+        <!-- Profile Setup Step -->
+        <form on:submit|preventDefault={handleProfileSetup} class="space-y-4">
+          <div>
+            <label for="displayName" class="block text-neutral-700 font-medium text-sm mb-1.5">
+              Full Name
+            </label>
+            <input 
+              type="text" 
+              id="displayName" 
+              class="input w-full p-3 rounded-lg text-base" 
+              bind:value={displayName}
+              placeholder="Enter your full name"
+              required
+              disabled={isSubmitting}
+              autocomplete="name"
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            class="btn btn-primary w-full h-12 rounded-lg text-base font-medium mt-6" 
+            disabled={!displayName.trim() || isSubmitting}
+          >
+            Continue
+          </button>
+        </form>
         
-        <div>
-          <label for="password" class="block text-neutral-700 font-medium text-sm mb-1.5">Password</label>
-          <input 
-            type="password" 
-            id="password" 
-            class="input w-full p-3 rounded-lg text-base" 
-            bind:value={password}
-            placeholder="Create a password (min. 6 characters)"
-            required
-            minlength="6"
-            disabled={isSubmitting}
-            autocomplete="new-password"
-          />
-        </div>
+      {:else if step === 'address'}
+        <!-- Address Setup Step -->
+        <AddressSetup 
+          isLoading={isSubmitting}
+          on:address-setup={handleAddressSetup}
+        />
         
-        <div class="mb-2">
-          <label for="confirmPassword" class="block text-neutral-700 font-medium text-sm mb-1.5">Confirm Password</label>
-          <input 
-            type="password" 
-            id="confirmPassword" 
-            class="input w-full p-3 rounded-lg text-base" 
-            bind:value={confirmPassword}
-            placeholder="Confirm your password"
-            required
-            minlength="6"
-            disabled={isSubmitting}
-            autocomplete="new-password"
-          />
+      {:else if step === 'complete'}
+        <!-- Completion Step -->
+        <div class="text-center py-8">
+          <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Account Created!</h3>
+          <p class="text-gray-600 mb-4">
+            Welcome to Voilà, {displayName}! You can now start creating groups and finding perfect meeting spots.
+          </p>
+          
+          <div class="flex items-center justify-center">
+            <div class="loader mr-2"></div>
+            <span class="text-sm text-gray-500">Redirecting...</span>
+          </div>
         </div>
-        
-        <button 
-          type="submit" 
-          class="btn btn-primary w-full h-12 rounded-lg text-base font-medium mt-6" 
-          disabled={isSubmitting}
-        >
-          {#if isSubmitting}
-            <span class="loader loader-sm mr-2"></span>
-            <span>Creating account...</span>
-          {:else}
-            Create Account
-          {/if}
-        </button>
-      </form>
-      
+      {/if}
+    </div>
+    
+    {#if step === 'phone'}
       <div class="text-center mt-6">
         <p class="text-neutral-600 text-sm">
           Already have an account? 
           <a href="/auth/login" class="text-primary-600 hover:text-primary-700 font-medium">Sign in</a>
         </p>
       </div>
-    </div>
+    {/if}
   </div>
 </div>
+
+<style>
+  .card {
+    background: white;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .alert {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+  }
+
+  .alert-error {
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1rem;
+    border: none;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: #3b82f6;
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: #2563eb;
+  }
+
+  .input {
+    border: 1px solid #d1d5db;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .loader {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

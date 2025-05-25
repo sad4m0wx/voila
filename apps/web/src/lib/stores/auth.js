@@ -1,338 +1,751 @@
 import { writable, derived, get } from 'svelte/store';
-import { 
-  initializeFirebase,
-} from '$firebase-auth/config';
 
 import {
-  signIn as firebaseSignIn,
-  signUp as firebaseSignUp,
-  signOut as firebaseSignOut,
-  resetPassword as firebaseResetPassword,
-  signInAsGuest as firebaseSignInAsGuest,
-  convertAnonymousAccount as firebaseConvertAnonymousAccount,
-  subscribeToAuthChanges
-} from '$firebase-auth/auth';
+  signInWithPhoneNumber,
+  RecaptchaVerifier,
+  onAuthStateChanged,
+  signOut as firebaseSignOut
+} from 'firebase/auth';
 
 import {
-  createUserProfile,
-  getUserProfile,
-  updateUserProfile,
-  saveAddress as saveUserAddress,
-  setHomeAddress as setUserHomeAddress
-} from '$firebase-auth/users';
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  serverTimestamp
+} from 'firebase/firestore';
 
-// Initialize Firebase
-// In production, load this from environment variables
+import { initializeFirebase } from '$lib/firebase-auth/config';
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase instances
 const { auth, db, functions } = initializeFirebase(firebaseConfig);
 
-// Initial state
+
 const initialState = {
   user: null,
   profile: null,
+  addresses: [],
+  defaultAddress: null,
   isLoading: true,
-  error: null
+  error: null,
+  phoneVerification: {
+    verificationId: null,
+    isLoading: false,
+    error: null
+  }
 };
 
-// Create the store
 const authStore = writable(initialState);
 
-// Initialize auth listener (call this ONCE in your root component)
 let unsubscribe;
 export function initAuth() {
   if (unsubscribe) return unsubscribe;
-  unsubscribe = subscribeToAuthChanges(auth, async (user) => {
+  unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (user) {
       authStore.update(state => ({
         ...state,
         user: {
           uid: user.uid,
+          phoneNumber: user.phoneNumber,
           displayName: user.displayName,
-          email: user.email,
-          photoURL: user.photoURL,
-          isAnonymous: user.isAnonymous
         },
         isLoading: true,
         error: null
       }));
-      try {
-        const profile = await getUserProfile(db, user.uid);
-        if (profile) {
-          authStore.update(state => ({
-            ...state,
-            profile,
-            isLoading: false
-          }));
-        } else {
-          await createUserProfile(db, user.uid, {
-            displayName: user.displayName || '',
-            email: user.email || '',
-            photoURL: user.photoURL || '',
-            isAnonymous: user.isAnonymous
-          });
-          const newProfile = await getUserProfile(db, user.uid);
-          authStore.update(state => ({
-            ...state,
-            profile: newProfile,
-            isLoading: false
-          }));
-        }
-      } catch (error) {
-        console.error('Error loading user profile:', error);
-        authStore.update(state => ({
-          ...state,
-          error: error.message,
-          isLoading: false
-        }));
-      }
+      
+      // Load user profile and addresses
+      await loadUserProfile(user.uid);
+      await loadUserAddresses(user.uid);
     } else {
       authStore.set({
-        user: null,
-        profile: null,
-        isLoading: false,
-        error: null
+        ...initialState,
+        isLoading: false
       });
     }
   });
+  
   return unsubscribe;
 }
 
-// Authentication methods
-export async function login(email, password) {
-  authStore.update(state => ({
-    ...state,
-    isLoading: true,
-    error: null
-  }));
-  
-  try {
-    const result = await firebaseSignIn(auth, email, password);
-    
-    if (result.error) {
-      authStore.update(state => ({
-        ...state,
-        isLoading: false,
-        error: result.error
-      }));
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    authStore.update(state => ({
-      ...state,
-      isLoading: false,
-      error: error.message
-    }));
-    return false;
-  }
-}
 
-export async function register(email, password, displayName) {
-  authStore.update(state => ({
-    ...state,
-    isLoading: true,
-    error: null
-  }));
-  
-  try {
-    const result = await firebaseSignUp(auth, email, password, displayName);
-    
-    if (result.error) {
-      authStore.update(state => ({
-        ...state,
-        isLoading: false,
-        error: result.error
-      }));
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    authStore.update(state => ({
-      ...state,
-      isLoading: false,
-      error: error.message
-    }));
-    return false;
-  }
-}
 
 export async function logout() {
   try {
     await firebaseSignOut(auth);
-    return true;
+    
+    // Clear ReCAPTCHA
+    if (recaptchaVerifier) {
+      recaptchaVerifier.clear();
+      recaptchaVerifier = null;
+    }
+    
+    return { success: true };
   } catch (error) {
     authStore.update(state => ({
       ...state,
       error: error.message
     }));
-    return false;
+    return { success: false, error: error.message };
   }
 }
 
-export async function loginAsGuest() {
+// ADDRESS MANAGEMENT FUNCTIONS
+
+/**
+ * Validate address object
+ */
+export function validateAddress(address) {
+  return (
+    address &&
+    typeof address.name === 'string' &&
+    address.name.trim().length > 0 &&
+    typeof address.formatted === 'string' &&
+    address.formatted.trim().length > 0 &&
+    Array.isArray(address.coordinates) &&
+    address.coordinates.length === 2 &&
+    typeof address.coordinates[0] === 'number' &&
+    typeof address.coordinates[1] === 'number'
+  );
+}
+
+/**
+ * Create a new address
+ */
+export async function createAddress(userId, addressData) {
+  if (!validateAddress(addressData)) {
+    authStore.update(state => ({
+      ...state,
+      error: 'Invalid address data'
+    }));
+    return { success: false, error: 'Invalid address data' };
+  }
+
   authStore.update(state => ({
     ...state,
     isLoading: true,
     error: null
   }));
-  
+
   try {
-    const result = await firebaseSignInAsGuest(auth);
+    const addressId = `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     
-    if (result.error) {
-      authStore.update(state => ({
-        ...state,
-        isLoading: false,
-        error: result.error
-      }));
-      return false;
-    }
+    const address = {
+      id: addressId,
+      userId,
+      name: addressData.name.trim(),
+      formatted: addressData.formatted.trim(),
+      coordinates: addressData.coordinates,
+      placeId: addressData.placeId || null,
+      isDefault: addressData.isDefault || false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    await setDoc(doc(db, 'userAddresses', addressId), address);
     
-    return true;
+    // Reload addresses
+    await loadUserAddresses(userId);
+    
+    return { success: true, address };
   } catch (error) {
+    console.error('Error creating address:', error);
+    
     authStore.update(state => ({
       ...state,
       isLoading: false,
       error: error.message
     }));
-    return false;
+
+    return { success: false, error: error.message };
   }
 }
 
-export async function convertGuestAccount(email, password, displayName) {
+/**
+ * Update an address
+ */
+export async function updateAddress(addressId, updates) {
   authStore.update(state => ({
     ...state,
     isLoading: true,
     error: null
   }));
-  
+
   try {
-    const result = await firebaseConvertAnonymousAccount(auth, email, password);
+    const addressRef = doc(db, 'userAddresses', addressId);
     
-    if (result.error) {
-      authStore.update(state => ({
-        ...state,
-        isLoading: false,
-        error: result.error
-      }));
-      return false;
+    await updateDoc(addressRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+
+    // Reload addresses
+    const state = get(authStore);
+    if (state.user?.uid) {
+      await loadUserAddresses(state.user.uid);
     }
-    
-    // Update the display name if provided
-    if (displayName && result.user) {
-      await updateUserProfile(db, result.user.uid, { displayName });
-    }
-    
-    return true;
+
+    return { success: true };
   } catch (error) {
+    console.error('Error updating address:', error);
+    
     authStore.update(state => ({
       ...state,
       isLoading: false,
       error: error.message
     }));
-    return false;
+
+    return { success: false, error: error.message };
   }
 }
 
-export async function sendPasswordReset(email) {
+/**
+ * Delete an address
+ */
+export async function deleteAddress(addressId) {
+  authStore.update(state => ({
+    ...state,
+    isLoading: true,
+    error: null
+  }));
+
   try {
-    const result = await firebaseResetPassword(auth, email);
+    await deleteDoc(doc(db, 'userAddresses', addressId));
+
+    // Reload addresses
+    const state = get(authStore);
+    if (state.user?.uid) {
+      await loadUserAddresses(state.user.uid);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting address:', error);
     
-    if (result.error) {
-      authStore.update(state => ({
-        ...state,
-        error: result.error
-      }));
-      return false;
+    authStore.update(state => ({
+      ...state,
+      isLoading: false,
+      error: error.message
+    }));
+
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Set an address as default
+ */
+export async function setDefaultAddress(userId, addressId) {
+  authStore.update(state => ({
+    ...state,
+    isLoading: true,
+    error: null
+  }));
+
+  try {
+    // First, remove default flag from all user addresses
+    const addressesQuery = query(
+      collection(db, 'userAddresses'),
+      where('userId', '==', userId)
+    );
+    
+    const querySnapshot = await getDocs(addressesQuery);
+    const batch = [];
+    
+    querySnapshot.forEach((doc) => {
+      if (doc.data().isDefault) {
+        batch.push(updateDoc(doc.ref, { isDefault: false, updatedAt: serverTimestamp() }));
+      }
+    });
+    
+    // Wait for all updates to complete
+    await Promise.all(batch);
+    
+    // Set the new default address
+    await updateDoc(doc(db, 'userAddresses', addressId), {
+      isDefault: true,
+      updatedAt: serverTimestamp()
+    });
+
+    // Reload addresses
+    await loadUserAddresses(userId);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting default address:', error);
+    
+    authStore.update(state => ({
+      ...state,
+      isLoading: false,
+      error: error.message
+    }));
+
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Geocode an address string to coordinates
+ */
+export async function geocodeAddress(addressString) {
+  try {
+    if (!window.google || !window.google.maps) {
+      return {
+        success: false,
+        error: 'Google Maps not loaded'
+      };
+    }
+
+    const geocoder = new window.google.maps.Geocoder();
+    
+    return new Promise((resolve) => {
+      geocoder.geocode({ address: addressString }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          const result = results[0];
+          resolve({
+            success: true,
+            result: {
+              formatted: result.formatted_address,
+              coordinates: [
+                result.geometry.location.lng(),
+                result.geometry.location.lat()
+              ],
+              placeId: result.place_id
+            }
+          });
+        } else {
+          resolve({
+            success: false,
+            error: 'Could not geocode address'
+          });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Error geocoding address:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Clear error state
+ */
+export function clearError() {
+  authStore.update(state => ({
+    ...state,
+    error: null,
+    phoneVerification: {
+      ...state.phoneVerification,
+      error: null
+    }
+  }));
+}
+
+// ReCAPTCHA verifier for phone auth
+let recaptchaVerifier = null;
+
+/**
+ * Initialize ReCAPTCHA verifier
+ */
+function initRecaptcha() {
+  if (typeof window === 'undefined') return null;
+  
+  if (!recaptchaVerifier) {
+    try {
+      recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => {
+          console.log('reCAPTCHA solved');
+        },
+        'expired-callback': () => {
+          console.log('reCAPTCHA expired');
+          // Clear and reinitialize if expired
+          if (recaptchaVerifier) {
+            recaptchaVerifier.clear();
+            recaptchaVerifier = null;
+          }
+        },
+        'error-callback': (error) => {
+          console.error('reCAPTCHA error:', error);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to initialize reCAPTCHA:', error);
+      return null;
+    }
+  }
+  return recaptchaVerifier;
+}
+
+/**
+ * Validate phone number format
+ */
+export function validatePhoneNumber(phoneNumber) {
+  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  const phoneRegex = /^\+[1-9]\d{9,14}$/;
+  return phoneRegex.test(cleaned);
+}
+
+/**
+ * Format phone number for display
+ */
+export function formatPhoneNumber(phoneNumber) {
+  const cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  
+  if (cleaned.startsWith('+1') && cleaned.length === 12) {
+    return `+1 (${cleaned.slice(2, 5)}) ${cleaned.slice(5, 8)}-${cleaned.slice(8)}`;
+  }
+  
+  return cleaned;
+}
+
+/**
+ * Get country codes for phone number input
+ */
+export function getCountryCodes() {
+  return [
+    { code: '+1', country: 'US/CA', flag: '🇺🇸' },
+    { code: '+44', country: 'UK', flag: '🇬🇧' },
+    { code: '+33', country: 'FR', flag: '🇫🇷' },
+    { code: '+49', country: 'DE', flag: '🇩🇪' },
+    { code: '+39', country: 'IT', flag: '🇮🇹' },
+    { code: '+34', country: 'ES', flag: '🇪🇸' },
+    { code: '+31', country: 'NL', flag: '🇳🇱' },
+    { code: '+32', country: 'BE', flag: '🇧🇪' },
+    { code: '+41', country: 'CH', flag: '🇨🇭' },
+    { code: '+43', country: 'AT', flag: '🇦🇹' },
+    { code: '+45', country: 'DK', flag: '🇩🇰' },
+    { code: '+46', country: 'SE', flag: '🇸🇪' },
+    { code: '+47', country: 'NO', flag: '🇳🇴' },
+    { code: '+358', country: 'FI', flag: '🇫🇮' },
+    { code: '+351', country: 'PT', flag: '🇵🇹' },
+    { code: '+30', country: 'GR', flag: '🇬🇷' },
+    { code: '+48', country: 'PL', flag: '🇵🇱' },
+    { code: '+420', country: 'CZ', flag: '🇨🇿' },
+    { code: '+36', country: 'HU', flag: '🇭🇺' },
+    { code: '+40', country: 'RO', flag: '🇷🇴' },
+    { code: '+359', country: 'BG', flag: '🇧🇬' },
+    { code: '+385', country: 'HR', flag: '🇭🇷' },
+    { code: '+386', country: 'SI', flag: '🇸🇮' },
+    { code: '+421', country: 'SK', flag: '🇸🇰' },
+    { code: '+372', country: 'EE', flag: '🇪🇪' },
+    { code: '+371', country: 'LV', flag: '🇱🇻' },
+    { code: '+370', country: 'LT', flag: '🇱🇹' }
+  ];
+}
+
+/**
+ * Send SMS verification code
+ */
+export async function sendVerificationCode(phoneNumber) {
+  if (!validatePhoneNumber(phoneNumber)) {
+    authStore.update(state => ({
+      ...state,
+      phoneVerification: {
+        ...state.phoneVerification,
+        error: 'Invalid phone number format'
+      }
+    }));
+    return { success: false, error: 'Invalid phone number format' };
+  }
+
+  authStore.update(state => ({
+    ...state,
+    phoneVerification: {
+      ...state.phoneVerification,
+      isLoading: true,
+      error: null
+    }
+  }));
+
+  try {
+    const recaptcha = initRecaptcha();
+    if (!recaptcha) {
+      throw new Error('ReCAPTCHA not initialized. Please check your Firebase configuration.');
+    }
+
+    // Store the confirmation result globally for later verification
+    confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptcha);
+    
+    authStore.update(state => ({
+      ...state,
+      phoneVerification: {
+        ...state.phoneVerification,
+        verificationId: confirmationResult.verificationId,
+        isLoading: false
+      }
+    }));
+
+    return {
+      success: true,
+      verificationId: confirmationResult.verificationId
+    };
+  } catch (error) {
+    console.error('Error sending verification code:', error);
+    
+    let errorMessage = error.message;
+    
+    // Handle specific Firebase error codes
+    switch (error.code) {
+      case 'auth/invalid-phone-number':
+        errorMessage = 'Invalid phone number format';
+        break;
+      case 'auth/missing-phone-number':
+        errorMessage = 'Phone number is required';
+        break;
+      case 'auth/quota-exceeded':
+        errorMessage = 'SMS quota exceeded. Please try again later';
+        break;
+      case 'auth/invalid-app-credential':
+        errorMessage = 'Phone authentication not enabled. Please enable it in Firebase Console';
+        break;
+      case 'auth/captcha-check-failed':
+        errorMessage = 'reCAPTCHA verification failed. Please try again';
+        break;
+      case 'auth/too-many-requests':
+        errorMessage = 'Too many requests. Please try again later';
+        break;
+      default:
+        errorMessage = error.message || 'Failed to send verification code';
     }
     
-    return true;
-  } catch (error) {
     authStore.update(state => ({
       ...state,
-      error: error.message
+      phoneVerification: {
+        ...state.phoneVerification,
+        isLoading: false,
+        error: errorMessage
+      }
     }));
+
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
+// Store confirmation result globally for verification
+let confirmationResult = null;
+
+/**
+ * Verify SMS code
+ */
+export async function verifyCode(verificationId, code) {
+  authStore.update(state => ({
+    ...state,
+    phoneVerification: {
+      ...state.phoneVerification,
+      isLoading: true,
+      error: null
+    }
+  }));
+
+  try {
+    if (!confirmationResult) {
+      throw new Error('No verification in progress');
+    }
+
+    // Confirm the verification code
+    const result = await confirmationResult.confirm(code);
+    const user = result.user;
+    
+    // Clear the confirmation result
+    confirmationResult = null;
+    
+    authStore.update(state => ({
+      ...state,
+      phoneVerification: {
+        verificationId: null,
+        isLoading: false,
+        error: null
+      }
+    }));
+
+    return {
+      success: true,
+      phoneNumber: user.phoneNumber,
+      user
+    };
+  } catch (error) {
+    console.error('Error verifying code:', error);
+    
+    authStore.update(state => ({
+      ...state,
+      phoneVerification: {
+        ...state.phoneVerification,
+        isLoading: false,
+        error: error.code === 'auth/invalid-verification-code' 
+          ? 'Invalid verification code' 
+          : error.message
+      }
+    }));
+
+    return {
+      success: false,
+      error: error.code === 'auth/invalid-verification-code' 
+        ? 'Invalid verification code' 
+        : error.message
+    };
+  }
+}
+
+/**
+ * Check if phone number is already registered
+ */
+export async function checkPhoneNumberExists(phoneNumber) {
+  try {
+    // Query users collection to find if any user has this phone number
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('phoneNumber', '==', phoneNumber)
+    );
+    
+    const querySnapshot = await getDocs(usersQuery);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error('Error checking phone number:', error);
     return false;
   }
 }
 
-// Save address for a user
-export async function saveAddress(address) {
-  const state = get(authStore);
-  
-  if (!state.user) {
-    throw new Error('User not signed in');
-  }
-  
+/**
+ * Create user profile
+ */
+export async function createUserProfile(uid, phoneNumber, displayName) {
+  authStore.update(state => ({
+    ...state,
+    isLoading: true,
+    error: null
+  }));
+
   try {
-    await saveUserAddress(db, state.user.uid, address);
-    
-    // Update profile in store
-    const profile = await getUserProfile(db, state.user.uid);
+    const userProfile = {
+      uid,
+      phoneNumber,
+      displayName: displayName.trim(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      isActive: true,
+      registrationCompleted: true
+    };
+
+    await setDoc(doc(db, 'users', uid), userProfile);
     
     authStore.update(state => ({
       ...state,
-      profile
+      profile: userProfile,
+      isLoading: false
     }));
-    
-    return true;
+
+    return { success: true };
   } catch (error) {
+    console.error('Error creating user profile:', error);
+    
     authStore.update(state => ({
       ...state,
+      isLoading: false,
       error: error.message
     }));
-    return false;
+
+    return { success: false, error: error.message };
   }
 }
 
-// Set home address
-export async function setHomeAddress(address) {
-  const state = get(authStore);
-  
-  if (!state.user) {
-    throw new Error('User not signed in');
-  }
-  
+/**
+ * Load user profile
+ */
+async function loadUserProfile(uid) {
   try {
-    await setUserHomeAddress(db, state.user.uid, address);
+    const userRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(userRef);
     
-    // Update profile in store
-    const profile = await getUserProfile(db, state.user.uid);
-    
-    authStore.update(state => ({
-      ...state,
-      profile
-    }));
-    
-    return true;
+    if (userSnap.exists()) {
+      const profile = userSnap.data();
+      authStore.update(state => ({
+        ...state,
+        profile,
+        isLoading: false
+      }));
+    }
   } catch (error) {
+    console.error('Error loading user profile:', error);
     authStore.update(state => ({
       ...state,
-      error: error.message
+      error: error.message,
+      isLoading: false
     }));
-    return false;
+  }
+}
+
+/**
+ * Load user addresses
+ */
+async function loadUserAddresses(userId) {
+  try {
+    const addressesQuery = query(
+      collection(db, 'userAddresses'),
+      where('userId', '==', userId)
+    );
+    
+    const querySnapshot = await getDocs(addressesQuery);
+    const addresses = [];
+    
+    querySnapshot.forEach((doc) => {
+      addresses.push({ id: doc.id, ...doc.data() });
+    });
+
+    // Sort by creation date, with default address first
+    addresses.sort((a, b) => {
+      if (a.isDefault && !b.isDefault) return -1;
+      if (!a.isDefault && b.isDefault) return 1;
+      return b.createdAt?.toDate() - a.createdAt?.toDate();
+    });
+
+    const defaultAddress = addresses.find(addr => addr.isDefault) || null;
+
+    authStore.update(state => ({
+      ...state,
+      addresses,
+      defaultAddress,
+      isLoading: false
+    }));
+  } catch (error) {
+    console.error('Error loading addresses:', error);
+    authStore.update(state => ({
+      ...state,
+      error: error.message,
+      isLoading: false
+    }));
   }
 }
 
 // Derived stores for convenience
 export const user = derived(authStore, $auth => $auth.user);
 export const profile = derived(authStore, $auth => $auth.profile);
+export const addresses = derived(authStore, $auth => $auth.addresses);
+export const defaultAddress = derived(authStore, $auth => $auth.defaultAddress);
 export const isLoading = derived(authStore, $auth => $auth.isLoading);
 export const error = derived(authStore, $auth => $auth.error);
 export const isAuthenticated = derived(authStore, $auth => $auth.user !== null);
-export const isAnonymous = derived(authStore, $auth => $auth.user?.isAnonymous || false);
-export const savedAddresses = derived(profile, $profile => $profile?.savedAddresses || []);
+export const phoneVerification = derived(authStore, $auth => $auth.phoneVerification);
 
 // Export the store itself
 export { authStore };

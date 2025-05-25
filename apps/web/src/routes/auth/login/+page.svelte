@@ -1,14 +1,15 @@
 <script>
-  import { login, loginAsGuest, isAuthenticated } from "$stores/auth";
   import { onMount } from "svelte";
-  import BackButton from "$lib/components/auth/BackButton.svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
+  import PhoneVerification from "$lib/components/auth/PhoneVerification.svelte";
+  import { checkPhoneNumberExists } from "$lib/stores/auth.js";
   
   // State
-  let email = "";
-  let password = "";
   let isSubmitting = false;
-  let error = "";
+  let error = '';
   let redirectUrl = "/";
+  let loginSuccess = false;
   
   // Get redirect URL from query parameter if present
   onMount(() => {
@@ -17,47 +18,38 @@
     if (redirect) {
       redirectUrl = redirect;
     }
-    
-    // Redirect if already authenticated
-    if ($isAuthenticated) {
-      window.location.href = redirectUrl;
-    }
   });
   
-  // Handle form submission
-  async function handleSubmit() {
-    error = "";
-    isSubmitting = true;
+  // Handle phone verification completion
+  async function handlePhoneVerified(event) {
+    const { phoneNumber, user, mode } = event.detail;
     
-    try {
-      const success = await login(email, password);
-      
-      if (success) {
-        // Redirect after successful login
-        window.location.href = redirectUrl;
-      }
-    } catch (err) {
-      error = err.message;
-    } finally {
-      isSubmitting = false;
-    }
-  }
-  
-  // Handle guest login
-  async function handleGuestLogin() {
-    error = "";
     isSubmitting = true;
-    
+    error = '';
+
     try {
-      const success = await loginAsGuest();
+      // Check if user exists and is active
+      const exists = await checkPhoneNumberExists(phoneNumber);
       
-      if (success) {
-        // Redirect after successful login
-        window.location.href = redirectUrl;
+      if (!exists) {
+        error = 'Account not found. Please check your phone number or create a new account.';
+        isSubmitting = false;
+        return;
       }
+      
+      // Since Firebase Auth handled the verification, the user is now authenticated
+      // The auth state listener will handle loading the profile and addresses
+      
+      loginSuccess = true;
+      
+      // Redirect after a short delay
+      setTimeout(() => {
+        goto(redirectUrl, { replaceState: true });
+      }, 1500);
+
     } catch (err) {
-      error = err.message;
-    } finally {
+      console.error('Login error:', err);
+      error = 'Failed to sign in. Please try again.';
       isSubmitting = false;
     }
   }
@@ -65,17 +57,20 @@
 
 <svelte:head>
   <title>Sign In | Voilà!</title>
-  <meta name="description" content="Sign in to your Voilà account to find perfect meeting spots" />
+  <meta name="description" content="Sign in to your Voilà account" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 </svelte:head>
 
 <div class="min-h-screen flex flex-col justify-center px-4 py-6 sm:py-12">
   <div class="max-w-md w-full mx-auto">
-    <BackButton href="/" label="Back to Home" />
-    
-    <div class="text-center mb-8">
-      <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Welcome Back</h1>
-      <p class="text-neutral-600">Sign in to continue to Voilà!</p>
+    <div class="text-center mb-6 sm:mb-8">
+      {#if loginSuccess}
+        <h1 class="text-2xl sm:text-3xl font-bold text-green-600 mb-2">Welcome back!</h1>
+        <p class="text-neutral-600">You've been signed in successfully</p>
+      {:else}
+        <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Sign In</h1>
+        <p class="text-neutral-600">Enter your phone number to continue</p>
+      {/if}
     </div>
     
     <div class="card p-5 sm:p-6 shadow-md rounded-xl">
@@ -88,72 +83,79 @@
         </div>
       {/if}
       
-      <form on:submit|preventDefault={handleSubmit} class="space-y-5">
-        <div>
-          <label for="email" class="block text-neutral-700 font-medium text-sm mb-1.5">Email</label>
-          <input 
-            type="email" 
-            id="email" 
-            class="input w-full p-3 rounded-lg text-base" 
-            bind:value={email}
-            placeholder="Enter your email"
-            required
-            disabled={isSubmitting}
-            autocomplete="email"
-          />
-        </div>
-        
-        <div>
-          <div class="flex justify-between items-center mb-1.5">
-            <label for="password" class="block text-neutral-700 font-medium text-sm">Password</label>
-            <a href="/auth/reset-password" class="text-xs text-primary-600 hover:text-primary-700">Forgot password?</a>
+      {#if loginSuccess}
+        <!-- Success State -->
+        <div class="text-center py-8">
+          <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
           </div>
-          <input 
-            type="password" 
-            id="password" 
-            class="input w-full p-3 rounded-lg text-base" 
-            bind:value={password}
-            placeholder="Enter your password"
-            required
-            disabled={isSubmitting}
-            autocomplete="current-password"
-          />
+          
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Signed In Successfully!</h3>
+          <p class="text-gray-600 mb-4">
+            Welcome back! You're being redirected to your dashboard.
+          </p>
+          
+          <div class="flex items-center justify-center">
+            <div class="loader mr-2"></div>
+            <span class="text-sm text-gray-500">Redirecting...</span>
+          </div>
         </div>
-        
-        <button 
-          type="submit" 
-          class="btn btn-primary w-full h-12 rounded-lg text-base font-medium" 
-          disabled={isSubmitting}
-        >
-          {#if isSubmitting}
-            <span class="loader loader-sm mr-2"></span>
-            <span>Signing in...</span>
-          {:else}
-            Sign In
-          {/if}
-        </button>
-        
-        <div class="relative flex items-center justify-center my-4">
-          <div class="border-t border-neutral-200 w-full absolute"></div>
-          <span class="bg-bg-card px-2 text-xs text-neutral-500 relative">or</span>
-        </div>
-        
-        <button 
-          type="button" 
-          class="btn btn-outline w-full h-12 rounded-lg text-base font-medium"
-          on:click={handleGuestLogin}
-          disabled={isSubmitting}
-        >
-          Continue as Guest
-        </button>
-      </form>
-      
+      {:else}
+        <!-- Phone Verification -->
+        <PhoneVerification 
+          mode="login"
+          isLoading={isSubmitting}
+          on:verified={handlePhoneVerified}
+        />
+      {/if}
+    </div>
+    
+    {#if !loginSuccess}
       <div class="text-center mt-6">
         <p class="text-neutral-600 text-sm">
           Don't have an account? 
-          <a href="/auth/register" class="text-primary-600 hover:text-primary-700 font-medium">Create account</a>
+          <a href="/auth/register" class="text-primary-600 hover:text-primary-700 font-medium">Create one</a>
         </p>
       </div>
-    </div>
+      
+    {/if}
   </div>
 </div>
+
+<style>
+  .card {
+    background: white;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .alert {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+  }
+
+  .alert-error {
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+  }
+
+  .loader {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

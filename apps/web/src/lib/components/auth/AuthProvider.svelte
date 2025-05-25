@@ -1,4 +1,3 @@
-<!-- AuthProvider.svelte -->
 <script>
   import { onMount, onDestroy, setContext } from 'svelte';
   import { writable, derived } from 'svelte/store';
