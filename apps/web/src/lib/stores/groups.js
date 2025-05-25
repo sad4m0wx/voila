@@ -2,6 +2,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { getFirestore } from 'firebase/firestore';
 import { authStore } from './auth';
+import { goto } from '$app/navigation';
 import { 
   createGroup,
   getGroup,
@@ -18,7 +19,12 @@ import {
   acceptGroupInvite,
   declineGroupInvite,
   cancelGroupInvite,
-  leaveGroup
+  leaveGroup,
+  saveMeetingPoint,
+  toggleAttendance,
+  getGroupAttendance,
+  updateAttendanceStatus,
+  subscribeToGroupAttendance
 } from '$firebase-auth/groups';
 
 // Initial state
@@ -29,7 +35,9 @@ const initialState = {
   invites: [],
   loading: false,
   error: null,
-  lastUpdated: null
+  lastUpdated: null,
+  attendance: new Map(), // Map of userId -> { isAttending, updatedAt, location }
+  attendanceUnsubscribe: null
 };
 
 // Create the store
@@ -57,10 +65,8 @@ export async function loadUserGroups() {
   const auth = get(authStore);
   
   if (!auth.user) {
-    groupsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return;
   }
   
@@ -183,10 +189,8 @@ export async function createNewGroup(groupData, initialMembers = []) {
   const auth = get(authStore);
   
   if (!auth.user) {
-    groupsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return null;
   }
   
@@ -234,10 +238,8 @@ export async function updateGroupInfo(groupId, updateData) {
   const auth = get(authStore);
   
   if (!auth.user) {
-    groupsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return false;
   }
   
@@ -287,10 +289,8 @@ export async function addMember(userId) {
   const state = get(groupsStore);
   
   if (!auth.user || !state.currentGroup) {
-    groupsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated or no group selected'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return false;
   }
   
@@ -383,7 +383,7 @@ export async function removeMember(userId) {
     groupsStore.update(state => ({
       ...state,
       loading: false,
-      error: error.message
+      error: error?.message || JSON.stringify(error)
     }));
     return false;
   }
@@ -791,6 +791,227 @@ export async function leaveCurrentGroup() {
     return false;
   }
 }
+
+
+/**
+ * Save meeting point for current group
+ * @param {Object} meetingPointData - Meeting point data
+ */
+export async function saveMeetingPointForGroup(meetingPointData) {
+  const auth = get(authStore);
+  const state = get(groupsStore);
+  
+  if (!auth.user || !state.currentGroup) {
+    groupsStore.update(state => ({
+      ...state,
+      error: 'User not authenticated or no group selected'
+    }));
+    return false;
+  }
+  
+  groupsStore.update(state => ({
+    ...state,
+    loading: true,
+    error: null
+  }));
+  
+  try {
+    const db = getFirestore();
+    await saveMeetingPoint(db, state.currentGroup.id, meetingPointData, auth.user.uid);
+    
+    // Update the current group with meeting point
+    groupsStore.update(state => ({
+      ...state,
+      currentGroup: {
+        ...state.currentGroup,
+        meetingPoint: meetingPointData
+      },
+      loading: false,
+      lastUpdated: new Date()
+    }));
+    
+    return true;
+  } catch (error) {
+    console.error('Error saving meeting point:', error);
+    groupsStore.update(state => ({
+      ...state,
+      loading: false,
+      error: error.message
+    }));
+    return false;
+  }
+}
+
+/**
+ * Toggle attendance status for current user
+ * @param {string} status - 'coming' or 'not_coming'
+ */
+export async function toggleUserAttendance(status) {
+  const auth = get(authStore);
+  const state = get(groupsStore);
+  
+  if (!auth.user || !state.currentGroup) {
+    groupsStore.update(state => ({
+      ...state,
+      error: 'User not authenticated or no group selected'
+    }));
+    return false;
+  }
+  
+  groupsStore.update(state => ({
+    ...state,
+    loading: true,
+    error: null
+  }));
+  
+  try {
+    const db = getFirestore();
+    await toggleAttendance(db, state.currentGroup.id, auth.user.uid, status);
+    
+    // Update the current group attendance
+    groupsStore.update(state => ({
+      ...state,
+      currentGroup: {
+        ...state.currentGroup,
+        attendance: {
+          ...state.currentGroup.attendance,
+          [auth.user.uid]: {
+            status: status,
+            updatedAt: new Date()
+          }
+        }
+      },
+      loading: false,
+      lastUpdated: new Date()
+    }));
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating attendance:', error);
+    groupsStore.update(state => ({
+      ...state,
+      loading: false,
+      error: error.message
+    }));
+    return false;
+  }
+}
+
+
+/**
+ * Update current user's attendance status
+ * @param {string} groupId - Group ID
+ * @param {boolean} isAttending - Whether user is attending
+ * @param {Object} location - User's location (optional)
+ */
+export async function updateMyAttendance(groupId, isAttending, location = null) {
+  const auth = get(authStore);
+  
+  if (!auth.user) {
+    groupsStore.update(state => ({
+      ...state,
+      error: 'User not authenticated'
+    }));
+    return false;
+  }
+  
+  try {
+    const db = getFirestore();
+    await updateAttendanceStatus(db, groupId, auth.user.uid, isAttending, location);
+    
+    // Update local state immediately for responsiveness
+    groupsStore.update(state => {
+      const newAttendance = new Map(state.attendance);
+      newAttendance.set(auth.user.uid, {
+        isAttending,
+        updatedAt: new Date(),
+        location
+      });
+      
+      return {
+        ...state,
+        attendance: newAttendance
+      };
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating attendance:', error);
+    groupsStore.update(state => ({
+      ...state,
+      error: error.message
+    }));
+    return false;
+  }
+}
+
+/**
+ * Load and subscribe to attendance updates for a group
+ * @param {string} groupId - Group ID
+ */
+export async function subscribeToAttendance(groupId) {
+  const auth = get(authStore);
+  
+  if (!auth.user) {
+    return;
+  }
+  
+  try {
+    const db = getFirestore();
+    
+    // Unsubscribe from previous subscription
+    const state = get(groupsStore);
+    if (state.attendanceUnsubscribe) {
+      state.attendanceUnsubscribe();
+    }
+    
+    // Subscribe to real-time updates
+    const unsubscribe = subscribeToGroupAttendance(db, groupId, (attendanceMap) => {
+      groupsStore.update(state => ({
+        ...state,
+        attendance: attendanceMap
+      }));
+    });
+    
+    groupsStore.update(state => ({
+      ...state,
+      attendanceUnsubscribe: unsubscribe
+    }));
+    
+  } catch (error) {
+    console.error('Error subscribing to attendance:', error);
+    groupsStore.update(state => ({
+      ...state,
+      error: error.message
+    }));
+  }
+}
+
+/**
+ * Unsubscribe from attendance updates
+ */
+export function unsubscribeFromAttendance() {
+  const state = get(groupsStore);
+  if (state.attendanceUnsubscribe) {
+    state.attendanceUnsubscribe();
+    groupsStore.update(state => ({
+      ...state,
+      attendanceUnsubscribe: null,
+      attendance: new Map()
+    }));
+  }
+}
+
+// Add derived store for attendance
+export const attendance = derived(groupsStore, $store => $store.attendance);
+
+// Update the reset logic when user logs out
+authStore.subscribe(auth => {
+  if (!auth.user) {
+    unsubscribeFromAttendance();
+    groupsStore.set(initialState);
+  }
+});
 
 // Export the store
 export { groupsStore };

@@ -29,8 +29,7 @@ import {
       savedAddresses: data.savedAddresses || [],
       friends: data.friends || [],
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      isAnonymous: data.isAnonymous || false
+      updatedAt: serverTimestamp()
     });
     
     return userRef;
