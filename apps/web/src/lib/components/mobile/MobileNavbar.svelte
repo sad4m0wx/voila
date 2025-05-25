@@ -14,18 +14,6 @@
         `,
         },
         {
-            name: "Friends",
-            path: "/friends",
-            icon: `
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
-        `,
-        },
-        {
             name: "Groups",
             path: "/groups",
             icon: `
@@ -36,17 +24,7 @@
             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
         `,
-        },
-        {
-            name: "Profile",
-            path: "/profile",
-            icon: `
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-        `,
-        },
+        }
     ];
 
     // Get current path and check if it's active
@@ -63,7 +41,7 @@
 <nav
     class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 safe-area-bottom"
 >
-    <div class="grid grid-cols-4 h-16">
+    <div class="grid grid-cols-2 h-16">
         {#each navItems as item}
             <a
                 href={item.path}
