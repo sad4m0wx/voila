@@ -6,7 +6,6 @@ import {
   updateProfile,
   sendEmailVerification,
   onAuthStateChanged,
-  signInAnonymously,
   linkWithCredential,
   EmailAuthProvider
 } from 'firebase/auth';
@@ -78,44 +77,6 @@ export async function resetPassword(auth, email) {
   }
 }
 
-
-
-
-/**
- * Sign in anonymously (as guest)
- * @param {Object} auth - Firebase auth instance
- */
-export async function signInAsGuest(auth) {
-  try {
-    const userCredential = await signInAnonymously(auth);
-    return { user: userCredential.user, error: null };
-  } catch (error) {
-    return { user: null, error: error.message };
-  }
-}
-
-/**
- * Convert anonymous account to permanent account
- * @param {Object} auth - Firebase auth instance
- * @param {string} email - User email
- * @param {string} password - User password
- */
-export async function convertAnonymousAccount(auth, email, password) {
-  try {
-    const user = auth.currentUser;
-    
-    if (!user || !user.isAnonymous) {
-      throw new Error('No anonymous user signed in');
-    }
-    
-    const credential = EmailAuthProvider.credential(email, password);
-    const userCredential = await linkWithCredential(user, credential);
-    
-    return { user: userCredential.user, error: null };
-  } catch (error) {
-    return { user: null, error: error.message };
-  }
-}
 
 /**
  * Subscribe to auth state changes
