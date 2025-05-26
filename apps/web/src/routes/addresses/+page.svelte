@@ -11,8 +11,8 @@
     deleteAddress,
     setDefaultAddress,
     clearError
-  } from '$lib/stores/auth.js';
-  import AddressSetup from '$lib/components/auth/AddressSetup.svelte';
+  } from '$stores/auth.js';
+  import AddressSetup from '$components/auth/AddressSetup.svelte';
 
   // State
   let showAddForm = false;

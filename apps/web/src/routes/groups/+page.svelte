@@ -2,7 +2,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import Navbar from '$lib/components/Navbar.svelte';
+  import Navbar from '$components/core/Navbar.svelte';
   import { authStore } from '$stores/auth';
   import { 
     groups, 

@@ -2,8 +2,8 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import PhoneVerification from "$lib/components/auth/PhoneVerification.svelte";
-  import { checkPhoneNumberExists } from "$lib/stores/auth.js";
+  import PhoneVerification from "$components/auth/PhoneVerification.svelte";
+  import { checkPhoneNumberExists } from "$stores/auth.js";
   
   // State
   let isSubmitting = false;

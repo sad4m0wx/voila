@@ -1,10 +1,10 @@
 <script>
   import "../app.css";
-  import Navbar from "$lib/components/Navbar.svelte";
-  import AuthProvider from "$lib/components/auth/AuthProvider.svelte";
-  import MobileNavbar from "$lib/components/mobile/MobileNavbar.svelte";
-  import PullToRefresh from "$lib/components/mobile/PullToRefresh.svelte";
-import AuthDebug from "$lib/components/debug/AuthDebug.svelte";
+  import Navbar from "$components/core/Navbar.svelte";
+  import AuthProvider from "$components/auth/AuthProvider.svelte";
+  import MobileNavbar from "$components/core/MobileNavbar.svelte";
+  import PullToRefresh from "$components/core/PullToRefresh.svelte";
+  import AuthDebug from "$components/debug/AuthDebug.svelte";
   import { onMount, setContext } from "svelte";
   import { page } from "$app/stores";
   

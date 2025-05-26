@@ -1,7 +1,8 @@
 <!-- src/lib/components/Navbar.svelte -->
 <script>
-  import { isAuthenticated, logout } from "$stores/auth";
-  import { onMount } from "svelte";
+import { isAuthenticated, logout } from "$stores/auth";
+import { onMount } from "svelte";
+import { goto } from "$app/navigation";
   
   let isMenuOpen = false;
   let isScrolled = false;
@@ -24,8 +25,8 @@
   // Handle logout
   async function handleLogout() {
     await logout();
-    window.location.href = "/";
-  }
+    goto("/", { replaceState: true });
+}
 </script>
 
 <header class={`fixed w-full z-50 transition-all duration-200 ${isScrolled ? "bg-white shadow-md py-2" : "bg-transparent py-4"}`}>

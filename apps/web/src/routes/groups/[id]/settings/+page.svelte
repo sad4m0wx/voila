@@ -1,4 +1,3 @@
-<!-- apps/web/src/routes/groups/[id]/settings/+page.svelte -->
 <script>
   import { onMount, getContext } from "svelte";
   import { page } from "$app/stores";
@@ -18,6 +17,10 @@
     leaveCurrentGroup,
     inviteUser
   } from '$stores/groups';
+  
+  import GroupInfoEditor from '$components/groups/GroupInfoEditor.svelte';
+  import GroupMemberManager from '$components/groups/GroupMemberManager.svelte';
+  import GroupInviteForm from '$components/groups/GroupInviteForm.svelte';
   
   const { user, profile, isLoading: authLoading } = getContext('auth');
 

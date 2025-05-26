@@ -13,7 +13,8 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			'$firebase-auth': path.resolve(__dirname, 'src/lib/firebase-auth'),
-			'$map': path.resolve(__dirname, 'src/lib/map'),
+			'$components': path.resolve(__dirname, 'src/lib/components'),
+			'$services': path.resolve(__dirname, 'src/lib/services'),
 			'$stores': path.resolve(__dirname, 'src/lib/stores'),
 		}
 	},

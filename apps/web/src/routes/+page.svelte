@@ -1,12 +1,13 @@
 <script>
   import { onMount } from "svelte";
-  import { MapProvider, AddressInput, MapContainer, googleMapsService, isGoogleMapsLoaded } from '$map';
-  import { isAuthenticated } from "$stores/auth";
-  import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
+  import MapProvider from '$components/maps/MapProvider.svelte';
+  import MapContainer from '$components/maps/MapContainer.svelte';
+  import { findOptimalMeetingPoint } from "$services/meetingPointApi";
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
-  import MobileHeader from "$lib/components/mobile/MobileHeader.svelte";
-  import VenueTypeSelector from "$lib/components/venues/VenueTypeSelector.svelte";
-  import VenueList from "$lib/components/venues/VenueList.svelte";
+  import MobileHeader from "$components/core/MobileHeader.svelte";
+  import AddressForm from "$components/meeting/AddressForm.svelte";
+  import MeetingPointResults from "$components/meeting/MeetingPointResults.svelte";
+  import VenueOptions from "$components/venues/VenueOptions.svelte";
   
   // State
   let addresses = [{ id: 1, value: '', coordinates: null }, { id: 2, value: '', coordinates: null }];

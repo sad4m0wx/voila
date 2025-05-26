@@ -1,6 +1,6 @@
 <script>
     import { onMount, onDestroy, setContext } from 'svelte';
-    import { googleMapsService } from '$map';
+    import { googleMapsService } from '$services/map';
     
     // Props
     export let apiKey = import.meta.env.VITE_MAPS_BROWSER_KEY;

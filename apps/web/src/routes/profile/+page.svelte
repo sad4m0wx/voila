@@ -1,9 +1,9 @@
 <script>
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import MobileHeader from "$lib/components/mobile/MobileHeader.svelte";
-  import MobileNavbar from "$lib/components/mobile/MobileNavbar.svelte";
-  import AuthProvider from "$lib/components/auth/AuthProvider.svelte";
+  import MobileHeader from "$components/core/MobileHeader.svelte";
+  import MobileNavbar from "$components/core/MobileNavbar.svelte";
+  import AuthProvider from "$components/auth/AuthProvider.svelte";
   
   import { loadFriends, friends } from "$stores/friends";
   import { loadUserGroups, groups } from "$stores/groups";

@@ -4,8 +4,9 @@
   import { get } from "svelte/store";
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
-  import SlideToConfirm from "$lib/components/SlideToConfirm.svelte";
-  import { MapProvider, MapContainer } from '$map';
+  import SlideToConfirm from "$components/utils/SlideToConfirm.svelte";
+  import MapProvider from '$components/maps/MapProvider.svelte';
+  import MapContainer from '$components/maps/MapContainer.svelte';
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
   import { 
     currentGroup, 

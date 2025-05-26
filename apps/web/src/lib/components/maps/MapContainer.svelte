@@ -1,6 +1,6 @@
 <script>
     import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-    import { googleMapsService } from '../GoogleMapsService';
+    import { googleMapsService } from '$services/map';
     
     // Props
     export let center = [2.3522, 48.8566]; // Default: Paris

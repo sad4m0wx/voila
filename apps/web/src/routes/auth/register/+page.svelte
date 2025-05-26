@@ -2,10 +2,10 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import BackButton from "$lib/components/auth/BackButton.svelte";
-  import PhoneVerification from "$lib/components/auth/PhoneVerification.svelte";
-  import AddressSetup from "$lib/components/auth/AddressSetup.svelte";
-  import { createAddress, createUserProfile } from "$lib/stores/auth.js";
+  import BackButton from "$components/auth/BackButton.svelte";
+  import PhoneVerification from "$components/auth/PhoneVerification.svelte";
+  import AddressSetup from "$components/auth/AddressSetup.svelte";
+  import { createAddress, createUserProfile } from "$stores/auth.js";
   
   // State
   let step = 'phone'; // 'phone', 'profile', 'address', 'complete'

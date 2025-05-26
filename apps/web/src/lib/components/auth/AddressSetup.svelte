@@ -1,7 +1,7 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { geocodeAddress, validateAddress } from '$lib/stores/auth.js';
-  import AddressInput from '$lib/map/components/AddressInput.svelte';
+  import { geocodeAddress, validateAddress } from '$stores/auth.js';
+  import AddressInput from '$components/maps/AddressInput.svelte';
 
   const dispatch = createEventDispatcher();
 

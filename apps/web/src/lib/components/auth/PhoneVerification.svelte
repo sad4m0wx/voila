@@ -8,7 +8,7 @@
     getCountryCodes,
     checkPhoneNumberExists,
     phoneVerification
-  } from '$lib/stores/auth.js';
+  } from '$stores/auth.js';
 
   const dispatch = createEventDispatcher();
 
