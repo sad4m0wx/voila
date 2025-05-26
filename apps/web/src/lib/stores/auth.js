@@ -43,11 +43,24 @@ const authStore = writable(initialState);
 let unsubscribe;
 export function initAuth() {
   if (unsubscribe) return unsubscribe;
+  const timeoutId = setTimeout(() => {
+    authStore.update(state => ({
+      ...state,
+      isLoading: false
+    }));
+  }, 3000); // 3 second timeout
+  
   unsubscribe = onAuthStateChanged(auth, async (user) => {
+    clearTimeout(timeoutId);
+    
     if (user) {
       authStore.update(state => ({
         ...state,
-        user: null, 
+        user: {
+          uid: user.uid,
+          phoneNumber: user.phoneNumber,
+          displayName: user.displayName,
+        },
         isLoading: true,
         error: null
       }));
@@ -55,22 +68,17 @@ export function initAuth() {
       try {
         await user.getIdToken();
         
-        authStore.update(state => ({
-          ...state,
-          user: {
-            uid: user.uid,
-            phoneNumber: user.phoneNumber,
-            displayName: user.displayName,
-          }
-        }));
-        
         // Load user profile and addresses in parallel
         await Promise.all([
           loadUserProfile(user.uid),
           loadUserAddresses(user.uid)
         ]);
+        authStore.update(state => ({
+          ...state,
+          isLoading: false
+        }));
       } catch (error) {
-        console.error('Error loading user data:', error);
+
         authStore.update(state => ({
           ...state,
           user: null,
