@@ -44,6 +44,12 @@ service cloud.firestore {
         (!request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['createdAt', 'uid']));
       
+      // Allow friend-related updates when accepting friend requests
+      // This allows adding/removing friends when only friends and updatedAt fields are modified
+      allow update: if isAuthenticated() && 
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['friends', 'updatedAt']);
+      
       allow delete: if false;
     }
     
