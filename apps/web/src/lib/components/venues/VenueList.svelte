@@ -79,7 +79,9 @@
                         <div class="flex justify-between items-center mt-2">
                             <div class="text-sm text-gray-700">
                                 {getVenueTypeIcon(venue.types)}
-                                {venue.types && venue.types.length > 0 ? venue.types[0].replace("_", " ") : "Unknown"}
+                                {venue.types && venue.types.length > 0
+                                    ? venue.types[0].replace("_", " ")
+                                    : "Unknown"}
                             </div>
                             {#if venue.price_level !== undefined && venue.price_level !== null}
                                 <div
