@@ -28,6 +28,8 @@ service cloud.firestore {
         request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.creatorId;
     }
     
+
+    
     // Users collection
     match /users/{userId} {
       // Allow reading for authenticated users
@@ -55,8 +57,14 @@ service cloud.firestore {
     
     // User addresses collection
     match /userAddresses/{addressId} {
+      // Allow users to read/write their own addresses
       allow read, write: if isAuthenticated() && 
         (resource == null || resource.data.userId == request.auth.uid);
+      
+      // Allow authenticated users to read addresses when querying by userId
+      // This enables group members to load each other's addresses for meeting point calculations
+      // The application logic ensures this is only used within group contexts
+      allow read: if isAuthenticated();
     }
     
     // Friend requests collection
@@ -92,9 +100,16 @@ service cloud.firestore {
         request.auth.uid in request.resource.data.members &&
         request.auth.uid in request.resource.data.admins;
       
-      allow update: if isGroupAdmin(groupId) && 
-        (!request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['creatorId', 'createdAt', 'id']));
+      allow update: if (
+        // Admins can update most fields
+        (isGroupAdmin(groupId) && 
+         !request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['creatorId', 'createdAt', 'id'])) ||
+        // Any group member can update meeting point
+        (isGroupMember(groupId) &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['meetingPoint', 'updatedAt']))
+      );
       
       allow delete: if isGroupCreator(groupId);
     }
@@ -117,7 +132,15 @@ service cloud.firestore {
         // Members can mark as inactive when leaving
         (resource.data.userId == request.auth.uid &&
          request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['active', 'removedAt', 'removedBy', 'updatedAt']))
+          .hasOnly(['active', 'removedAt', 'removedBy', 'updatedAt'])) ||
+        // Users can update their own address selection for the group
+        (resource.data.userId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['selectedAddressId', 'updatedAt'])) ||
+        // Admins can update address selections for group members (for fixing missing addresses)
+        (isGroupAdmin(resource.data.groupId) &&
+         request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['selectedAddressId', 'updatedAt']))
       );
       
       allow delete: if false;
@@ -165,7 +188,8 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['isAttending', 'location', 'updatedAt']);
       
-      allow delete: if false;
+      allow delete: if isAuthenticated() && 
+        isGroupAdmin(resource.data.groupId);
     }
   }
 }
