@@ -1,7 +1,7 @@
-// apps/web/src/lib/stores/friends.js
 import { writable, derived, get } from 'svelte/store';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import { authStore } from './auth';
+import { goto } from '$app/navigation';
 import { 
   getFriends, 
   getFriendRequests, 
@@ -45,15 +45,11 @@ authStore.subscribe(auth => {
  */
 export async function loadFriends() {
   const auth = get(authStore);
-  
   if (!auth.user) {
-    friendsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return;
   }
-  
   friendsStore.update(state => ({
     ...state,
     loading: true,
@@ -133,10 +129,8 @@ export async function sendRequest(recipientId, message = '') {
   const auth = get(authStore);
   
   if (!auth.user) {
-    friendsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return false;
   }
   
@@ -196,10 +190,8 @@ export async function acceptRequest(requestId) {
   const auth = get(authStore);
   
   if (!auth.user) {
-    friendsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return false;
   }
   
@@ -272,10 +264,8 @@ export async function rejectRequest(requestId) {
   const auth = get(authStore);
   
   if (!auth.user) {
-    friendsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return false;
   }
   
@@ -317,10 +307,8 @@ export async function cancelRequest(requestId) {
   const auth = get(authStore);
   
   if (!auth.user) {
-    friendsStore.update(state => ({
-      ...state,
-      error: 'User not authenticated'
-    }));
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return false;
   }
   
@@ -408,6 +396,8 @@ export async function searchForUsers(searchTerm, limit = 10) {
   const auth = get(authStore);
   
   if (!auth.user) {
+    const redirect = encodeURIComponent(window.location.pathname);
+    goto(`/auth/login?redirect=${redirect}`);
     return [];
   }
   
