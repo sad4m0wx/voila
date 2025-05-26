@@ -1,12 +1,12 @@
 {
-  "appId": "fr.voila-fr.app",
+  "appId": "fr.voilaapp.app",
   "appName": "Voilà",
   "webDir": "build",
   "server": {
     "androidScheme": "https"
   },
   "android": {
-    "minSdkVersion": 22,
+    "minSdkVersion": 24,
     "maxSdkVersion": 34,
     "targetSdkVersion": 34
   },
