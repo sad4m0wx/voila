@@ -14,7 +14,8 @@ import {
     deleteDoc,
     orderBy,
     limit,
-    Timestamp
+    Timestamp,
+    onSnapshot
   } from 'firebase/firestore';
   import { getFriends } from './friends';
   
@@ -820,3 +821,154 @@ import {
     // Remove from group
     return removeGroupMember(db, groupId, userId, userId);
   }
+
+
+  /**
+ * Save meeting point for a group
+ * @param {Object} db - Firestore instance
+ * @param {string} groupId - Group ID
+ * @param {Object} meetingPointData - Meeting point data
+ * @param {string} userId - User ID (must be member)
+ */
+export async function saveMeetingPoint(db, groupId, meetingPointData, userId) {
+  // Check if user is a member
+  const group = await getGroup(db, groupId);
+  
+  if (!group.members.includes(userId)) {
+    throw new Error('Only group members can save meeting points');
+  }
+  
+  // Update the group with meeting point
+  const groupRef = doc(db, 'groups', groupId);
+  await updateDoc(groupRef, {
+    meetingPoint: {
+      ...meetingPointData,
+      calculatedAt: serverTimestamp(),
+      calculatedBy: userId
+    },
+    updatedAt: serverTimestamp()
+  });
+  
+  return meetingPointData;
+}
+
+/**
+ * Toggle attendance for a group
+ * @param {Object} db - Firestore instance
+ * @param {string} groupId - Group ID
+ * @param {string} userId - User ID
+ * @param {string} status - 'coming' or 'not_coming'
+ */
+export async function toggleAttendance(db, groupId, userId, status) {
+  // Check if user is a member
+  const group = await getGroup(db, groupId);
+  
+  if (!group.members.includes(userId)) {
+    throw new Error('Only group members can update attendance');
+  }
+  
+  // Update attendance
+  const groupRef = doc(db, 'groups', groupId);
+  await updateDoc(groupRef, {
+    [`attendance.${userId}`]: {
+      status: status,
+      updatedAt: serverTimestamp()
+    },
+    updatedAt: serverTimestamp()
+  });
+  
+  return status;
+}
+
+
+/**
+ * Update member attendance status for a group
+ * @param {Object} db - Firestore instance
+ * @param {string} groupId - Group ID
+ * @param {string} userId - User ID
+ * @param {boolean} isAttending - Whether user is attending
+ * @param {Object} location - User's current location (optional)
+ * @returns {Object} - Updated attendance data
+ */
+export async function updateAttendanceStatus(db, groupId, userId, isAttending, location = null) {
+  // Verify user is a member of the group
+  const group = await getGroup(db, groupId);
+  
+  if (!group.members.includes(userId)) {
+    throw new Error('You must be a member of this group');
+  }
+  
+  // Create or update attendance record
+  const attendanceRef = doc(db, 'groupAttendance', `${groupId}_${userId}`);
+  
+  const attendanceData = {
+    groupId,
+    userId,
+    isAttending,
+    updatedAt: serverTimestamp(),
+    location: location || null
+  };
+  
+  await setDoc(attendanceRef, attendanceData, { merge: true });
+  
+  return {
+    ...attendanceData,
+    updatedAt: new Date()
+  };
+}
+
+/**
+ * Get attendance status for all group members
+ * @param {Object} db - Firestore instance
+ * @param {string} groupId - Group ID
+ * @returns {Array} - Array of attendance records
+ */
+export async function getGroupAttendance(db, groupId) {
+  const attendanceQuery = query(
+    collection(db, 'groupAttendance'),
+    where('groupId', '==', groupId)
+  );
+  
+  const attendanceSnapshot = await getDocs(attendanceQuery);
+  const attendanceMap = new Map();
+  
+  attendanceSnapshot.forEach(doc => {
+    const data = doc.data();
+    attendanceMap.set(data.userId, {
+      isAttending: data.isAttending,
+      updatedAt: data.updatedAt ? data.updatedAt.toDate() : null,
+      location: data.location
+    });
+  });
+  
+  return attendanceMap;
+}
+
+/**
+ * Subscribe to real-time attendance updates for a group
+ * @param {Object} db - Firestore instance
+ * @param {string} groupId - Group ID
+ * @param {Function} callback - Callback function
+ * @returns {Function} - Unsubscribe function
+ */
+export function subscribeToGroupAttendance(db, groupId, callback) {
+  const attendanceQuery = query(
+    collection(db, 'groupAttendance'),
+    where('groupId', '==', groupId)
+  );
+  
+  return onSnapshot(attendanceQuery, (snapshot) => {
+    const attendanceMap = new Map();
+    
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      attendanceMap.set(data.userId, {
+        isAttending: data.isAttending,
+        updatedAt: data.updatedAt ? data.updatedAt.toDate() : null,
+        location: data.location
+      });
+    });
+    
+    callback(attendanceMap);
+  });
+}

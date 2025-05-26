@@ -26,6 +26,21 @@
   let createError = null;
   
   onMount(async () => {
+    // Wait for auth to finish loading
+    if ($authStore.isLoading) {
+      // Wait for auth state to be determined
+      const unsubscribe = authStore.subscribe(auth => {
+        if (!auth.isLoading) {
+          unsubscribe();
+          loadGroupsData();
+        }
+      });
+    } else {
+      loadGroupsData();
+    }
+  });
+  
+  async function loadGroupsData() {
     // Check if user is authenticated
     if (!$authStore.user) {
       goto('/auth/login?redirect=/groups');
@@ -39,7 +54,7 @@
     } catch (err) {
       error = err.message;
     }
-  });
+  }
   
   // Subscribe to store errors
   $: error = $groupsError || error;

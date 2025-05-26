@@ -20,6 +20,7 @@
     subscribeToAttendance,
     unsubscribeFromAttendance
   } from '$stores/groups';
+  import { authStore } from '$stores/auth';
   import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
   
   const { user, profile, isLoading: authLoading } = getContext('auth');
