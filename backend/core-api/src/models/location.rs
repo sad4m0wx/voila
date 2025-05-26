@@ -1,4 +1,4 @@
-use geo_types::{Coord, Point};
+use geo_types::Point;
 use serde::{Deserialize, Serialize};
 use crate::models::transit::TransitStep;
 
