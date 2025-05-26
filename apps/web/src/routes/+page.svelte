@@ -183,6 +183,7 @@
               on:find-meeting-point={findMeetingPoint}
               on:error={(e) => error = e.detail.message}
             >
+              <!--
               <VenueOptions 
                 slot="venue-options"
                 bind:showVenues={showVenues}
@@ -194,7 +195,7 @@
                   venueTypes = e.detail.venueTypes;
                   venueRadius = e.detail.venueRadius;
                 }}
-              />
+              /> -->
             </AddressForm>
           </div>
           
@@ -289,6 +290,7 @@
           on:find-meeting-point={findMeetingPoint}
           on:error={(e) => error = e.detail.message}
         >
+        <!--
           <VenueOptions 
             slot="venue-options"
             bind:showVenues={showVenues}
@@ -300,7 +302,7 @@
               venueTypes = e.detail.venueTypes;
               venueRadius = e.detail.venueRadius;
             }}
-          />
+          /> -->
         </AddressForm>
         
         <!-- Map Container -->

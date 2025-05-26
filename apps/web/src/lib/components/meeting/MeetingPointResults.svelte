@@ -85,7 +85,7 @@
     </div>
 
     <!-- Venues List -->
-    {#if venues && venues.length > 0}
+    <!--{#if venues && venues.length > 0}
         <div class="mb-4">
             <VenueList
                 {venues}
@@ -102,5 +102,5 @@
                 No venues found near this location.
             </div>
         </div>
-    {/if}
+    {/if}-->
 {/if}
