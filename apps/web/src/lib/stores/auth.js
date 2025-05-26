@@ -47,16 +47,23 @@ export function initAuth() {
     if (user) {
       authStore.update(state => ({
         ...state,
-        user: {
-          uid: user.uid,
-          phoneNumber: user.phoneNumber,
-          displayName: user.displayName,
-        },
+        user: null, 
         isLoading: true,
         error: null
       }));
       
       try {
+        await user.getIdToken();
+        
+        authStore.update(state => ({
+          ...state,
+          user: {
+            uid: user.uid,
+            phoneNumber: user.phoneNumber,
+            displayName: user.displayName,
+          }
+        }));
+        
         // Load user profile and addresses in parallel
         await Promise.all([
           loadUserProfile(user.uid),
@@ -66,6 +73,7 @@ export function initAuth() {
         console.error('Error loading user data:', error);
         authStore.update(state => ({
           ...state,
+          user: null,
           error: error.message,
           isLoading: false
         }));
