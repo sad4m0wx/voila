@@ -6,8 +6,6 @@ import {
   updateProfile,
   sendEmailVerification,
   onAuthStateChanged,
-  linkWithCredential,
-  EmailAuthProvider
 } from 'firebase/auth';
 
 /**
