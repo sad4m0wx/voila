@@ -40,7 +40,7 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
     match MeetingPointFinder::find_optimal_meeting_point(&request.addresses).await {
         Ok((meeting_point, routes)) => {
 
-            let venues = if !request.exclude_venues.unwrap_or(false) {
+            let venues = None; /*if !request.exclude_venues.unwrap_or(false) {
 
                 let venue_types = request.venue_types.clone()
                     .unwrap_or_else(|| vec!["restaurant".to_string()]);
@@ -53,15 +53,16 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
                     venue_types,
                     radius
                 ).await {
-                    Ok(venues) => Some(venues),
+                    Ok(venues) => Some(vec![]),
                     Err(e) => {
                         error!("Error fetching venues: {}", e);
                         None
                     }
                 }
+                None
             } else {
                 None
-            };
+            };*/
             
             // Return the unified response
             let response = MeetingPointResponse {
