@@ -22,13 +22,16 @@ static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {Semaphore::new(30)});
 
 #[derive(Debug, Deserialize)]
 struct GraphHopperResponse {
+    #[allow(dead_code)] // Used for deserialization but not accessed
     paths: Vec<Path>,
 }
 
 
 #[derive(Debug, Deserialize)]
 struct PtRouteResponse {
+    #[allow(dead_code)] // Used for deserialization but not accessed
     hints: Option<Value>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     info: Option<Value>,
     paths: Vec<PtPath>,
 }
@@ -36,29 +39,45 @@ struct PtRouteResponse {
 #[derive(Debug, Deserialize)]
 struct PtPath {
     distance: f64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     weight: f64,
     time: i64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     transfers: i32,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     points_encoded: bool,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     bbox: Vec<f64>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     points: GeoJson,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     instructions: Vec<Instruction>,
     legs: Vec<PtLeg>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     details: Option<Value>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     ascend: Option<f64>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     descend: Option<f64>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     snapped_waypoints: Option<GeoJson>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Instruction {
+    #[allow(dead_code)] // Used for deserialization but not accessed
     distance: f64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     heading: Option<f64>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     sign: i32,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     interval: Vec<i32>,
     text: String,
     time: i64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     street_name: Option<String>,  
+    #[allow(dead_code)] // Used for deserialization but not accessed
     last_heading: Option<f64>,
 }
 
@@ -66,20 +85,25 @@ struct Instruction {
 struct PtLeg {
     #[serde(rename = "type")]
     leg_type: String,  // "walk" or "pt"
+    #[allow(dead_code)] // Used for deserialization but not accessed
     departure_location: String,
     geometry: GeoJson,
     distance: f64,
     instructions: Option<Vec<Instruction>>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     details: Option<Value>,
     departure_time: String,
     arrival_time: String,
     
     // PT-specific fields
+    #[allow(dead_code)] // Used for deserialization but not accessed
     feed_id: Option<String>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     is_in_same_vehicle_as_previous: Option<bool>,
     trip_headsign: Option<String>,
     travel_time: Option<i64>,
     stops: Option<Vec<PtStop>>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     trip_id: Option<String>,
     route_id: Option<String>,
 }
@@ -87,30 +111,45 @@ struct PtLeg {
 
 #[derive(Debug, Deserialize)]
 struct PtStop {
+    #[allow(dead_code)] // Used for deserialization but not accessed
     stop_id: String,
     stop_name: String,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     geometry: StopGeometry,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     arrival_cancelled: Option<bool>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     departure_time: Option<String>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     planned_departure_time: Option<String>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     departure_cancelled: Option<bool>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     arrival_time: Option<String>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     planned_arrival_time: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct StopGeometry {
+    #[allow(dead_code)] // Used for deserialization but not accessed
     #[serde(rename = "type")]
     geo_type: String,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     coordinates: Vec<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Path {
+    #[allow(dead_code)] // Used for deserialization but not accessed
     weight: f64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     distance: f64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     time: i64,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     legs: Vec<Leg>,
+    #[allow(dead_code)] // Used for deserialization but not accessed
     instructions: Vec<Instruction>,
 }
 
