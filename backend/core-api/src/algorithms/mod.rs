@@ -1,1 +1,1 @@
-pub mod meeting_point;
+pub mod isochrone_meeting_point;

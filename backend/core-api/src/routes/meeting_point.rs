@@ -1,14 +1,14 @@
 // backend/core-api/src/routes/meeting_point.rs - Modified version
 
 use actix_web::{web, HttpResponse, Responder};
-use chrono::Utc;
+
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use std::env;
 use serde_json;
 
-use crate::algorithms::meeting_point::MeetingPointFinder;
+use crate::algorithms::isochrone_meeting_point::IsochroneMeetingPointFinder;
 use crate::models::location::{AddressInput, MeetingPointResponse, Venue};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -21,10 +21,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(Debug, Deserialize)]
 struct MeetingPointRequest {
     addresses: Vec<AddressInput>,
-    departure_time: Option<i64>,     
-    venue_types: Option<Vec<String>>,
-    venue_radius: Option<f64>,
-    exclude_venues: Option<bool>,
+    max_travel_time_minutes: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    error: String,
 }
 
 async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Responder {
@@ -36,39 +38,20 @@ async fn find_meeting_point(request: web::Json<MeetingPointRequest>) -> impl Res
         });
     }
     
-    // Find optimal meeting point with transit times
-    match MeetingPointFinder::find_optimal_meeting_point(&request.addresses).await {
+    // Use the optimized isochrone-based algorithm
+    info!("Using isochrone-based meeting point algorithm");
+    let result = IsochroneMeetingPointFinder::find_optimal_meeting_point(
+        &request.addresses,
+        request.max_travel_time_minutes,
+        Some("pt".to_string()) // Default to public transport
+    ).await;
+    
+    match result {
         Ok((meeting_point, routes)) => {
-
-            let venues = None; /*if !request.exclude_venues.unwrap_or(false) {
-
-                let venue_types = request.venue_types.clone()
-                    .unwrap_or_else(|| vec!["restaurant".to_string()]);
-                
-
-                let radius = request.venue_radius.unwrap_or(500.0);
-                
-                match fetch_venues_from_google(
-                    meeting_point.coordinates,
-                    venue_types,
-                    radius
-                ).await {
-                    Ok(venues) => Some(vec![]),
-                    Err(e) => {
-                        error!("Error fetching venues: {}", e);
-                        None
-                    }
-                }
-                None
-            } else {
-                None
-            };*/
-            
-            // Return the unified response
             let response = MeetingPointResponse {
                 meeting_point,
                 routes,
-                venues,
+                venues: None, // Venue fetching is disabled for now
             };
             
             HttpResponse::Ok().json(response)
@@ -239,9 +222,4 @@ struct GoogleMapsLinks {
     writeAReviewUri: String,
     reviewsUri: String,
     photosUri: String,
-}
-
-#[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
 }
