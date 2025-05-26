@@ -56,9 +56,20 @@ export function initAuth() {
         error: null
       }));
       
-      // Load user profile and addresses
-      await loadUserProfile(user.uid);
-      await loadUserAddresses(user.uid);
+      try {
+        // Load user profile and addresses in parallel
+        await Promise.all([
+          loadUserProfile(user.uid),
+          loadUserAddresses(user.uid)
+        ]);
+      } catch (error) {
+        console.error('Error loading user data:', error);
+        authStore.update(state => ({
+          ...state,
+          error: error.message,
+          isLoading: false
+        }));
+      }
     } else {
       authStore.set({
         ...initialState,
@@ -670,6 +681,14 @@ async function loadUserProfile(uid) {
       authStore.update(state => ({
         ...state,
         profile,
+        isLoading: false
+      }));
+    } else {
+      // Profile doesn't exist - still set loading to false
+      console.warn('User profile not found for uid:', uid);
+      authStore.update(state => ({
+        ...state,
+        profile: null,
         isLoading: false
       }));
     }
