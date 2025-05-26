@@ -365,7 +365,7 @@ import {
   /**
    * Search for users to add as friends
    * @param {Object} db - Firestore instance
-   * @param {string} searchTerm - Email or display name to search for
+   * @param {string} searchTerm - Phone number to search for
    * @param {string} currentUserId - Current user ID (to exclude from results)
    * @param {number} limit - Maximum number of results to return
    */
@@ -374,19 +374,15 @@ import {
       return [];
     }
     
-    // For simplicity, we'll implement a simple search by email
-    // In a production app, you'd want to use Firestore's array-contains 
-    // with searchable terms, or an external search service like Algolia
-    
-    // For now, we'll query by exact email match
+    // Search by phone number
     const usersRef = collection(db, 'users');
-    const emailQuery = query(
+    const phoneQuery = query(
       usersRef,
-      where('email', '==', searchTerm.trim()),
+      where('phoneNumber', '==', searchTerm.trim()),
       where('__name__', '!=', currentUserId)
     );
     
-    const querySnapshot = await getDocs(emailQuery);
+    const querySnapshot = await getDocs(phoneQuery);
     
     // Format results, excluding sensitive information
     return querySnapshot.docs.map(doc => {
@@ -395,7 +391,7 @@ import {
         id: doc.id,
         displayName: userData.displayName || 'Unknown User',
         photoURL: userData.photoURL || null,
-        email: userData.email || null
+        phoneNumber: userData.phoneNumber || null
       };
     }).slice(0, limit);
   }

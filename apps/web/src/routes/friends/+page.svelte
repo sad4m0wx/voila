@@ -3,7 +3,8 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Navbar from '$components/core/Navbar.svelte';
-  import { authStore } from '$stores/auth';
+  import PhoneInput from '$components/core/PhoneInput.svelte';
+  import { authStore, formatPhoneNumber } from '$stores/auth';
   import { 
     friends, 
     incomingRequests, 
@@ -24,9 +25,10 @@
   let error = null;
   
   // Search input
-  let searchEmail = '';
+  let searchPhoneValue = '';
   let isSearching = false;
   let searchResults = [];
+  let isPhoneValid = false;
   
   onMount(async () => {
     // Check if user is authenticated
@@ -52,8 +54,8 @@
   }
   
   async function handleSearch() {
-    if (!searchEmail || !searchEmail.includes('@')) {
-      error = 'Please enter a valid email address';
+    if (!isPhoneValid) {
+      error = 'Please enter a valid phone number';
       return;
     }
     
@@ -61,12 +63,18 @@
     error = null;
     
     try {
-      searchResults = await searchForUsers(searchEmail);
+      searchResults = await searchForUsers(searchPhoneValue);
     } catch (err) {
       error = err.message || 'Failed to search for users';
     } finally {
       isSearching = false;
     }
+  }
+  
+  function handlePhoneChange(event) {
+    searchPhoneValue = event.detail.value;
+    isPhoneValid = event.detail.isValid;
+    error = null;
   }
   
   async function handleSendRequest(userId) {
@@ -286,33 +294,41 @@
               <h2 class="text-lg font-medium text-gray-900 mb-4">Find Friends</h2>
               
               <div class="mb-6">
-                <label for="email-search" class="block text-sm font-medium text-gray-700 mb-1">
-                  Search by Email Address
-                </label>
-                <div class="flex mt-1">
-                  <input
-                    type="email"
-                    id="email-search"
-                    bind:value={searchEmail}
-                    placeholder="Enter email address"
-                    class="flex-1 block w-full rounded-l-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                  />
-                  <button
-                    on:click={handleSearch}
-                    disabled={isSearching}
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
-                  >
-                    {#if isSearching}
-                      <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Searching...
-                    {:else}
-                      Search
-                    {/if}
-                  </button>
+                <div class="flex gap-2">
+                  <div class="flex-1">
+                    <PhoneInput
+                      label="Search by Phone Number"
+                      placeholder="Enter phone number"
+                      value={searchPhoneValue}
+                      on:change={handlePhoneChange}
+                      id="phone-search"
+                      showValidation={false}
+                    />
+                  </div>
+                  <div class="flex items-end">
+                    <button
+                      on:click={handleSearch}
+                      disabled={isSearching || !isPhoneValid}
+                      class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                    >
+                      {#if isSearching}
+                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Searching...
+                      {:else}
+                        Search
+                      {/if}
+                    </button>
+                  </div>
                 </div>
+                
+                {#if searchPhoneValue && isPhoneValid}
+                  <p class="text-sm text-gray-600 mt-2">
+                    Searching for {formatPhoneNumber(searchPhoneValue)}
+                  </p>
+                {/if}
               </div>
               
               {#if searchResults.length > 0}
@@ -330,7 +346,7 @@
                         {/if}
                         <div class="ml-3">
                           <p class="text-sm font-medium text-gray-900">{user.displayName}</p>
-                          <p class="text-xs text-gray-500">{user.email}</p>
+                          <p class="text-xs text-gray-500">{user.phoneNumber ? formatPhoneNumber(user.phoneNumber) : ''}</p>
                         </div>
                       </div>
                       <button
