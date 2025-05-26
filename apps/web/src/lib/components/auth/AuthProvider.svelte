@@ -55,12 +55,14 @@
 </script>
 
 <!-- Loading overlay when auth is initializing -->
-{#if $isLoading && requireAuth}
+{#if $isLoading}
   <div class="auth-loading-overlay">
     <div class="loader-container">
       <div class="loader"></div>
     </div>
-    <p class="mt-4 text-neutral-700 font-medium">Loading your account...</p>
+    <p class="mt-4 text-neutral-700 font-medium">
+      {requireAuth ? 'Loading your account...' : 'Loading...'}
+    </p>
   </div>
 {:else}
   <slot></slot>
