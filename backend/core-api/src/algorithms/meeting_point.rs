@@ -1,3 +1,5 @@
+// LEGACY ALGORITHM. UNUSED
+
 use crate::models::location::{AddressInput, Location, MeetingPoint, TravelTime, LineString, Route};
 use crate::services::graphhopper_client::GraphHopperClient;
 use geo::algorithm::centroid::Centroid;
