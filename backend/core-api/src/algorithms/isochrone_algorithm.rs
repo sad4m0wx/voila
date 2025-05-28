@@ -113,10 +113,9 @@ impl IsochroneAlgorithm {
     ) -> anyhow::Result<(Location, u32)> {
         // Smart time progression: start with realistic times for the profile
         let time_increments = match profile {
-            "pt" | "public_transport" => vec![20, 30, 45, 60, 90],
-            "foot" | "walking" => vec![15, 25, 40, 60],
-            "car" => vec![10, 15, 25, 40],
-            _ => vec![20, 35, 50, 75],
+            "pt" | "public_transport" => vec![10, 20, 30, 45, 60, 90, 120],
+            "foot" | "walking" => vec![10, 20, 30, 45, 60],
+            _ => vec![15, 30, 45, 60, 90],
         };
 
         let max_search_time = std::cmp::min(max_time_minutes, 90);
@@ -190,7 +189,7 @@ impl IsochroneAlgorithm {
                 };
                 
                 let result = match timeout(
-                    Duration::from_secs(45), 
+                    Duration::from_secs(60), 
                     isochrone_service.compute_isochrone(&request)
                 ).await {
                     Ok(Ok(isochrone)) => isochrone,

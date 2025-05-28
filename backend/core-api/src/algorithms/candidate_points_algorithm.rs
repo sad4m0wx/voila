@@ -203,7 +203,7 @@ impl CandidatePointsAlgorithm {
 
                         // Compute route with timeout
                         let route_result = timeout(
-                            Duration::from_secs(30),
+                            Duration::from_secs(60),
                             graphhopper.get_transit_route(&origin, &candidate)
                         ).await;
 
