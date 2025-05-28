@@ -20,6 +20,9 @@ use std::time::Duration;
 use tokio::time::timeout;
 use rand::Rng;
 
+const ISOCHRONE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
+const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
+
 pub struct IsochroneAlgorithm;
 
 impl IsochroneAlgorithm {
@@ -201,7 +204,7 @@ impl IsochroneAlgorithm {
                     time_limit_seconds,
                     profile,
                     &result,
-                    30
+                    ISOCHRONE_CACHE_TTL
                 ).await;
                 
                 Ok(result)
@@ -363,7 +366,7 @@ impl IsochroneAlgorithm {
                             &meeting_point,
                             &profile,
                             &route,
-                            3600
+                            ROUTE_CACHE_TTL
                         ).await;
                         
                         route

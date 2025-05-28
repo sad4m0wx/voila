@@ -21,6 +21,8 @@ struct CandidateScore {
     score: f64,
 }
 
+const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
+
 impl CandidatePointsAlgorithm {
     /// Find meeting point using candidate points algorithm
     pub async fn find_meeting_point(
@@ -147,13 +149,12 @@ impl CandidatePointsAlgorithm {
                                     steps,
                                 };
                                 
-                                // Cache the route (1 hour TTL)
                                 let _ = cache_service.cache_route(
                                     &origin,
                                     &candidate,
                                     "pt",
                                     &route,
-                                    3600
+                                    ROUTE_CACHE_TTL
                                 ).await;
                                 
                                 (id, route, false) // not estimated

@@ -15,6 +15,7 @@ use crate::services::cache_service::cache;
 
 // Limit concurrent requests to prevent overwhelming GraphHopper
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
+const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
 
 pub struct GraphHopperClient {
     client: Client,
@@ -93,10 +94,10 @@ impl GraphHopperClient {
                     to,
                     "pt",
                     &route_to_cache,
-                    3600 // 1 hour TTL
+                    ROUTE_CACHE_TTL
                 ).await;
                 
-                info!("Cached transit route for 1 hour");
+                info!("Cached transit route for 30 days");
             }
             Err(e) => {
                 debug!("Route computation failed, not caching: {}", e);
