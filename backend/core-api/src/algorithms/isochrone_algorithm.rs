@@ -33,6 +33,7 @@ impl IsochroneAlgorithm {
         let max_time = max_time_minutes.unwrap_or(60);
 
         info!("Starting isochrone algorithm for {} addresses", addresses.len());
+        let start_time = Instant::now();
 
         // Convert addresses to locations
         let locations: Vec<(String, Location)> = addresses
@@ -95,7 +96,7 @@ impl IsochroneAlgorithm {
             travel_times,
         };
 
-        info!("Isochrone algorithm completed successfully");
+        info!("Isochrone algorithm completed successfully in {:?}", start_time.elapsed());
         Ok((meeting_point_result, routes))
     }
 
