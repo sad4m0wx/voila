@@ -1,201 +1,24 @@
-// src/services/graphhopper_client.rs
-
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
 use std::env;
 use std::time::Duration;
-use log::{error,info};
+use log::{error, info, debug};
 use std::time::Instant;
-use crate::services::redis_client::{RedisClient};
-use std::sync::Arc;
 use tokio::sync::Semaphore;
 use once_cell::sync::Lazy;
 
 use crate::models::location::Location;
-use crate::models::transit::{TransitDetails, TransitLine, TransitStep, GeoJson};
+use crate::models::transit::{TransitStep, GeoJson, TransitDetails, TransitLine};
+use crate::services::cache_service::cache;
 
-
-static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {Semaphore::new(30)});
-
-#[derive(Debug, Deserialize)]
-struct GraphHopperResponse {
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    paths: Vec<Path>,
-}
-
-
-#[derive(Debug, Deserialize)]
-struct PtRouteResponse {
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    hints: Option<Value>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    info: Option<Value>,
-    paths: Vec<PtPath>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PtPath {
-    distance: f64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    weight: f64,
-    time: i64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    transfers: i32,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    points_encoded: bool,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    bbox: Vec<f64>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    points: GeoJson,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    instructions: Vec<Instruction>,
-    legs: Vec<PtLeg>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    details: Option<Value>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    ascend: Option<f64>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    descend: Option<f64>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    snapped_waypoints: Option<GeoJson>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Instruction {
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    distance: f64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    heading: Option<f64>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    sign: i32,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    interval: Vec<i32>,
-    text: String,
-    time: i64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    street_name: Option<String>,  
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    last_heading: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PtLeg {
-    #[serde(rename = "type")]
-    leg_type: String,  // "walk" or "pt"
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    departure_location: String,
-    geometry: GeoJson,
-    distance: f64,
-    instructions: Option<Vec<Instruction>>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    details: Option<Value>,
-    departure_time: String,
-    arrival_time: String,
-    
-    // PT-specific fields
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    feed_id: Option<String>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    is_in_same_vehicle_as_previous: Option<bool>,
-    trip_headsign: Option<String>,
-    travel_time: Option<i64>,
-    stops: Option<Vec<PtStop>>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    trip_id: Option<String>,
-    route_id: Option<String>,
-}
-
-
-#[derive(Debug, Deserialize)]
-struct PtStop {
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    stop_id: String,
-    stop_name: String,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    geometry: StopGeometry,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    arrival_cancelled: Option<bool>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    departure_time: Option<String>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    planned_departure_time: Option<String>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    departure_cancelled: Option<bool>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    arrival_time: Option<String>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    planned_arrival_time: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StopGeometry {
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    #[serde(rename = "type")]
-    geo_type: String,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    coordinates: Vec<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Path {
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    weight: f64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    distance: f64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    time: i64,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    legs: Vec<Leg>,
-    #[allow(dead_code)] // Used for deserialization but not accessed
-    instructions: Vec<Instruction>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Leg {
-    #[serde(rename = "type")]
-    leg_type: String,  // "walk" or "pt"
-    distance: f64,
-    time: i64,         // Duration in milliseconds
-    departure_time: Option<i64>,
-    arrival_time: Option<i64>,
-    
-    // For PT legs
-    trip_id: Option<String>,
-    route_id: Option<String>,
-    route_type: Option<i32>,  // 0=Tram, 1=Subway, 2=Rail, 3=Bus, ...
-    route_short_name: Option<String>,
-    route_name: Option<String>,
-    route_color: Option<String>,
-    agency_name: Option<String>,
-    
-    stops: Option<Vec<Stop>>,
-    geometry: Option<String>,  // Encoded polyline
-}
-
-
-#[derive(Debug, Deserialize)]
-struct Stop {
-    stop_id: String,
-    stop_name: String,
-    geometry: Option<Vec<f64>>,  // [longitude, latitude]
-    arrival_time: Option<i64>,
-    departure_time: Option<i64>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct CachedTransitResult {
-    duration_secs: u64,
-    distance: f64,
-    steps: Vec<TransitStep>,
-}
+// Limit concurrent requests to prevent overwhelming GraphHopper
+static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
 
 pub struct GraphHopperClient {
     client: Client,
     base_url: String,
-    redis: Arc<RedisClient>,
 }
 
 impl GraphHopperClient {
@@ -210,13 +33,81 @@ impl GraphHopperClient {
             .tcp_keepalive(Duration::from_secs(30))
             .build()
             .expect("Failed to create HTTP client");
-        
-        let redis = Arc::new(RedisClient::new().expect("Failed to create Redis client"));
 
-        Self { client, base_url, redis }
+        Self { client, base_url }
     }
     
+    /// Get transit route with caching handled by global cache service
     pub async fn get_transit_route(
+        &self,
+        from: &Location,
+        to: &Location,
+    ) -> Result<(Duration, f64, Vec<TransitStep>)> {
+        let cache_service = cache().await;
+        
+        // Check cache first (handled by global cache service with spatial tolerance)
+        if let Some(cached_route) = cache_service.get_nearby_route(
+            from, 
+            to, 
+            "pt", 
+            200.0 // 200m spatial tolerance
+        ).await {
+            info!("Cache hit for transit route");
+            // Extract duration and distance from cached route
+            let duration_secs = if !cached_route.steps.is_empty() {
+                cached_route.steps.iter().map(|step| step.duration).sum::<u32>() as u64
+            } else {
+                // Estimate based on distance
+                let distance = from.distance_to(to);
+                (distance / (20.0 * 1000.0 / 3600.0)) as u64 // 20 km/h average
+            };
+            
+            let distance = if !cached_route.steps.is_empty() {
+                cached_route.steps.iter().map(|step| step.distance).sum()
+            } else {
+                from.distance_to(to)
+            };
+            
+            return Ok((Duration::from_secs(duration_secs), distance, cached_route.steps));
+        }
+        
+        // Cache miss - compute route
+        info!("Cache miss, computing new transit route");
+        let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
+        let result = self.compute_transit_route_uncached(from, to).await;
+        drop(permit);
+        
+        match &result {
+            Ok((_duration, _distance, steps)) => {
+                // Cache the successful result using global cache service
+                let route_to_cache = crate::models::location::Route {
+                    id: "cache".to_string(),
+                    geometry: crate::models::location::LineString::new(
+                        Self::extract_geometry_from_steps(steps, from, to)
+                    ),
+                    steps: steps.clone(),
+                };
+                
+                let _ = cache_service.cache_route(
+                    from,
+                    to,
+                    "pt",
+                    &route_to_cache,
+                    3600 // 1 hour TTL
+                ).await;
+                
+                info!("Cached transit route for 1 hour");
+            }
+            Err(e) => {
+                debug!("Route computation failed, not caching: {}", e);
+            }
+        }
+        
+        result
+    }
+
+    /// Compute transit route without caching
+    async fn compute_transit_route_uncached(
         &self,
         from: &Location,
         to: &Location,
@@ -225,73 +116,13 @@ impl GraphHopperClient {
         let departure_time = today
             .and_hms_opt(12, 0, 0)
             .unwrap()
-            .and_utc();
-
-        // Generate a cache key
-        let cache_key = self.generate_cache_key(from, to, Some(departure_time));
-        
-        // Try to get from cache first
-        match self.redis.get::<CachedTransitResult>(&cache_key).await {
-            Some(cached) => {
-                info!("Cache hit for route: {}", cache_key);
-                // Verify the cached data is complete
-                if cached.steps.is_empty() {
-                    error!("Cached data has empty steps for key: {}", cache_key);
-                    // Fall through to recalculate
-                } else {
-                    return Ok((
-                        Duration::from_secs(cached.duration_secs),
-                        cached.distance,
-                        cached.steps,
-                    ));
-                }
-            }
-            None => {
-                info!("Cache miss for route: {}", cache_key);
-            }
-        }
-        
-        let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
-        // If not in cache, calculate the route
-        let result = self.get_transit_route_uncached(from, to, Some(departure_time)).await;
-        drop(permit);
-        let result = result?;
-        
-        // Cache the result for future requests
-
-        if result.2.is_empty() {
-            error!("Calculated route has no steps, not caching");
-        } else {
-            let cache_data = CachedTransitResult {
-                duration_secs: result.0.as_secs(),
-                distance: result.1,
-                steps: result.2.clone(),
-            };
-            
-            match self.redis.set(&cache_key, &cache_data, 900).await {
-                Ok(_) => info!("Cached route: {}", cache_key),
-                Err(e) => error!("Failed to cache route: {}", e),
-            }
-        }
-        
-        Ok(result)
-    }
-
-    pub async fn get_transit_route_uncached(
-        &self,
-        from: &Location,
-        to: &Location,
-        departure_time: Option<DateTime<Utc>>,
-    ) -> Result<(Duration, f64, Vec<TransitStep>)> {
-
-        let departure = departure_time
-            .unwrap_or_else(Utc::now)
+            .and_utc()
             .to_rfc3339();
             
         let params = [
             ("point", format!("{},{}", from.latitude, from.longitude)),
             ("point", format!("{},{}", to.latitude, to.longitude)),
-            ("pt.earliest_departure_time", departure),
+            ("pt.earliest_departure_time", departure_time),
             ("pt.profile", "true".to_string()),
             ("locale", "en".to_string()),
             ("details", "street_name".to_string()),
@@ -307,13 +138,16 @@ impl GraphHopperClient {
             .await?;
         
         let elapsed_time = start_time.elapsed(); 
-        info!("Request to GraphHopper took {:?}", elapsed_time);
+        info!("GraphHopper request took {:?}", elapsed_time);
 
         let response_text = response.text().await?;
-    
+        self.parse_route_response(&response_text)
+    }
+
+    /// Parse GraphHopper route response
+    fn parse_route_response(&self, response_text: &str) -> Result<(Duration, f64, Vec<TransitStep>)> {
         match serde_json::from_str::<PtRouteResponse>(&response_text) {
             Ok(response_data) => {
-                info!("Successfully parsed response as PtRouteResponse");
                 if response_data.paths.is_empty() {
                     return Err(anyhow!("No route found"));
                 }
@@ -327,29 +161,13 @@ impl GraphHopperClient {
                 Ok((duration, distance, steps))
             }
             Err(e) => {
-                error!("Failed to parse response as PtRouteResponse: {}", e);
-                return Err(anyhow!("Failed to parse GraphHopper response: {}", e));
+                error!("Failed to parse GraphHopper response: {}", e);
+                Err(anyhow!("Failed to parse GraphHopper response: {}", e))
             }
         }
     }
 
-    fn generate_cache_key(
-        &self, 
-        from: &Location, 
-        to: &Location, 
-        departure_time: Option<DateTime<Utc>>
-    ) -> String {
-        
-        format!(
-            "transit:{}:{}-{}:{}",
-            from.latitude,
-            from.longitude,
-            to.latitude,
-            to.longitude
-               )
-    }
-
-    
+    /// Convert GraphHopper legs to transit steps
     fn convert_pt_legs_to_steps(&self, legs: &[PtLeg]) -> Result<Vec<TransitStep>> {
         let mut steps = Vec::new();
         
@@ -360,18 +178,18 @@ impl GraphHopperClient {
                     let route_id = leg.route_id.clone().unwrap_or_default();
                     let trip_headsign = leg.trip_headsign.clone().unwrap_or_default();
                     
-                    // Determine vehicle type from route_id or trip_headsign
-                    let vehicle_type = if route_id.contains("M") || trip_headsign.contains("Métro") || route_id.starts_with("PT:M") {
+                    // Determine vehicle type from route_id
+                    let vehicle_type = if route_id.contains("M") || trip_headsign.contains("Métro") {
                         "subway"
-                    } else if route_id.contains("T") || route_id.starts_with("PT:T") {
+                    } else if route_id.contains("T") {
                         "tram"
-                    } else if route_id.contains("RER") || route_id.starts_with("PT:RER") {
+                    } else if route_id.contains("RER") {
                         "rail"
                     } else {
                         "bus"
                     };
                     
-                    // Extract line name properly
+                    // Extract line name
                     let line_name = route_id.trim_start_matches("PT:").to_string();
                     
                     // Build instruction text
@@ -444,4 +262,73 @@ impl GraphHopperClient {
         
         Ok(steps)
     }
+
+    /// Extract geometry coordinates from transit steps
+    fn extract_geometry_from_steps(
+        steps: &[TransitStep],
+        from: &Location,
+        to: &Location,
+    ) -> Vec<(f64, f64)> {
+        if steps.is_empty() {
+            return vec![
+                (from.longitude, from.latitude),
+                (to.longitude, to.latitude),
+            ];
+        }
+
+        let mut geometry = vec![(from.longitude, from.latitude)];
+        
+        // Extract coordinates from step geometry if available
+        for step in steps {
+            if let Some(ref geom) = step.geometry {
+                for coord_pair in &geom.coordinates {
+                    if coord_pair.len() >= 2 {
+                        geometry.push((coord_pair[0], coord_pair[1]));
+                    }
+                }
+            }
+        }
+        
+        geometry.push((to.longitude, to.latitude));
+        geometry
+    }
+}
+
+// GraphHopper API response structures
+#[derive(Debug, Deserialize)]
+struct PtRouteResponse {
+    paths: Vec<PtPath>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PtPath {
+    distance: f64,
+    time: i64,
+    legs: Vec<PtLeg>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PtLeg {
+    #[serde(rename = "type")]
+    leg_type: String,
+    geometry: GeoJson,
+    distance: f64,
+    instructions: Option<Vec<Instruction>>,
+    departure_time: String,
+    arrival_time: String,
+    trip_headsign: Option<String>,
+    travel_time: Option<i64>,
+    stops: Option<Vec<PtStop>>,
+    route_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Instruction {
+    text: String,
+    time: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct PtStop {
+    stop_name: String,
 }
