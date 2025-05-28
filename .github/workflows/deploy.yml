@@ -40,6 +40,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Add Rust toolchain for potential local caching
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # Cache Cargo registry and git dependencies
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/core-api/Cargo.toml', 'backend/core-api/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Cache target directory
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: backend/core-api/target/
+          key: ${{ runner.os }}-target-${{ hashFiles('backend/core-api/Cargo.toml', 'backend/core-api/Cargo.lock') }}-${{ hashFiles('backend/core-api/**/*.rs') }}
+          restore-keys: |
+            ${{ runner.os }}-target-${{ hashFiles('backend/core-api/Cargo.toml') }}-
+            ${{ runner.os }}-target-
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -58,8 +86,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Enhanced caching strategy
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache,mode=max
+          # Mount cache directories into Docker build
+          cache-mounts: |
+            type=cache,target=/usr/local/cargo/registry
+            type=cache,target=/usr/local/cargo/git
+            type=cache,target=/app/target
 
   deploy:
     name: Deploy to Server
