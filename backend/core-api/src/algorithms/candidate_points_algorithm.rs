@@ -21,14 +21,29 @@ struct CandidateScore {
     score: f64,
 }
 
+#[derive(Debug, Clone)]
+struct CandidateGenerationConfig {
+    max_candidates: usize,
+    refinement_levels: usize,
+}
+
+impl Default for CandidateGenerationConfig {
+    fn default() -> Self {
+        Self {
+            max_candidates: 25, // 1 center + 8*3 levels = max 25 candidates
+            refinement_levels: 3,
+        }
+    }
+}
+
 const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
 
 impl CandidatePointsAlgorithm {
-    /// Find meeting point using candidate points algorithm
+    /// Find meeting point using enhanced multi-scale grid candidate points algorithm
     pub async fn find_meeting_point(
         addresses: &[AddressInput],
     ) -> anyhow::Result<(MeetingPoint, Vec<Route>)> {
-        info!("Starting candidate points algorithm for {} addresses", addresses.len());
+        info!("Starting multi-scale grid candidate points algorithm for {} addresses", addresses.len());
 
         // Validate input
         if addresses.len() < 2 {
@@ -53,9 +68,9 @@ impl CandidatePointsAlgorithm {
             return Err(anyhow::anyhow!("At least two valid locations are required"));
         }
 
-        // Generate initial candidates around geometric center
-        let candidates = Self::generate_initial_candidates(&locations, 9);
-        info!("Generated {} initial candidates", candidates.len());
+        // Generate candidates using multi-scale grid search
+        let candidates = Self::generate_multiscale_grid_candidates(&locations);
+        info!("Generated {} multi-scale grid candidates", candidates.len());
 
         // Evaluate all candidates in parallel
         let scored_candidates = Self::evaluate_candidates(&locations, &candidates).await?;
@@ -63,40 +78,91 @@ impl CandidatePointsAlgorithm {
         // Select the best candidate
         let (meeting_point, routes) = Self::select_best_candidate(&locations, scored_candidates)?;
 
-        info!("Candidate points algorithm completed successfully");
+        info!("Multi-scale grid candidate points algorithm completed successfully");
         Ok((meeting_point, routes))
     }
 
-    /// Generate initial candidates around the geometric center
-    fn generate_initial_candidates(locations: &[(String, Location)], count: usize) -> Vec<Location> {
+    /// Generate candidates using adaptive multi-scale grid search
+    fn generate_multiscale_grid_candidates(
+        locations: &[(String, Location)],
+    ) -> Vec<Location> {
+        let config = CandidateGenerationConfig::default();
         let centroid = Self::geometric_centroid(locations);
         let mut candidates = vec![centroid.clone()];
+
+        // Calculate the maximum distance from centroid to any input location
+        let max_distance_m = locations.iter()
+            .map(|(_, loc)| centroid.distance_to(loc))
+            .fold(0.0, f64::max);
         
-        // Generate candidates in a grid pattern around the centroid
+        // Convert to a reasonable grid size (minimum 500m)
+        let base_grid_size_m = max_distance_m.max(500.0);
+        
+        info!("Using base grid size of {:.0}m based on max distance {:.0}m from centroid", 
+              base_grid_size_m, max_distance_m);
+        
+        // Generate candidates at multiple scales with square grids
+        for level in 0..config.refinement_levels {
+            let grid_size_m = base_grid_size_m * (0.6_f64).powi(level as i32); // 60% reduction each level
+            let grid_candidates = Self::generate_square_grid(&centroid, grid_size_m);
+            candidates.extend(grid_candidates.clone());
+            
+            info!("Level {}: grid size {:.0}m, {} candidates", level, grid_size_m, grid_candidates.len());
+        }
+
+        // Remove duplicates and limit total candidates
+        candidates = Self::deduplicate_candidates(candidates, 300.0); // 300m minimum distance
+        candidates.truncate(config.max_candidates);
+
+        info!("Final candidate set: {} candidates after deduplication", candidates.len());
+        candidates
+    }
+
+    /// Generate candidates in a simple square grid pattern
+    fn generate_square_grid(center: &Location, grid_size_m: f64) -> Vec<Location> {
+        let mut candidates = Vec::new();
+        
+        // Convert meters to approximate degrees (rough conversion)
+        let grid_size_deg = grid_size_m / 111000.0; // 111km per degree
+        
+        // Create a 3x3 grid around the center (excluding center which is already added)
         let offsets = [
-            (0.0045, 0.0),      // ~500m east
-            (-0.0045, 0.0),     // ~500m west  
-            (0.0, 0.0045),      // ~500m north
-            (0.0, -0.0045),     // ~500m south
-            (0.0032, 0.0032),   // ~350m northeast
-            (-0.0032, 0.0032),  // ~350m northwest
-            (0.0032, -0.0032),  // ~350m southeast
-            (-0.0032, -0.0032), // ~350m southwest
+            (-grid_size_deg, -grid_size_deg), // SW
+            (-grid_size_deg, 0.0),            // W
+            (-grid_size_deg, grid_size_deg),  // NW
+            (0.0, -grid_size_deg),            // S
+            (0.0, grid_size_deg),             // N
+            (grid_size_deg, -grid_size_deg),  // SE
+            (grid_size_deg, 0.0),             // E
+            (grid_size_deg, grid_size_deg),   // NE
         ];
 
-        for (_i, (lat_offset, lng_offset)) in offsets.iter().enumerate() {
-            if candidates.len() >= count {
-                break;
-            }
-            
+        for (lat_offset, lng_offset) in offsets.iter() {
             let candidate = Location::new(
-                centroid.latitude + lat_offset,
-                centroid.longitude + lng_offset,
+                center.latitude + lat_offset,
+                center.longitude + lng_offset,
             );
             candidates.push(candidate);
         }
 
         candidates
+    }
+
+    /// Remove duplicate candidates that are too close to each other
+    fn deduplicate_candidates(mut candidates: Vec<Location>, min_distance_m: f64) -> Vec<Location> {
+        let mut deduplicated = Vec::new();
+
+        for candidate in candidates.drain(..) {
+            let is_duplicate = deduplicated.iter().any(|existing: &Location| {
+                existing.distance_to(&candidate) < min_distance_m
+            });
+
+            if !is_duplicate {
+                deduplicated.push(candidate);
+            }
+        }
+
+        deduplicated
     }
 
     /// Evaluate all candidates by computing routes and scoring them
@@ -346,7 +412,10 @@ impl CandidatePointsAlgorithm {
             ];
         }
 
-        let mut geometry = vec![(from.longitude, from.latitude)];
+        let mut geometry = vec![
+            (from.longitude, from.latitude),
+            (to.longitude, to.latitude),
+        ];
         
         // Extract key points from steps (keep it simple)
         for step in steps.iter().take(5) {
@@ -364,7 +433,6 @@ impl CandidatePointsAlgorithm {
             }
         }
         
-        geometry.push((to.longitude, to.latitude));
         geometry
     }
 

@@ -19,6 +19,8 @@ use futures::future::join_all;
 use std::time::Duration;
 use tokio::time::timeout;
 use rand::Rng;
+use std::time::Instant;
+use anyhow::{anyhow, Result};
 
 const ISOCHRONE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
 const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
@@ -50,7 +52,7 @@ impl IsochroneAlgorithm {
             .collect();
 
         if locations.len() < 2 {
-            return Err(anyhow::anyhow!("At least two valid locations are required"));
+            return Err(anyhow!("At least two valid locations are required"));
         }
 
         // Progressive search: try different time limits until we find intersection
