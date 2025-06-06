@@ -72,7 +72,7 @@ impl RaceManager {
         });
 
         // Race the algorithms with a reasonable timeout
-        let race_timeout = Duration::from_secs(30);
+        let race_timeout = Duration::from_secs(60);
         let race_result = timeout(race_timeout, async {
             match select(isochrone_task, classic_task).await {
                 Either::Left((isochrone_result, classic_handle)) => {

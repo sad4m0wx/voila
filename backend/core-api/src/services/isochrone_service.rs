@@ -11,8 +11,6 @@ use crate::models::isochrone::{
 };
 use crate::models::location::Location;
 
-/// Simplified isochrone service that only handles GraphHopper API calls
-/// Caching is handled by the global CacheService
 pub struct IsochroneService {
     client: Client,
     graphhopper_url: String,
@@ -22,7 +20,7 @@ impl IsochroneService {
     /// Create new isochrone service
     pub fn new() -> Self {
         let graphhopper_url = env::var("GRAPHHOPPER_URL")
-            .unwrap_or_else(|_| "http://localhost:8989".to_string());
+            .unwrap_or_else(|_| "http://voila-app.fr:8989".to_string());
             
         let client = Client::builder()
             .timeout(Duration::from_secs(45))

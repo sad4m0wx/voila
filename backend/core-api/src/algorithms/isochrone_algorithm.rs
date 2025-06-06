@@ -27,6 +27,17 @@ const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
 
 pub struct IsochroneAlgorithm;
 
+#[derive(Debug, Clone)]
+struct CandidateScore {
+    location: Location,
+    routes: Vec<Route>,
+    total_time: f64,
+    max_time: f64,
+    estimated_count: usize,
+    score: f64,
+    within_isochrones: bool,
+}
+
 impl IsochroneAlgorithm {
     /// Find meeting point using isochrone intersection analysis
     pub async fn find_meeting_point(
@@ -44,10 +55,13 @@ impl IsochroneAlgorithm {
         let locations: Vec<(String, Location)> = addresses
             .iter()
             .enumerate()
-            .map(|(i, addr)| {
-                let id = format!("addr_{}", i);
-                let location = Location::new(addr.coordinates.unwrap().1, addr.coordinates.unwrap().0);
-                (id, location)
+            .filter_map(|(i, addr)| {
+                addr.coordinates.map(|coords| {
+                    let id = format!("addr_{}", i);
+                    let location = Location::new(coords.1, coords.0) // lat, lng from lng, lat
+                        .with_address(addr.address.clone().unwrap_or_default());
+                    (id, location)
+                })
             })
             .collect();
 
@@ -56,22 +70,16 @@ impl IsochroneAlgorithm {
         }
 
         // Progressive search: try different time limits until we find intersection
-        let (meeting_point, actual_time_used) = Self::progressive_isochrone_search(
+        let (meeting_point, routes, actual_time_used) = Self::progressive_isochrone_search(
             &locations, 
             max_time, 
             &routing_profile
         ).await?;
 
-        // Calculate routes to the meeting point
-        let routes = Self::calculate_routes_to_meeting_point(
-            &locations, 
-            &meeting_point, 
-            &routing_profile
-        ).await?;
-
-        // Build travel times from routes
+        // Build travel times from routes with correct calculation
         let travel_times: Vec<TravelTime> = routes.iter().map(|route| {
             let duration_minutes = if !route.steps.is_empty() {
+                // Steps duration is already in seconds, convert to minutes
                 route.steps.iter().map(|step| step.duration).sum::<u32>() / 60
             } else {
                 let location = locations.iter().find(|(id, _)| id == &route.id).unwrap().1.clone();
@@ -110,12 +118,12 @@ impl IsochroneAlgorithm {
         locations: &[(String, Location)],
         max_time_minutes: u32,
         profile: &str,
-    ) -> anyhow::Result<(Location, u32)> {
+    ) -> anyhow::Result<(Location, Vec<Route>, u32)> {
         // Smart time progression: start with realistic times for the profile
         let time_increments = match profile {
-            "pt" | "public_transport" => vec![10, 20, 30, 45, 60, 90, 120],
-            "foot" | "walking" => vec![10, 20, 30, 45, 60],
-            _ => vec![15, 30, 45, 60, 90],
+            "pt" | "public_transport" => vec![15, 30, 45, 60, 90],
+            "foot" | "walking" => vec![15, 30, 45, 60],
+            _ => vec![20, 40, 60, 90],
         };
 
         let max_search_time = std::cmp::min(max_time_minutes, 90);
@@ -132,25 +140,266 @@ impl IsochroneAlgorithm {
             // Get or compute isochrones for all locations
             let isochrones = Self::get_or_compute_isochrones(locations, time_seconds, profile).await?;
             
-            // Try to find intersection
-            if let Some(intersection) = Self::find_intersection(&isochrones) {
-                info!("Found intersection at {} minutes", time_minutes);
-                
-                // Generate candidates within the intersection
-                let candidates = Self::generate_candidates_in_intersection(&intersection, 8);
-                
-                if !candidates.is_empty() {
-                    // Return the centroid of candidates as meeting point
-                    let meeting_point = Self::select_best_candidate(&candidates);
-                    return Ok((meeting_point, time_minutes));
-                }
+            // Try to find intersection and evaluate candidates
+            if let Some((meeting_point, routes)) = Self::find_best_meeting_point_in_isochrones(
+                locations, 
+                &isochrones, 
+                time_minutes,
+                profile
+            ).await? {
+                info!("Found valid meeting point at {} minutes", time_minutes);
+                return Ok((meeting_point, routes, time_minutes));
             }
         }
         
-        // No intersection found, fall back to geometric centroid
+        // No intersection found, fall back to geometric centroid with routes
         warn!("No isochrone intersection found, using geometric centroid");
         let geometric_center = Self::geometric_centroid_from_locations(locations);
-        Ok((geometric_center, max_search_time))
+        let routes = Self::calculate_routes_to_meeting_point(locations, &geometric_center, profile).await?;
+        Ok((geometric_center, routes, max_search_time))
+    }
+
+    /// Find the best meeting point within isochrone intersections
+    async fn find_best_meeting_point_in_isochrones(
+        locations: &[(String, Location)],
+        isochrones: &[IsochroneResult],
+        time_limit_minutes: u32,
+        profile: &str,
+    ) -> anyhow::Result<Option<(Location, Vec<Route>)>> {
+        // Find intersection areas
+        let intersection_areas = Self::find_intersection_areas(isochrones);
+        
+        if intersection_areas.is_empty() {
+            return Ok(None);
+        }
+
+        // Generate candidates in all intersection areas
+        let mut all_candidates = Vec::new();
+        for intersection in &intersection_areas {
+            let candidates = Self::generate_candidates_in_intersection(intersection, 5);
+            all_candidates.extend(candidates);
+        }
+
+        if all_candidates.is_empty() {
+            return Ok(None);
+        }
+
+        // Evaluate all candidates
+        let scored_candidates = Self::evaluate_candidates_with_isochrones(
+            locations, 
+            &all_candidates, 
+            isochrones,
+            time_limit_minutes,
+            profile
+        ).await?;
+
+        // Select the best candidate that's actually within isochrones
+        if let Some(best) = scored_candidates.into_iter()
+            .filter(|c| c.within_isochrones)
+            .min_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal)) {
+            
+            return Ok(Some((best.location, best.routes)));
+        }
+
+        Ok(None)
+    }
+
+    /// Find intersection areas between isochrones (improved logic)
+    fn find_intersection_areas(isochrones: &[IsochroneResult]) -> Vec<Polygon<f64>> {
+        if isochrones.len() < 2 {
+            return isochrones.iter().map(|iso| iso.polygon.clone()).collect();
+        }
+
+        let mut intersections = Vec::new();
+
+        // For 2 isochrones, check if they intersect
+        if isochrones.len() == 2 {
+            let poly1 = &isochrones[0].polygon;
+            let poly2 = &isochrones[1].polygon;
+            
+            if poly1.intersects(poly2) {
+                // Use the overlap area (approximated by the smaller polygon for now)
+                // In a more sophisticated implementation, we'd compute the actual intersection
+                if Self::polygon_area(poly1) < Self::polygon_area(poly2) {
+                    intersections.push(poly1.clone());
+                } else {
+                    intersections.push(poly2.clone());
+                }
+            }
+            return intersections;
+        }
+
+        // For 3+ isochrones, find pairwise intersections
+        for i in 0..isochrones.len() {
+            for j in (i + 1)..isochrones.len() {
+                let poly1 = &isochrones[i].polygon;
+                let poly2 = &isochrones[j].polygon;
+                
+                if poly1.intersects(poly2) {
+                    // Check if this intersection also intersects with other polygons
+                    let smaller_poly = if Self::polygon_area(poly1) < Self::polygon_area(poly2) {
+                        poly1
+                    } else {
+                        poly2
+                    };
+                    
+                    // Check if this intersection area also intersects with remaining polygons
+                    let intersects_with_others = isochrones.iter()
+                        .enumerate()
+                        .filter(|(idx, _)| *idx != i && *idx != j)
+                        .any(|(_, iso)| smaller_poly.intersects(&iso.polygon));
+                    
+                    if intersects_with_others || isochrones.len() == 2 {
+                        intersections.push(smaller_poly.clone());
+                    }
+                }
+            }
+        }
+
+        intersections
+    }
+
+    /// Evaluate candidates considering isochrone constraints
+    async fn evaluate_candidates_with_isochrones(
+        locations: &[(String, Location)],
+        candidates: &[Location],
+        isochrones: &[IsochroneResult],
+        time_limit_minutes: u32,
+        profile: &str,
+    ) -> anyhow::Result<Vec<CandidateScore>> {
+        let graphhopper = Arc::new(GraphHopperClient::new());
+        let cache_service = cache().await;
+
+        let candidate_futures: Vec<_> = candidates.iter().enumerate().map(|(i, candidate)| {
+            let locations = locations.to_vec();
+            let isochrones = isochrones.to_vec();
+            let graphhopper = Arc::clone(&graphhopper);
+            let cache_service = cache_service.clone();
+            let candidate = candidate.clone();
+            let profile = profile.to_string();
+            
+            async move {
+                info!("Evaluating candidate {} within isochrones", i);
+                
+                // Check if candidate is within all isochrones
+                let within_isochrones = isochrones.iter().all(|iso| {
+                    let point = Point::new(candidate.longitude, candidate.latitude);
+                    iso.polygon.contains(&point)
+                });
+
+                // Compute routes from all origins to this candidate
+                let route_futures: Vec<_> = locations.clone().into_iter().map(|(id, origin)| {
+                    let candidate = candidate.clone();
+                    let graphhopper = Arc::clone(&graphhopper);
+                    let cache_service = cache_service.clone();
+                    let profile = profile.clone();
+                    
+                    async move {
+                        // Check cache first
+                        if let Some(cached_route) = cache_service.get_nearby_route(
+                            &origin,
+                            &candidate,
+                            &profile,
+                            200.0
+                        ).await {
+                            return (id, cached_route, false);
+                        }
+
+                        // Compute route with timeout
+                        let route_result = timeout(
+                            Duration::from_secs(60),
+                            Self::compute_route(&graphhopper, &origin, &candidate, &profile)
+                        ).await;
+
+                        match route_result {
+                            Ok(Ok((steps, geometry))) => {
+                                let route = Route {
+                                    id: id.clone(),
+                                    geometry: LineString::new(geometry),
+                                    steps,
+                                };
+                                
+                                let _ = cache_service.cache_route(
+                                    &origin,
+                                    &candidate,
+                                    &profile,
+                                    &route,
+                                    ROUTE_CACHE_TTL
+                                ).await;
+                                
+                                (id, route, false)
+                            }
+                            _ => {
+                                // Use geometric fallback
+                                let route = Route {
+                                    id: id.clone(),
+                                    geometry: LineString::new(vec![
+                                        (origin.longitude, origin.latitude),
+                                        (candidate.longitude, candidate.latitude),
+                                    ]),
+                                    steps: vec![],
+                                };
+                                
+                                (id, route, true)
+                            }
+                        }
+                    }
+                }).collect();
+
+                let route_results = join_all(route_futures).await;
+                
+                // Calculate score for this candidate
+                let mut total_time = 0.0;
+                let mut max_time: f64 = 0.0;
+                let mut estimated_count = 0;
+                let mut routes = Vec::new();
+
+                for (id, route, is_estimated) in route_results {
+                    let duration_minutes = if !route.steps.is_empty() {
+                        route.steps.iter().map(|step| step.duration).sum::<u32>() as f64 / 60.0
+                    } else {
+                        let origin = locations.iter().find(|(origin_id, _)| origin_id == &id).unwrap().1.clone();
+                        let distance = origin.distance_to(&candidate);
+                        Self::estimate_travel_time(distance, &profile) as f64
+                    };
+
+                    total_time += duration_minutes;
+                    max_time = max_time.max(duration_minutes);
+                    
+                    if is_estimated {
+                        estimated_count += 1;
+                    }
+                    
+                    routes.push(route);
+                }
+
+                // Score calculation with isochrone compliance bonus
+                let avg_time = total_time / routes.len() as f64;
+                let estimation_penalty = estimated_count as f64 * 5.0;
+                let max_time_penalty = (max_time - avg_time) * 0.3;
+                let time_limit_penalty = if max_time > time_limit_minutes as f64 { 
+                    (max_time - time_limit_minutes as f64) * 2.0 
+                } else { 
+                    0.0 
+                };
+                let isochrone_bonus = if within_isochrones { -10.0 } else { 20.0 };
+                
+                let score = avg_time + estimation_penalty + max_time_penalty + time_limit_penalty + isochrone_bonus;
+
+                CandidateScore {
+                    location: candidate,
+                    routes,
+                    total_time,
+                    max_time,
+                    estimated_count,
+                    score,
+                    within_isochrones,
+                }
+            }
+        }).collect();
+
+        let scored_candidates = join_all(candidate_futures).await;
+        Ok(scored_candidates)
     }
 
     /// Get or compute isochrones, using cache when possible
@@ -192,21 +441,23 @@ impl IsochroneAlgorithm {
                     Duration::from_secs(60), 
                     isochrone_service.compute_isochrone(&request)
                 ).await {
-                    Ok(Ok(isochrone)) => isochrone,
+                    Ok(Ok(isochrone)) => {
+                        // Cache successful API results
+                        let _ = cache_service.cache_isochrone(
+                            location,
+                            time_limit_seconds,
+                            profile,
+                            &isochrone,
+                            ISOCHRONE_CACHE_TTL
+                        ).await;
+                        isochrone
+                    },
                     _ => {
-                        warn!("Isochrone computation failed for {}, using geometric fallback", id);
+                        warn!("Isochrone computation failed for {}, using geometric fallback (NOT CACHED)", id);
+                        // Don't cache fallback results - let them be recomputed
                         isochrone_service.create_geometric_fallback(location, time_limit_seconds, profile)
                     }
                 };
-                
-                // Cache the result (30 day TTL)
-                let _ = cache_service.cache_isochrone(
-                    location,
-                    time_limit_seconds,
-                    profile,
-                    &result,
-                    ISOCHRONE_CACHE_TTL
-                ).await;
                 
                 Ok(result)
             }
@@ -215,52 +466,6 @@ impl IsochroneAlgorithm {
         let results = join_all(isochrone_futures).await;
         let isochrones: Result<Vec<_>, _> = results.into_iter().collect();
         isochrones
-    }
-
-    /// Find intersection of multiple isochrone polygons
-    fn find_intersection(isochrones: &[IsochroneResult]) -> Option<Polygon<f64>> {
-        if isochrones.is_empty() {
-            return None;
-        }
-
-        if isochrones.len() == 1 {
-            return Some(isochrones[0].polygon.clone());
-        }
-
-        // For 2 polygons, use simple intersection check
-        if isochrones.len() == 2 {
-            let poly1 = &isochrones[0].polygon;
-            let poly2 = &isochrones[1].polygon;
-            
-            if poly1.intersects(poly2) {
-                // Return the smaller polygon as approximate intersection
-                if Self::polygon_area(poly1) < Self::polygon_area(poly2) {
-                    return Some(poly1.clone());
-                } else {
-                    return Some(poly2.clone());
-                }
-            }
-            return None;
-        }
-
-        // For 3+ polygons, check if all intersect with the first one
-        let first_polygon = &isochrones[0].polygon;
-        let all_intersect = isochrones.iter().skip(1).all(|iso| {
-            first_polygon.intersects(&iso.polygon)
-        });
-
-        if all_intersect {
-            // Return the smallest polygon as approximate intersection
-            isochrones.iter()
-                .min_by(|a, b| {
-                    Self::polygon_area(&a.polygon)
-                        .partial_cmp(&Self::polygon_area(&b.polygon))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|iso| iso.polygon.clone())
-        } else {
-            None
-        }
     }
 
     /// Generate candidate points within the intersection polygon
@@ -296,23 +501,6 @@ impl IsochroneAlgorithm {
         }
         
         candidates
-    }
-
-    /// Select the best candidate (for now, just return the centroid)
-    fn select_best_candidate(candidates: &[Location]) -> Location {
-        if candidates.is_empty() {
-            return Location::new(0.0, 0.0);
-        }
-        
-        if candidates.len() == 1 {
-            return candidates[0].clone();
-        }
-        
-        // Return geometric centroid of candidates
-        let points: Vec<Point<f64>> = candidates.iter().map(|loc| loc.to_point()).collect();
-        let multi_point = MultiPoint::new(points);
-        let centroid = multi_point.centroid().unwrap();
-        Location::new(centroid.y(), centroid.x())
     }
 
     /// Calculate routes from each location to the meeting point

@@ -25,13 +25,13 @@ pub struct GraphHopperClient {
 impl GraphHopperClient {
     pub fn new() -> Self {
         let base_url = env::var("GRAPHHOPPER_URL")
-            .unwrap_or_else(|_| "http://localhost:8989".to_string());
+            .unwrap_or_else(|_| "http://voila-app.fr:8989".to_string());
             
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(60))
             .pool_max_idle_per_host(30) 
             .pool_idle_timeout(Duration::from_secs(60))
-            .tcp_keepalive(Duration::from_secs(30))
+            .tcp_keepalive(Duration::from_secs(60))
             .build()
             .expect("Failed to create HTTP client");
 
