@@ -1,6 +1,6 @@
 import { googleMapsService } from '$services/map';
 
-const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000';
+const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || '';
 
 /**
  * Find the optimal meeting point using the Rust backend API
