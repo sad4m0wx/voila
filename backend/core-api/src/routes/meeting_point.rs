@@ -2,7 +2,7 @@ use actix_web::{web, HttpResponse, Responder};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 
-use crate::algorithms::find_optimal_meeting_point;
+use crate::algorithms::MeetingPointAlgorithm;
 use crate::models::location::{AddressInput, MeetingPointResponse};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -53,17 +53,13 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
         });
     }
     
-    // Use the race manager to find optimal meeting point
-    let race_result = find_optimal_meeting_point(
-        &request.addresses,
-        request.max_travel_time_minutes,
-        request.profile.clone(),
-    ).await;
+    let start_time = std::time::Instant::now();
+    let result = MeetingPointAlgorithm::find_meeting_point(&request.addresses).await;
+    let processing_time_ms = start_time.elapsed().as_millis();
     
-    match race_result {
-        Ok(result) => {
-            info!("Meeting point found using {} algorithm in {}ms", 
-                  result.algorithm_used, result.processing_time_ms);
+    match result {
+        Ok((meeting_point, routes, debug_data)) => {
+            info!("Meeting point found using algorithm in {}ms", processing_time_ms);
             
             // TODO: Add venue fetching if requested
             let venues = if request.include_venues.unwrap_or(false) {
@@ -74,9 +70,10 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
             };
             
             let response = MeetingPointResponse {
-                meeting_point: result.meeting_point,
-                routes: result.routes,
+                meeting_point,
+                routes,
                 venues,
+                debug_data,
             };
             
             HttpResponse::Ok().json(response)

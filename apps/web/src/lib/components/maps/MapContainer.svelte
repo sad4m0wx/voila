@@ -551,6 +551,7 @@
     }
     
     function addPolygons() {
+      return; // TODO: enable?
       if (!map || !polygons || !window.google) return;
       
       mapPolygons = polygons.map(polygon => {
@@ -580,12 +581,12 @@
         let strokeOpacity = 0.8;
         
         if (polygon.type === 'isochrone') {
-          fillColor = '#cab7f6'; // Purple for isochrones
+          fillColor = '#fff'; // Purple for isochrones
           strokeColor = '#7C3AED';
         } else if (polygon.type === 'intersection') {
           fillColor = '#10B981'; // Green for intersections
           strokeColor = '#059669';
-          fillOpacity = 0.3; // More visible for intersections
+          fillOpacity = 1; // More visible for intersections
         }
         
         const googlePolygon = new window.google.maps.Polygon({

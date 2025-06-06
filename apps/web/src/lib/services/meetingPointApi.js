@@ -1,6 +1,6 @@
 import { googleMapsService } from '$services/map';
 
-const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || '';
+const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000';
 
 /**
  * Find the optimal meeting point using the Rust backend API
@@ -62,7 +62,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 
 
     try {
-      const response = await fetch(CORE_API_URL + '/api/meeting-point/weiszfeld', {
+      const response = await fetch(CORE_API_URL + '/api/meeting-point', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -72,7 +72,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point using Weiszfeld API'}`);
+        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point API'}`);
       }
 
       const rustResponse = await response.json();
