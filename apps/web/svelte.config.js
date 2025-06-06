@@ -1,8 +1,7 @@
-import adapterVercel from '@sveltejs/adapter-vercel';
 import adapterStatic from '@sveltejs/adapter-static';
 
 // Determine which adapter to use, with static being the default for Capacitor
-const adapter = process.env.VERCEL ? adapterVercel() : adapterStatic({
+const adapter = adapterStatic({
   // Enable SPA mode with a fallback for client-side routing
   fallback: 'index.html',
   // Only prerender the homepage and other essential static pages
