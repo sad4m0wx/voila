@@ -223,30 +223,65 @@
       }
     }
     
-    // Simple SVG creation functions for markers
+    // Enhanced SVG creation functions for modern markers
     function createLocationSvg(number = 1) {
-      // Choose color based on number
-      const colors = ['#1a73e8', '#fb8c00', '#8e24aa', '#43a047', '#e53935'];
+      // Simplified color palette - clean and modern
+      const colors = [
+        '#3B82F6', // Blue
+        '#F59E0B', // Amber  
+        '#8B5CF6', // Violet
+        '#10B981', // Emerald
+        '#EF4444'  // Red
+      ];
       const color = colors[(Math.max(1, number) - 1) % colors.length];
       
       return `<svg width="32" height="40" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">
-        <path d="M16 0C7.164 0 0 7.164 0 16c0 8.837 16 24 16 24s16-15.163 16-24C32 7.164 24.836 0 16 0z" fill="${color}"/>
-        <circle cx="16" cy="16" r="8" fill="white" fill-opacity="0.3"/>
-        <text x="16" y="21" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="white">${number}</text>
+        <defs>
+          <filter id="drop-shadow-${number}">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.25)"/>
+          </filter>
+        </defs>
+        <!-- Pin shape inspired by logo -->
+        <path d="M16 4C10.477 4 6 8.477 6 14c0 8 10 20 10 20s10-12 10-20c0-5.523-4.477-10-10-10z" 
+              fill="${color}" 
+              filter="url(#drop-shadow-${number})" 
+              stroke="white" 
+              stroke-width="2"/>
+        <!-- Clean white circle for number -->
+        <circle cx="16" cy="14" r="8" fill="white"/>
+        <!-- Number -->
+        <text x="16" y="18" font-family="system-ui, -apple-system, sans-serif" 
+              font-size="11" font-weight="600" text-anchor="middle" fill="${color}">${number}</text>
       </svg>`;
     }
     
     function createMeetingPointSvg() {
-      return `<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="20" cy="20" r="18" fill="#e53935" stroke="white" stroke-width="2"/>
-        <path d="M20,10 L20,30 M13,20 L27,20" stroke="white" stroke-width="3"/>
+      return `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="drop-shadow-meeting">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.4)"/>
+          </filter>
+        </defs>
+        <!-- Just the pin emoji -->
+        <text x="16" y="24" font-size="24" text-anchor="middle" filter="url(#drop-shadow-meeting)">📍</text>
       </svg>`;
     }
     
     function createVenueSvg() {
-      return `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="16" cy="16" r="14" fill="#43a047" stroke="white" stroke-width="2"/>
-        <path d="M10,13 L22,13 M10,16 L22,16 M10,19 L22,19" stroke="white" stroke-width="2"/>
+      return `<svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="drop-shadow-venue">
+            <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.2)"/>
+          </filter>
+        </defs>
+        <!-- Simple circle -->
+        <circle cx="14" cy="14" r="12" fill="#10B981" 
+                filter="url(#drop-shadow-venue)" stroke="white" stroke-width="2"/>
+        <!-- Restaurant icon - simplified -->
+        <circle cx="14" cy="14" r="8" fill="white"/>
+        <circle cx="11" cy="12" r="1.5" fill="#10B981"/>
+        <circle cx="17" cy="12" r="1.5" fill="#10B981"/>
+        <path d="M10 16 Q14 18 18 16" stroke="#10B981" stroke-width="2" fill="none" stroke-linecap="round"/>
       </svg>`;
     }
     
@@ -279,17 +314,17 @@
         let width, height;
         
         // Apply mobile scaling factor
-        const scale = isMobile ? 1.25 : 1;
+        const scale = isMobile ? 1.2 : 1;
         
         try {
           if (marker.type === 'meeting-point') {
             svg = createMeetingPointSvg();
-            width = 40 * scale;
-            height = 40 * scale;
-          } else if (marker.type === 'venue') {
-            svg = createVenueSvg();
             width = 32 * scale;
             height = 32 * scale;
+          } else if (marker.type === 'venue') {
+            svg = createVenueSvg();
+            width = 28 * scale;
+            height = 28 * scale;
           } else {
             // Default: location marker
             const number = marker.number || 1;
@@ -310,7 +345,9 @@
             icon: {
               url: url,
               scaledSize: new window.google.maps.Size(width, height),
-              anchor: new window.google.maps.Point(width / 2, height),
+              anchor: marker.type === 'meeting-point' 
+                ? new window.google.maps.Point(width / 2, height - 2) // Pin bottom at location
+                : new window.google.maps.Point(width / 2, height), // Default anchor
               zIndex: 999
             },
             optimized: false,
@@ -363,12 +400,14 @@
       meetingZoneCircle = new window.google.maps.Circle({
         center: { lat: center[1], lng: center[0] },
         radius: meetingZoneRadius,
-        strokeColor: '#4285F4',
+        strokeColor: '#3B82F6',
         strokeOpacity: 0.8,
-        strokeWeight: 2,
-        fillColor: '#4285F4',
-        fillOpacity: 0.15,
-        map
+        strokeWeight: 3,
+        fillColor: '#3B82F6',
+        fillOpacity: 0.12,
+        map,
+        clickable: false,
+        zIndex: 1
       });
     }
     
@@ -428,19 +467,23 @@
             }
             
             // Determine color based on step type
-            let stepColor = route.color || '#1a73e8';
+            let stepColor = route.color || '#6366F1'; // Indigo instead of blue
+            let strokeWeight = route.weight || 5; // Keep original weight
+            
             if (step.mode === 'walking') {
-              stepColor = '#4CAF50'; // Green for walking
+              stepColor = '#059669'; // Darker emerald for walking
             } else if (step.mode === 'transit') {
-              stepColor = step.transit_details?.line?.color || '#1a73e8';
+              stepColor = step.transit_details?.line?.color || '#7C3AED'; // Purple for transit
+            } else if (step.mode === 'driving') {
+              stepColor = '#2563EB'; // Darker blue for driving
             }
             
             const polyline = new window.google.maps.Polyline({
               path,
               geodesic: true,
               strokeColor: stepColor,
-              strokeOpacity: 1.0,
-              strokeWeight: route.weight || 5,
+              strokeOpacity: 0.8,
+              strokeWeight: strokeWeight,
               map
             });
             
@@ -472,8 +515,8 @@
           const polyline = new window.google.maps.Polyline({
             path,
             geodesic: true,
-            strokeColor: route.color || '#1a73e8',
-            strokeOpacity: 1.0,
+            strokeColor: route.color || '#6366F1',
+            strokeOpacity: 0.8,
             strokeWeight: route.weight || 5,
             map
           });

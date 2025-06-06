@@ -6,7 +6,6 @@
 
     export let meetingPoint = null;
     export let venues = [];
-    export let showVenues = true;
     export let isCalculating = false;
     export let isMobile = false;
 
@@ -17,90 +16,124 @@
     function toggleResults() {
         dispatch("toggle-results");
     }
+
+    // Helper function to format coordinates for Google Maps
+    function getGoogleMapsUrl(coordinates) {
+        return `https://www.google.com/maps/search/?api=1&query=${coordinates[1]},${coordinates[0]}`;
+    }
+
+    // Helper function to get travel time color
+    function getTravelTimeColor(duration) {
+        const minutes = parseInt(duration);
+        if (minutes <= 10) return 'text-success-600 bg-success-50';
+        if (minutes <= 20) return 'text-warning-600 bg-warning-50';
+        return 'text-error-600 bg-error-50';
+    }
 </script>
 
 {#if meetingPoint}
-    <div class="card bg-white p-4 rounded-lg shadow-sm mb-4">
-        <div class="flex justify-between items-start mb-3">
-            <h2 class="text-lg font-semibold">Meeting Point</h2>
+    <div class="card card-gradient p-4 mb-4 animate-fade-in">
+        <!-- Header -->
+        <div class="flex justify-between items-start mb-4">
+            <div class="flex items-center">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-lg mr-3 shadow-sm">
+                    📍
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-secondary-800">Perfect Meeting Spot</h2>
+                    <p class="text-secondary-600 text-xs">{meetingPoint.name}</p>
+                </div>
+            </div>
             {#if isMobile}
-                <button class="btn btn-sm btn-outline" on:click={toggleResults}>
-                    Back to Form
+                <button class="btn btn-secondary btn-sm" on:click={toggleResults}>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back
                 </button>
             {/if}
-            <div class="badge badge-primary text-sm">
-                <span>📍</span>
-                <span class="ml-1">{meetingPoint.name}</span>
-            </div>
         </div>
 
+        <!-- Google Maps Link -->
         <a
-            href={`https://www.google.com/maps/search/?api=1&query=${meetingPoint.coordinates[1]},${meetingPoint.coordinates[0]}`}
+            href={getGoogleMapsUrl(meetingPoint.coordinates)}
             target="_blank"
             rel="noopener noreferrer"
-            class="flex items-center text-primary-600 hover:text-primary-700 mb-4 text-sm"
+            class="btn btn-outline btn-sm mb-4 inline-flex items-center text-xs"
         >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-4 h-4 mr-1"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-            >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
                 <circle cx="12" cy="10" r="3"></circle>
             </svg>
             Open in Google Maps
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-2 h-2 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M7 17L17 7M17 7H7M17 7V17"/>
+            </svg>
         </a>
 
-        <h3 class="text-base font-medium mb-2">Travel Times</h3>
-        <ul class="space-y-2 mb-2">
-            {#each meetingPoint.travelTimes as time}
-                <li
-                    class="p-2 bg-bg-subtle rounded-md flex justify-between items-center"
-                >
-                    <div class="truncate pr-2">
-                        <p class="font-medium text-sm truncate">
-                            {time.address}
-                        </p>
+        <!-- Travel Times -->
+        <div class="mb-4">
+            <h3 class="text-sm font-semibold mb-3 flex items-center text-secondary-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-2 text-primary-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Travel Times
+            </h3>
+            <div class="grid gap-2">
+                {#each meetingPoint.travelTimes as time, index}
+                    <div class="flex items-center justify-between p-3 rounded-lg border border-neutral-200 bg-white/50 hover:bg-white/80 transition-colors">
+                        <div class="flex items-center flex-1 min-w-0">
+                            <div class="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-semibold mr-2 flex-shrink-0">
+                                {index + 1}
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="font-medium text-secondary-800 truncate text-xs">
+                                    {time.address}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="ml-2 flex-shrink-0">
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {getTravelTimeColor(time.duration)}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-2 h-2 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                </svg>
+                                {time.duration} min
+                            </span>
+                        </div>
                     </div>
-                    <div class="badge badge-accent whitespace-nowrap">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="w-3 h-3 mr-1"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
-                        <span>{time.duration} min</span>
-                    </div>
-                </li>
-            {/each}
-        </ul>
+                {/each}
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="grid grid-cols-2 gap-3 p-3 bg-primary-50 rounded-lg">
+            <div class="text-center">
+                <div class="text-xl font-bold text-primary-700">
+                    {Math.round(meetingPoint.travelTimes.reduce((sum, time) => sum + parseInt(time.duration), 0) / meetingPoint.travelTimes.length)}
+                </div>
+                <div class="text-xs text-primary-600 font-medium">Avg. Travel Time</div>
+            </div>
+            <div class="text-center">
+                <div class="text-xl font-bold text-primary-700">
+                    {Math.max(...meetingPoint.travelTimes.map(time => parseInt(time.duration)))}
+                </div>
+                <div class="text-xs text-primary-600 font-medium">Max Travel Time</div>
+            </div>
+        </div>
     </div>
 
     <!-- Venues List -->
-    <!--{#if venues && venues.length > 0}
+    {#if venues && venues.length > 0}
         <div class="mb-4">
+            {#if venues.length > 0}
             <VenueList
                 {venues}
                 loading={isCalculating}
                 on:select={handleVenueSelected}
             />
+            {/if}
         </div>
-    {:else if showVenues && !isCalculating}
-        <div class="card bg-white p-4 rounded-lg shadow-sm mb-4">
-            <h3 class="text-base font-medium mb-2">Nearby Venues</h3>
-            <div
-                class="p-4 bg-bg-subtle rounded-md text-center text-neutral-500 text-sm"
-            >
-                No venues found near this location.
-            </div>
-        </div>
-    {/if}-->
+    {/if}
 {/if}

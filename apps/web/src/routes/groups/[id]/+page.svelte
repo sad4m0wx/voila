@@ -514,17 +514,10 @@
       </div>
     {/if}
     
-    <!-- Address Selection -->
-    <div class="px-4 sm:px-6 lg:px-8 py-4">
-      <AddressSelection
-        currentGroupId={groupId}
-        bind:selectedAddressId
-        on:address-selected={handleAddressSelected}
-      />
-    </div>
+    
     
     <!-- Meeting Point Status -->
-    <div class="px-4 sm:px-6 lg:px-8 pb-4">
+    <div class="px-4 sm:px-6 lg:px-8 pb-4 pt-4">
       <!-- Requirements Info -->
       {#if !isCalculating && !optimalPoint && $currentGroupMembers && $currentGroupMembers.length > 0}
         <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
@@ -656,7 +649,7 @@
         </div>
       </MapProvider>
     </div>
-    
+
     <!-- Attendance Slider -->
     <div class="bg-white shadow-sm p-4">
       <div class="max-w-md mx-auto">
@@ -695,6 +688,15 @@
       </div>
     {/if}
     
+    <!-- Address Selection -->
+    <div class="px-4 sm:px-6 lg:px-8 py-4">
+      <AddressSelection
+        currentGroupId={groupId}
+        bind:selectedAddressId
+        on:address-selected={handleAddressSelected}
+      />
+    </div>
+
     <!-- Members List -->
     <div class="bg-white shadow-sm mt-2">
       <div class="px-4 sm:px-6 lg:px-8 py-4">

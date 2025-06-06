@@ -38,25 +38,26 @@
     }
 </script>
 
-<nav
-    class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10 safe-area-bottom"
->
-    <div class="grid grid-cols-2 h-16">
+<nav class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-neutral-200/50 z-10 safe-area-bottom shadow-lg">
+    <div class="grid grid-cols-2 h-18">
         {#each navItems as item}
             <a
                 href={item.path}
-                class="flex flex-col items-center justify-center {isActive(
-                    item.path,
-                )
-                    ? 'text-blue-500'
-                    : 'text-gray-500'} 
-                 transition-colors duration-200"
+                class="flex flex-col items-center justify-center transition-all duration-300 group relative {isActive(item.path) ? 'text-primary-600' : 'text-secondary-400'}"
                 aria-current={isActive(item.path) ? "page" : undefined}
             >
-                <div class="w-6 h-6 mb-1">
+                <!-- Active indicator -->
+                {#if isActive(item.path)}
+                    <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-12 h-1 bg-primary-600 rounded-full"></div>
+                {/if}
+                
+                <div class="w-6 h-6 mb-1.5 transition-transform duration-300 {isActive(item.path) ? 'scale-110' : 'group-hover:scale-105'}">
                     {@html item.icon}
                 </div>
-                <span class="text-xs font-medium">{item.name}</span>
+                <span class="text-xs font-medium transition-colors duration-300">{item.name}</span>
+                
+                <!-- Hover effect -->
+                <div class="absolute inset-0 rounded-2xl bg-primary-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10 m-2"></div>
             </a>
         {/each}
     </div>
@@ -66,17 +67,12 @@
     /* Handle iOS safe area */
     .safe-area-bottom {
         padding-bottom: env(safe-area-inset-bottom, 0);
-        background-color: white;
+        background-color: rgba(255, 255, 255, 0.95);
     }
 
     /* Make sure icons scale properly */
     nav :global(svg) {
         width: 100%;
         height: 100%;
-    }
-
-    /* Fixed position to ensure it stays visible */
-    nav {
-        box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1);
     }
 </style>

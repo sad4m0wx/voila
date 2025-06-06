@@ -5,6 +5,7 @@
   import MobileNavbar from "$components/core/MobileNavbar.svelte";
   import PullToRefresh from "$components/core/PullToRefresh.svelte";
   import AuthDebug from "$components/debug/AuthDebug.svelte";
+  import MobileHeader from "$components/core/MobileHeader.svelte";
   import { onMount, setContext } from "svelte";
   import { page } from "$app/stores";
   
@@ -85,29 +86,31 @@
     {#if isMobile}
       <!-- Mobile Layout with Smart Pull-to-Refresh -->
       <div class="flex flex-col h-screen">
-        <MobileNavbar />
-        
+        <MobileHeader />
         <div class="flex-1 overflow-hidden">
           <PullToRefresh
             refreshing={isRefreshing}
             disabled={!$authStore.user} 
             on:refresh={handleRefresh}
           >
-            <main class="min-h-full pb-20">
+            <main class="min-h-full pb-20 px-4">
               <slot />
             </main>
           </PullToRefresh>
         </div>
+        {#if $authStore.user}
+        <MobileNavbar />
+        {/if}
       </div>
     {:else}
       <!-- Desktop Layout (no pull-to-refresh) -->
       <Navbar />
       
-      <main class="flex-grow">
+      <main class="flex-grow container mx-auto px-4 py-8">
         <slot />
       </main>
 
-      <footer class="py-6 border-t border-neutral-200 mt-12">
+      <footer class="py-8 border-t border-neutral-200 mt-16 bg-white">
         <div class="container mx-auto px-4 text-center text-sm text-neutral-500">
           <p>
             © {new Date().getFullYear()} Voilà! Find the perfect place to meet.

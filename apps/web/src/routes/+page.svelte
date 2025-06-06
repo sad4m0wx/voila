@@ -4,10 +4,10 @@
   import MapContainer from '$components/maps/MapContainer.svelte';
   import { findOptimalMeetingPoint } from "$services/meetingPointApi";
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
-  import MobileHeader from "$components/core/MobileHeader.svelte";
   import AddressForm from "$components/meeting/AddressForm.svelte";
   import MeetingPointResults from "$components/meeting/MeetingPointResults.svelte";
   import VenueOptions from "$components/venues/VenueOptions.svelte";
+  import MetroBackground from "$lib/components/MetroBackground.svelte";
   
   // State
   let addresses = [{ id: 1, value: '', coordinates: null }, { id: 2, value: '', coordinates: null }];
@@ -26,10 +26,26 @@
   
   // Check if we're on mobile
   $: isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  $: mapHeight = isMobile ? 'calc(40vh)' : '500px';
   
   // Add a state variable to track when to animate to results
   let animateToResults = false;
+  
+  
+  // Parallax effect for metro animation
+  let scrollY = 0;
+  let parallaxContainer;
+  
+  onMount(() => {
+    const handleScroll = () => {
+      scrollY = window.scrollY;
+      if (parallaxContainer) {
+        parallaxContainer.style.transform = `translateY(${scrollY * 0.3}px)`;
+      }
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  });
   
   async function findMeetingPoint() {
     // Reset state
@@ -65,7 +81,7 @@
       // Trigger animation to results
       animateToResults = true;
       
-      // Show results on mobile
+      // Show results and auto-scroll
       if (isMobile) {
         setTimeout(() => {
           showResults = true;
@@ -154,96 +170,35 @@
   <title>Voilà! | Find the perfect place to meet</title>
 </svelte:head>
 
-<div class="bg-gradient-to-b from-primary-50 to-white min-h-screen">
-  {#if isMobile}
-    <MobileHeader />
-    
-    <div class="px-4 pt-2">
+<svelte:window bind:scrollY />
+
+<div class="bg-gradient-to-br from-blue-100 via-purple-50 to-pink-100 min-h-screen relative overflow-hidden">
+  <MetroBackground />
+
+  {#if isMobile}    
+    <div class="pt-4 relative z-10">
       <MapProvider>
-        <div slot="loading" class="text-center py-10">
-          <div class="loader mx-auto mb-4"></div>
-          <p class="text-neutral-600">Loading map services...</p>
+        <div slot="loading" class="text-center py-16">
+          <div class="loader loader-lg mx-auto mb-4 text-blue-600"></div>
+          <p class="text-secondary-600 font-medium">Loading map services...</p>
         </div>
         
-        <div slot="error" let:error class="text-center py-10 text-error">
-          <p class="text-lg mb-2">{error}</p>
-          <p>Please refresh the page to try again.</p>
+        <div slot="error" let:error class="text-center py-16 px-4">
+          <div class="card card-gradient p-8 max-w-sm mx-auto bg-gradient-to-br from-red-50 to-orange-50 border-red-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p class="text-lg mb-2 font-semibold text-red-700">{error}</p>
+            <p class="text-secondary-600">Please refresh the page to try again.</p>
+          </div>
         </div>
 
-        <!-- Mobile View Layout -->
-        {#if !meetingPoint || !showResults || isCalculating}
-          <!-- Input Section -->
-          <div class="mb-4">
-            <AddressForm 
-              bind:addresses={addresses}
-              {isCalculating}
-              {mapBounds}
-              {error}
-              on:addresses-changed={(e) => addresses = e.detail.addresses}
-              on:find-meeting-point={findMeetingPoint}
-              on:error={(e) => error = e.detail.message}
-            >
-              <!--
-              <VenueOptions 
-                slot="venue-options"
-                bind:showVenues={showVenues}
-                bind:venueTypes={venueTypes}
-                bind:venueRadius={venueRadius}
-                {isCalculating}
-                on:venue-options-changed={(e) => {
-                  showVenues = e.detail.showVenues;
-                  venueTypes = e.detail.venueTypes;
-                  venueRadius = e.detail.venueRadius;
-                }}
-              /> -->
-            </AddressForm>
-          </div>
-          
-          <!-- Map Container - Mobile Input View -->
-          <div class="rounded-lg overflow-hidden shadow-md map-container h-[40vh] mb-4">
-            <MapContainer 
-              center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
-              zoom={meetingPoint ? undefined : defaultMapZoom}
-              markers={mapMarkers}
-              routes={routes}
-              meetingZoneRadius={meetingZoneRadius}
-              animateToResults={animateToResults}
-              zoomToFitMarkers={false}
-              height="100%"
-              on:bounds={handleMapBounds}
-            />
-          </div>
-        {:else}
-          <!-- Results View -->
-          <div class="results-view pb-20">
-            <!-- Map with results -->
-            <div class="rounded-lg overflow-hidden shadow-md map-container h-[40vh] mb-4">
-              <MapContainer 
-                center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
-                zoom={meetingPoint ? undefined : defaultMapZoom}
-                markers={mapMarkers}
-                routes={routes}
-                meetingZoneRadius={meetingZoneRadius}
-                animateToResults={animateToResults}
-                zoomToFitMarkers={false}
-                height="100%"
-              />
-              
-              <!-- Floating back button -->
-              <button 
-                class="absolute top-3 left-3 z-10 bg-white p-2 rounded-full shadow-md"
-                on:click={toggleResults}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
-                </svg>
-              </button>
-            </div>
-            
+        <!-- Results Section -->
+        {#if showResults && meetingPoint}
+          <div class="results-view pb-5">
             <MeetingPointResults 
               {meetingPoint}
               {venues}
-              {showVenues}
               {isCalculating}
               {isMobile}
               on:venue-selected={(e) => console.log('Venue selected:', e.detail)}
@@ -251,62 +206,37 @@
             />
           </div>
         {/if}
-      </MapProvider>
-    </div>
-    
-  {:else}
-    <!-- Desktop view - simplified but complete -->
-    <div class="container mx-auto px-4 py-12 md:py-20">
-      <div class="text-center max-w-3xl mx-auto mb-12">
-        <div class="flex justify-center items-center mb-4">
-          <span class="text-5xl animate-bounce inline-block mr-3">📍</span>
-          <h1 class="text-4xl md:text-5xl font-bold text-primary-700">Voilà!</h1>
-        </div>
-        <p class="text-xl md:text-2xl text-neutral-700 mb-6">Find the perfect place to meet with your friends.</p>
-      </div>
-    </div>
-    <div class="max-w-4xl mx-auto">
-      <MapProvider>
-        <div slot="loading" class="text-center py-10">
-          <div class="loader mx-auto mb-4"></div>
-          <p class="text-neutral-600">Loading map services...</p>
-        </div>
-        
-        <div slot="error" let:error class="text-center py-10 text-error">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <p class="text-lg mb-2">{error}</p>
-          <p>Please refresh the page to try again.</p>
-        </div>
-        
-        <!-- Address Entry Card -->
-        <AddressForm 
-          bind:addresses={addresses}
-          {isCalculating}
-          {mapBounds}
-          {error}
-          on:addresses-changed={(e) => addresses = e.detail.addresses}
-          on:find-meeting-point={findMeetingPoint}
-          on:error={(e) => error = e.detail.message}
-        >
-        <!--
-          <VenueOptions 
-            slot="venue-options"
-            bind:showVenues={showVenues}
-            bind:venueTypes={venueTypes}
-            bind:venueRadius={venueRadius}
+
+        <!-- Mobile View Layout -->
+        <!-- Input Section -->
+        <div class="mb-4">
+          <AddressForm 
+            bind:addresses={addresses}
             {isCalculating}
-            on:venue-options-changed={(e) => {
-              showVenues = e.detail.showVenues;
-              venueTypes = e.detail.venueTypes;
-              venueRadius = e.detail.venueRadius;
-            }}
-          /> -->
-        </AddressForm>
+            {mapBounds}
+            {error}
+            on:addresses-changed={(e) => addresses = e.detail.addresses}
+            on:find-meeting-point={findMeetingPoint}
+            on:error={(e) => error = e.detail.message}
+          >
+            <!--
+            <VenueOptions 
+              slot="venue-options"
+              bind:showVenues={showVenues}
+              bind:venueTypes={venueTypes}
+              bind:venueRadius={venueRadius}
+              {isCalculating}
+              on:venue-options-changed={(e) => {
+                showVenues = e.detail.showVenues;
+                venueTypes = e.detail.venueTypes;
+                venueRadius = e.detail.venueRadius;
+              }}
+            /> -->
+          </AddressForm>
+        </div>
         
-        <!-- Map Container -->
-        <div class="h-[400px] md:h-[500px] rounded-lg overflow-hidden shadow-md map-container">
+        <!-- Single Map Container for Mobile -->
+        <div class="rounded-xl overflow-hidden shadow-lg map-container h-[40vh] mb-4 mx-4 relative bg-gradient-to-br from-blue-100/80 to-purple-100/80 backdrop-blur-sm border-2 border-blue-200/50">
           <MapContainer 
             center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
             zoom={meetingPoint ? undefined : defaultMapZoom}
@@ -318,18 +248,117 @@
             height="100%"
             on:bounds={handleMapBounds}
           />
+          
+          <!-- Show back button only when showing results -->
+          {#if showResults && meetingPoint}
+            <button 
+              class="absolute top-4 left-4 z-10 btn btn-sm bg-gradient-to-r from-blue-500 to-purple-500 text-white backdrop-blur-sm shadow-lg hover:from-blue-600 hover:to-purple-600 transition-all"
+              on:click={toggleResults}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          {/if}
         </div>
         
-        <!-- Results Card -->
-        <MeetingPointResults 
-          {meetingPoint}
-          {venues}
-          {showVenues}
-          {isCalculating}
-          {isMobile}
-          on:venue-selected={(e) => console.log('Venue selected:', e.detail)}
-        />
+        
       </MapProvider>
+    </div>
+
+  {:else}
+    <!-- Desktop Layout - Side by Side -->
+    <div class="relative z-10 min-h-screen">
+      
+      <!-- Main Content -->
+      <div class="max-w-7xl mx-auto px-6 py-6">
+        <MapProvider>
+          <div slot="loading" class="text-center py-20">
+            <div class="loader loader-lg mx-auto mb-4 text-blue-600"></div>
+            <p class="text-secondary-600 font-medium">Loading map services...</p>
+          </div>
+          
+          <div slot="error" let:error class="text-center py-20">
+            <div class="card card-gradient p-8 max-w-md mx-auto bg-gradient-to-br from-red-50 to-orange-50 border-red-200">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p class="text-lg mb-2 font-semibold text-red-700">{error}</p>
+              <p class="text-secondary-600">Please refresh the page to try again.</p>
+            </div>
+          </div>
+          
+          <div class="grid lg:grid-cols-5 gap-6 h-[calc(100vh-48px)]">
+            <!-- Left Sidebar - Form and Results -->
+            <div class="lg:col-span-2 flex flex-col space-y-4 overflow-y-auto bg-gradient-to-br from-blue-100/60 via-white/80 to-purple-100/60 backdrop-blur-md rounded-2xl p-6 border-2 border-blue-200/50 shadow-2xl">
+              <!-- Header inside sidebar -->
+              <div class="flex-shrink-0 pb-4 border-b border-gradient-to-r from-blue-200 to-purple-200">
+                <div class="flex items-center">
+                  <span class="text-3xl mr-3 animate-bounce-subtle">📍</span>
+                  <div>
+                    <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Voilà!</h1>
+                    <p class="text-sm text-secondary-600">Find the perfect meeting spot</p>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Address Form -->
+              <div class="flex-shrink-0">
+                <AddressForm 
+                  bind:addresses={addresses}
+                  {isCalculating}
+                  {mapBounds}
+                  {error}
+                  on:addresses-changed={(e) => addresses = e.detail.addresses}
+                  on:find-meeting-point={findMeetingPoint}
+                  on:error={(e) => error = e.detail.message}
+                />
+              </div>
+              
+              <!-- Results -->
+              {#if meetingPoint}
+                <div class="flex-1">
+                  <MeetingPointResults 
+                    {meetingPoint}
+                    {venues}
+                    {isCalculating}
+                    {isMobile}
+                    on:venue-selected={(e) => console.log('Venue selected:', e.detail)}
+                  />
+                </div>
+              {:else}
+                <!-- Placeholder when no results -->
+                <div class="flex-1 flex items-center justify-center">
+                  <div class="text-center text-secondary-500 bg-gradient-to-br from-green-50/80 to-blue-50/80 rounded-xl p-8 border-2 border-green-200/50 shadow-lg">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-green-500 opacity-70" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
+                    </svg>
+                    <p class="text-lg font-medium mb-2 text-green-700">Enter addresses to get started</p>
+                    <p class="text-sm text-green-600">We'll find the perfect meeting point for everyone</p>
+                  </div>
+                </div>
+              {/if}
+            </div>
+            
+            <!-- Right Side - Map -->
+            <div class="lg:col-span-3">
+              <div class="h-full rounded-2xl overflow-hidden shadow-2xl border-3 border-gradient-to-r from-purple-200 to-pink-200 bg-gradient-to-br from-purple-100/40 via-white/60 to-pink-100/40 backdrop-blur-sm">
+                <MapContainer 
+                  center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
+                  zoom={meetingPoint ? undefined : defaultMapZoom}
+                  markers={mapMarkers}
+                  routes={routes}
+                  meetingZoneRadius={meetingZoneRadius}
+                  animateToResults={animateToResults}
+                  zoomToFitMarkers={false}
+                  height="100%"
+                  on:bounds={handleMapBounds}
+                />
+              </div>
+            </div>
+          </div>
+        </MapProvider>
+      </div>
     </div>
   {/if}
 </div>
@@ -337,21 +366,42 @@
 <style>
   .loader {
     border: 3px solid rgba(0, 0, 0, 0.1);
-    border-top: 3px solid #3498db;
+    border-top: 3px solid #2563EB;
     border-radius: 50%;
     width: 24px;
     height: 24px;
     animation: spin 1s linear infinite;
   }
   
-  .loader-sm {
-    width: 16px;
-    height: 16px;
-    border-width: 2px;
-  }
-  
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+  }
+  
+  .animate-bounce-subtle {
+    animation: bounce-subtle 3s ease-in-out infinite;
+  }
+  
+  @keyframes bounce-subtle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  
+  /* Custom scrollbar for sidebar */
+  .overflow-y-auto::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .overflow-y-auto::-webkit-scrollbar-track {
+    background: rgba(147, 197, 253, 0.2);
+  }
+  
+  .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, #3B82F6, #8B5CF6);
+    border-radius: 3px;
+  }
+  
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, #2563EB, #7C3AED);
   }
 </style>

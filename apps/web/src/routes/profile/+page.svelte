@@ -1,7 +1,6 @@
 <script>
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import MobileHeader from "$components/core/MobileHeader.svelte";
   import MobileNavbar from "$components/core/MobileNavbar.svelte";
   import AuthProvider from "$components/auth/AuthProvider.svelte";
   
@@ -92,9 +91,6 @@
 {#if isMobile}
   <!-- Mobile Layout -->
   <div class="flex flex-col h-screen bg-white">
-    <!-- Header -->
-    <MobileHeader title="Profile" showSettings={false} />
-
     <!-- Content area with header spacing -->
     <div class="flex-1 pt-[60px] pb-16 overflow-y-auto">
       {#if $authLoading || isProfileLoading}

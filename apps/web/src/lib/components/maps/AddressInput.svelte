@@ -12,11 +12,14 @@
     let inputElement;
     let autocomplete = null;
     let isInitialized = false;
+    let isFocused = false;
+    let isLoading = false;
     
     const dispatch = createEventDispatcher();
     
     onMount(async () => {
       try {
+        isLoading = true;
         // Initialize Google Maps
         await googleMapsService.initialize();
         
@@ -25,6 +28,8 @@
       } catch (error) {
         console.error('Error initializing address input:', error);
         dispatch('error', { error: error.message });
+      } finally {
+        isLoading = false;
       }
     });
     
@@ -36,7 +41,8 @@
       
       // Create the autocomplete object
       autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
-        types: ['address']
+        types: ['address'],
+        fields: ['formatted_address', 'geometry', 'place_id', 'name']
       });
       
       // Apply bounds if provided
@@ -97,39 +103,57 @@
       value = event.target.value;
       dispatch('input', { value });
     }
+    
+    function handleFocus() {
+      isFocused = true;
+    }
+    
+    function handleBlur() {
+      isFocused = false;
+    }
   </script>
   
   <div class="address-input-container">
-    <input
-      type="text"
-      bind:this={inputElement}
-      {value}
-      {placeholder}
-      {disabled}
-      on:input={handleInput}
-      on:focus
-      on:blur
-      class="address-input"
-    />
+    <div class="relative">
+      <!-- Location Icon -->
+      <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-secondary-400 pointer-events-none">
+        {#if isLoading}
+          <div class="loader loader-sm"></div>
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+        {/if}
+      </div>
+      
+      <!-- Input Field -->
+      <input
+        type="text"
+        bind:this={inputElement}
+        {value}
+        {placeholder}
+        {disabled}
+        on:input={handleInput}
+        on:focus={handleFocus}
+        on:blur={handleBlur}
+        class="input pl-11 pr-4 {isFocused ? 'ring-2 ring-primary-500 border-transparent' : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
+      />
+      
+      <!-- Clear Button -->
+      {#if value && !disabled}
+        <button
+          type="button"
+          class="absolute right-3 top-1/2 transform -translate-y-1/2 text-secondary-400 hover:text-secondary-600 transition-colors"
+          on:click={() => { value = ''; dispatch('input', { value: '' }); }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      {/if}
+    </div>
+    
+
   </div>
-  
-  <style>
-    .address-input-container {
-      position: relative;
-      width: 100%;
-    }
-    
-    .address-input {
-      width: 100%;
-      padding: 8px 12px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    
-    .address-input:focus {
-      outline: none;
-      border-color: #1a73e8;
-      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
-    }
-  </style>
