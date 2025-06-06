@@ -8,12 +8,15 @@
   import MeetingPointResults from "$components/meeting/MeetingPointResults.svelte";
   import VenueOptions from "$components/venues/VenueOptions.svelte";
   import MetroBackground from "$lib/components/MetroBackground.svelte";
+  import PolygonDebugger from "$lib/components/debug/PolygonDebugger.svelte";
   
   // State
   let addresses = [{ id: 1, value: '', coordinates: null }, { id: 2, value: '', coordinates: null }];
   let meetingPoint = null;
   let routes = [];
   let venues = [];
+  let debugData = null;
+  let debugPolygons = [];
   let isCalculating = false;
   let error = null;
   let mapBounds = null;
@@ -53,6 +56,8 @@
     isCalculating = true;
     showResults = false;
     venues = [];
+    debugData = null;
+    debugPolygons = [];
     animateToResults = false;
     
     try {
@@ -77,6 +82,12 @@
       
       routes = result.routes || [];
       venues = result.venues || [];
+      debugData = result.debug || null;
+      
+      // Convert debug data to polygons for map visualization
+      if (debugData) {
+        debugPolygons = createDebugPolygons(debugData);
+      }
       
       // Trigger animation to results
       animateToResults = true;
@@ -164,6 +175,39 @@
   }
 
   $: meetingZoneRadius = meetingPoint && venueRadius ? venueRadius : 0;
+  
+  // Convert debug data to polygons for map visualization
+  function createDebugPolygons(debugData) {
+    const polygons = [];
+    
+    // Add isochrone polygons
+    if (debugData.isochrones) {
+      debugData.isochrones.forEach((isochrone, i) => {
+        if (isochrone.polygon && isochrone.polygon.coordinates) {
+          polygons.push({
+            type: 'isochrone',
+            coordinates: isochrone.polygon.coordinates,
+            name: `Isochrone ${i + 1} (${isochrone.origin_address})`
+          });
+        }
+      });
+    }
+    
+    // Add intersection polygons
+    if (debugData.intersections) {
+      debugData.intersections.forEach((intersection, i) => {
+        if (intersection.polygon && intersection.polygon.coordinates) {
+          polygons.push({
+            type: 'intersection',
+            coordinates: intersection.polygon.coordinates,
+            name: `Intersection ${i + 1}`
+          });
+        }
+      });
+    }
+    
+    return polygons;
+  }
 </script>
 
 <svelte:head>
@@ -206,7 +250,7 @@
             />
           </div>
         {/if}
-
+        
         <!-- Mobile View Layout -->
         <!-- Input Section -->
         <div class="mb-4">
@@ -234,7 +278,7 @@
             /> -->
           </AddressForm>
         </div>
-        
+
         <!-- Single Map Container for Mobile -->
         <div class="rounded-xl overflow-hidden shadow-lg map-container h-[40vh] mb-4 mx-4 relative bg-gradient-to-br from-blue-100/80 to-purple-100/80 backdrop-blur-sm border-2 border-blue-200/50">
           <MapContainer 
@@ -242,6 +286,7 @@
             zoom={meetingPoint ? undefined : defaultMapZoom}
             markers={mapMarkers}
             routes={routes}
+            polygons={debugPolygons}
             meetingZoneRadius={meetingZoneRadius}
             animateToResults={animateToResults}
             zoomToFitMarkers={false}
@@ -296,7 +341,7 @@
                 <div class="flex items-center">
                   <span class="text-3xl mr-3 animate-bounce-subtle">📍</span>
                   <div>
-                    <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Voilà!</h1>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Voilà!</h1>
                     <p class="text-sm text-secondary-600">Find the perfect meeting spot</p>
                   </div>
                 </div>
@@ -329,7 +374,7 @@
               {:else}
                 <!-- Placeholder when no results -->
                 <div class="flex-1 flex items-center justify-center">
-                  <div class="text-center text-secondary-500 bg-gradient-to-br from-green-50/80 to-blue-50/80 rounded-xl p-8 border-2 border-green-200/50 shadow-lg">
+                  <div class="text-center text-secondary-500 bg-gradient-to-br from-green-50/80 to-blue-50/80 rounded-xl p-4 border-2 border-green-200/50 shadow-lg">
                     <svg class="w-16 h-16 mx-auto mb-4 text-green-500 opacity-70" fill="currentColor" viewBox="0 0 20 20">
                       <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
                     </svg>
@@ -348,6 +393,7 @@
                   zoom={meetingPoint ? undefined : defaultMapZoom}
                   markers={mapMarkers}
                   routes={routes}
+                  polygons={debugPolygons}
                   meetingZoneRadius={meetingZoneRadius}
                   animateToResults={animateToResults}
                   zoomToFitMarkers={false}
@@ -361,6 +407,9 @@
       </div>
     </div>
   {/if}
+  
+  <!-- Debug Panel -->
+  <PolygonDebugger {debugData} />
 </div>
 
 <style>

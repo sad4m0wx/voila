@@ -8,6 +8,7 @@
     export let zoom = 12;
     export let markers = [];
     export let routes = [];
+    export let polygons = []; // Debug polygons (isochrones, intersections)
     export let meetingZoneRadius = 0; // Radius in meters for the meeting zone circle
     export let height = '400px';
     export let width = '100%';
@@ -19,6 +20,7 @@
     let map = null;
     let mapMarkers = [];
     let mapRoutes = [];
+    let mapPolygons = [];
     let meetingZoneCircle = null;
     let isLoaded = false;
     let error = null;
@@ -67,6 +69,9 @@
         // Add routes
         addRoutes();
         
+        // Add polygons
+        addPolygons();
+        
         // Add meeting zone circle if radius provided
         if (meetingZoneRadius > 0) {
           addMeetingZoneCircle();
@@ -102,9 +107,10 @@
     });
     
     onDestroy(() => {
-      // Clean up markers, routes, and circle
+      // Clean up markers, routes, polygons, and circle
       clearMarkers();
       clearRoutes();
+      clearPolygons();
       clearMeetingZoneCircle();
     });
     
@@ -120,6 +126,12 @@
     $: if (map && routes && isLoaded) {
       clearRoutes();
       addRoutes();
+    }
+    
+    // Watch for polygon changes
+    $: if (map && polygons && isLoaded) {
+      clearPolygons();
+      addPolygons();
     }
     
     // Watch for animation flag
@@ -535,6 +547,67 @@
       if (mapRoutes.length) {
         mapRoutes.forEach(route => route && route.setMap(null));
         mapRoutes = [];
+      }
+    }
+    
+    function addPolygons() {
+      if (!map || !polygons || !window.google) return;
+      
+      mapPolygons = polygons.map(polygon => {
+        if (!polygon.coordinates || !Array.isArray(polygon.coordinates)) {
+          console.error('Invalid polygon coordinates:', polygon);
+          return null;
+        }
+        
+        // Convert coordinates to Google Maps format
+        const paths = polygon.coordinates.map(ring => {
+          if (!Array.isArray(ring)) return [];
+          return ring.map(coord => {
+            if (!Array.isArray(coord) || coord.length < 2) return null;
+            return { lat: coord[1], lng: coord[0] };
+          }).filter(point => point !== null);
+        }).filter(ring => ring.length > 0);
+        
+        if (paths.length === 0) {
+          console.error('No valid paths for polygon:', polygon);
+          return null;
+        }
+        
+        // Determine colors based on polygon type
+        let fillColor = '#3B82F6';
+        let strokeColor = '#1E40AF';
+        let fillOpacity = 0.2;
+        let strokeOpacity = 0.8;
+        
+        if (polygon.type === 'isochrone') {
+          fillColor = '#cab7f6'; // Purple for isochrones
+          strokeColor = '#7C3AED';
+        } else if (polygon.type === 'intersection') {
+          fillColor = '#10B981'; // Green for intersections
+          strokeColor = '#059669';
+          fillOpacity = 0.3; // More visible for intersections
+        }
+        
+        const googlePolygon = new window.google.maps.Polygon({
+          paths: paths,
+          strokeColor: strokeColor,
+          strokeOpacity: strokeOpacity,
+          strokeWeight: 2,
+          fillColor: fillColor,
+          fillOpacity: fillOpacity,
+          map: map,
+          clickable: false,
+          zIndex: polygon.type === 'intersection' ? 2 : 1 // Intersections on top
+        });
+        
+        return googlePolygon;
+      }).filter(polygon => polygon !== null);
+    }
+    
+    function clearPolygons() {
+      if (mapPolygons.length) {
+        mapPolygons.forEach(polygon => polygon && polygon.setMap(null));
+        mapPolygons = [];
       }
     }
   </script>

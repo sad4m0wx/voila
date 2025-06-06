@@ -61,9 +61,8 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
     };
 
 
-    // Call the API server
     try {
-      const response = await fetch(CORE_API_URL + '/api/meeting-point', {
+      const response = await fetch(CORE_API_URL + '/api/meeting-point/weiszfeld', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -73,7 +72,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point using Rust API'}`);
+        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point using Weiszfeld API'}`);
       }
 
       const rustResponse = await response.json();
@@ -101,7 +100,9 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
           color: getRouteColor(rustResponse.routes.indexOf(route)),
           weight: 5
         })),
-        venues: rustResponse.venues || []
+        venues: rustResponse.venues || [],
+        // Include debug data for visualization
+        debug: rustResponse.debug_data || null
       };
     } catch (apiError) {
       console.error('Error from Rust API, falling back to SvelteKit endpoint:', apiError);
@@ -117,7 +118,8 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
           estimated: true
         })),
         routes: [],
-        venues: []
+        venues: [],
+        debug: null // No debug data in fallback
       };
     }
   } catch (error) {
