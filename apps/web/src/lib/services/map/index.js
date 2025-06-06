@@ -1,2 +1,2 @@
-export { GoogleMapsService, googleMapsService } from './GoogleMapsService';
-export { isGoogleMapsLoaded, loadGoogleMapsScript } from './GoogleMapsLoader';
+export { GoogleMapsService, googleMapsService } from './GoogleMapsService.js';
+export { isGoogleMapsLoaded, loadGoogleMapsScript } from './googleMapsLoader.js';

@@ -1,4 +1,4 @@
-import { isGoogleMapsLoaded, loadGoogleMapsScript } from './GoogleMapsLoader';
+import { isGoogleMapsLoaded, loadGoogleMapsScript } from './googleMapsLoader.js';
 
 export class GoogleMapsService {
 

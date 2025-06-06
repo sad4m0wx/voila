@@ -1,6 +1,6 @@
 import { googleMapsService } from '$services/map';
 
-const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000';
+const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || '';
 
 /**
  * Find the optimal meeting point using the Rust backend API
@@ -73,7 +73,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || 'Failed to calculate meeting point using Rust API');
+        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point using Rust API'}`);
       }
 
       const rustResponse = await response.json();
@@ -103,14 +103,14 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
         })),
         venues: rustResponse.venues || []
       };
-    } catch (rustApiError) {
-      console.error('Error from Rust API, falling back to SvelteKit endpoint:', rustApiError);
+    } catch (apiError) {
+      console.error('Error from Rust API, falling back to SvelteKit endpoint:', apiError);
 
       // Fall back to the SvelteKit server endpoint
       return {
         name: "Simple Meeting Point",
-        coordinates: findCentroid(addresses.map(addr => addr.coordinates)),
-        travelTimes: addresses.map(addr => ({
+        coordinates: findCentroid(addressesWithCoordinates.map(addr => addr.coordinates)),
+        travelTimes: addressesWithCoordinates.map(addr => ({
           id: addr.id,
           address: addr.value,
           duration: 10, // Placeholder duration
