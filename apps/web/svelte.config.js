@@ -8,7 +8,10 @@ const adapter = process.env.VERCEL ? adapterVercel() : adapterStatic({
   // Only prerender the homepage and other essential static pages
   prerender: {
     entries: ['/']
-  }
+  },
+  // Specify output directory to match Vite config
+  pages: 'dist',
+  assets: 'dist'
 });
 
 const config = {
