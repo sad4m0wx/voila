@@ -243,6 +243,7 @@
             <MeetingPointResults 
               {meetingPoint}
               {venues}
+              {routes}
               {isCalculating}
               {isMobile}
               on:venue-selected={(e) => console.log('Venue selected:', e.detail)}

@@ -1,13 +1,17 @@
 <script>
     import { createEventDispatcher } from "svelte";
     import VenueList from "$components/venues/VenueList.svelte";
+    import RouteDetails from "./RouteDetails.svelte";
 
     const dispatch = createEventDispatcher();
 
     export let meetingPoint = null;
     export let venues = [];
+    export let routes = [];
     export let isCalculating = false;
     export let isMobile = false;
+    
+    let showRouteDetails = false;
 
     function handleVenueSelected(event) {
         dispatch("venue-selected", event.detail);
@@ -91,6 +95,11 @@
                                 <p class="font-medium text-secondary-800 truncate text-xs">
                                     {time.address}
                                 </p>
+                                {#if time.transitSummary}
+                                    <p class="text-xs text-secondary-500 mt-1 truncate">
+                                        {time.transitSummary}
+                                    </p>
+                                {/if}
                             </div>
                         </div>
                         <div class="ml-2 flex-shrink-0">
@@ -107,22 +116,50 @@
             </div>
         </div>
 
-        <!-- Summary Stats -->
-        <div class="grid grid-cols-2 gap-3 p-3 bg-primary-50 rounded-lg">
-            <div class="text-center">
-                <div class="text-xl font-bold text-primary-700">
-                    {Math.round(meetingPoint.travelTimes.reduce((sum, time) => sum + parseInt(time.duration), 0) / meetingPoint.travelTimes.length)}
+        <!-- Summary Stats and Route Details Toggle -->
+        <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3 p-3 bg-primary-50 rounded-lg">
+                <div class="text-center">
+                    <div class="text-xl font-bold text-primary-700">
+                        {Math.round(meetingPoint.travelTimes.reduce((sum, time) => sum + parseInt(time.duration), 0) / meetingPoint.travelTimes.length)}
+                    </div>
+                    <div class="text-xs text-primary-600 font-medium">Avg. Travel Time</div>
                 </div>
-                <div class="text-xs text-primary-600 font-medium">Avg. Travel Time</div>
-            </div>
-            <div class="text-center">
-                <div class="text-xl font-bold text-primary-700">
-                    {Math.max(...meetingPoint.travelTimes.map(time => parseInt(time.duration)))}
+                <div class="text-center">
+                    <div class="text-xl font-bold text-primary-700">
+                        {Math.max(...meetingPoint.travelTimes.map(time => parseInt(time.duration)))}
+                    </div>
+                    <div class="text-xs text-primary-600 font-medium">Max Travel Time</div>
                 </div>
-                <div class="text-xs text-primary-600 font-medium">Max Travel Time</div>
             </div>
+            
+            <!-- Route Details Toggle -->
+            {#if routes && routes.length > 0}
+                <button 
+                    class="w-full btn btn-outline btn-sm text-xs"
+                    on:click={() => showRouteDetails = !showRouteDetails}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11H7l-4-4v8h4l2-2h6.6l2.7 2.7c.9.9 2.3.9 3.2 0L24 12l-2.8-2.8c-.9-.9-2.3-.9-3.2 0L15.3 12H13l-2-2z"/>
+                    </svg>
+                    {showRouteDetails ? 'Hide' : 'Show'} Detailed Routes
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 ml-1 transition-transform {showRouteDetails ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9l6 6 6-6"/>
+                    </svg>
+                </button>
+            {/if}
         </div>
     </div>
+
+    <!-- Route Details -->
+    {#if showRouteDetails && routes && routes.length > 0}
+        <div class="mb-4">
+            <RouteDetails 
+                {routes}
+                travelTimes={meetingPoint.travelTimes}
+            />
+        </div>
+    {/if}
 
     <!-- Venues List -->
     {#if venues && venues.length > 0}

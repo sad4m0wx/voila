@@ -584,6 +584,7 @@
           <MeetingPointResults 
             meetingPoint={optimalPoint}
             venues={[]}
+            routes={routes}
             showVenues={false}
             isCalculating={false}
             isMobile={false}
