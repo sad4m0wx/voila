@@ -1,4 +1,4 @@
-use crate::models::{Location, Route, MeetingPointResponse, AddressInput};
+use crate::models::{Location, Route, MeetingPointResponse};
 use crate::models::isochrone::IsochroneResult;
 use redis::{Client, RedisResult};
 use serde::{Serialize, Deserialize};
@@ -143,13 +143,11 @@ impl CacheService {
             .arg(serialized)
             .query_async(&mut conn).await;
         
-        info!("💾 Cached meeting point result for {}", locations);
+        info!("💾 Cached meeting point result");
         Ok(())
     }
 
     pub fn hash_locations(&self, locations: &[(String, Location)]) -> String {
-        let mut hasher = DefaultHasher::new();
-        
         // Sort by ID for consistent hashing
         let mut sorted_locations = locations.to_vec();
         sorted_locations.sort_by(|a, b| a.0.cmp(&b.0));
@@ -268,16 +266,15 @@ impl CacheService {
         };
 
         let serialized = serde_json::to_vec(&cached_route)?;
-        let ttl_seconds = CACHE_TTL_SECONDS;
         
         let mut conn = self.redis.get_multiplexed_async_connection().await?;
         let _: RedisResult<()> = redis::cmd("SETEX")
             .arg(&cache_key)
-            .arg(ttl)
+            .arg(ttl_seconds)
             .arg(serialized)
             .query_async(&mut conn).await;
         
-        info!("💾 Cached route for {}h", ttl / 3600);
+        info!("💾 Cached route");
         Ok(())
     }
 
@@ -314,7 +311,7 @@ impl CacheService {
                         match serde_json::from_slice(&cached.polygon_data) {
                             Ok(polygon) => {
                                 let result = IsochroneResult {
-                                    id: cache_key,
+                                    id: isochrone_cache_key,
                                     location: cached.origin,
                                     time_limit_minutes: cached.time_limit_minutes,
                                     profile: cached.profile,
@@ -401,7 +398,7 @@ impl CacheService {
             .arg(serialized)
             .query_async(&mut conn).await;
         
-        info!("💾 Cached isochrone for {}d", ttl / (24 * 3600));
+        info!("💾 Cached isochrone");
         Ok(())
     }
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::algorithms::MeetingPointAlgorithm;
 use crate::models::{AddressInput, MeetingPointResponse};
-use crate::services::cache_service::cache;
+use crate::services::cache_service::{CacheService};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -13,12 +13,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     );
 }
 
-static CACHE_TTL: u32 = 30; // 30 days
-static CACHE_TTL_SECONDS: u32 = CACHE_TTL * 24 * 3600; // 30 days
+pub static CACHE_TTL: u32 = 30; // 30 days
+pub static CACHE_TTL_SECONDS: u32 = CACHE_TTL * 24 * 3600; // 30 days
 
 #[derive(Debug, Deserialize)]
 struct MeetingPointRequest {
     addresses: Vec<AddressInput>,
+    algorithm: Option<String>, // "isochrone" (default) or "matrix"
 }
 
 #[derive(Debug, Serialize)]
@@ -72,7 +73,7 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
     }
     
     // Step 2: Check for complete cache hit
-    let cache_service = cache().await;
+    let cache_service = CacheService::cache().await;
     if let Some(cached_result) = cache_service.get_cached_meeting_point_result(&resolved_locations).await {
         let processing_time_ms = start_time.elapsed().as_millis();
         info!("🎯 Complete cache hit! Returned in {}ms", processing_time_ms);
@@ -99,7 +100,7 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
             cache_service.cache_meeting_point_result(
                 &resolved_locations, 
                 &response, 
-                CACHE_TTL // 30 days TTL
+                Some(CACHE_TTL) // 30 days TTL
             ).await;
             
             HttpResponse::Ok().json(response)

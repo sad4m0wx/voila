@@ -1,18 +1,14 @@
-use geo::{Point, Centroid, MultiPoint, Polygon, Contains, BoundingRect, Area};
+use geo::{Point, MultiPoint, Polygon, Area, HasDimensions, BoundingRect, Contains, Centroid};
 use anyhow::Result;
 
-use crate::models::{Location, MeetingPoint, AddressInput, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, LineString, TravelTime};
+use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, LineString, TravelTime};
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::graphhopper_client::GraphHopperClient;
+use log::{info, debug};
+
 
 pub struct MeetingPointAlgorithm;
-
-#[derive(Debug, Clone)]
-struct TimeOptimizationResult {
-    optimal_time_limit: u32,
-    confidence_score: f64,
-}
 
 #[derive(Debug, Clone)]
 struct CandidateEvaluationResult {
@@ -23,57 +19,62 @@ struct CandidateEvaluationResult {
 }
 
 impl MeetingPointAlgorithm {
-    /// Find optimal meeting point with parallel processing
+    /// Find optimal meeting point using isochrone intersection approach
     pub async fn find_meeting_point(
-        addresses: &[AddressInput],
+        locations: &[(String, Location)],
     ) -> Result<(MeetingPoint, Vec<Route>, Option<DebugData>)> {
-        log::info!("🚀 Starting SPT + MINIMAX algorithm with {} addresses", addresses.len());
-        let locations = Self::resolve_addresses(addresses).await?;
         
-        // Step 1: Calculate geometric center and get realistic time bounds
-        let center = Self::calculate_centroid(&locations);
+        // Step 1: Calculate geometric center
+        let center = Self::calculate_centroid(locations);
         log::info!("📍 Geometric center: ({:.6}, {:.6})", center.latitude, center.longitude);
         
-        let graphhopper = GraphHopperClient::new();
-        let travel_times = graphhopper.batch_route_requests(&locations, &center).await;
-        let time_limit = Self::calculate_time_limit(&travel_times);
-        let max_time = travel_times.iter().copied().fold(0.0, f64::max);
-        log::info!("🛣️  Travel times: {:?} for addresses {:?}", travel_times.iter().map(|t| t/60.0).collect::<Vec<f64>>(), locations.iter().map(|(id, _)| id.clone()).collect::<Vec<String>>());
-        log::info!("⏱️  Time analysis: max={:.1}min, limit={:.1}min", max_time/60.0, time_limit as f64/60.0);
+        // Step 2: Estimate time limit by computing travel time to centroid
+        let time_limit_minutes = Self::estimate_time_to_center(locations, &center).await?;
+        log::info!("⏱️  Estimated time limit: {}min", time_limit_minutes);
         
-        // Step 2: Generate isochrones in parallel
-        let isochrones = IsochroneService::batch_isochrone_requests(&locations, time_limit).await?;
+        // Step 3: Get isochrones from the isochrone service
+        let isochrone_service = IsochroneService::new();
+        let isochrones = isochrone_service.get_isochrones(
+            locations, 
+            time_limit_minutes, 
+            Some("pt".to_string())
+        ).await?;
         log::info!("🌐 Generated {} isochrones", isochrones.len());
         
-        // Step 3: Find intersections and generate candidates
-        let intersections = Self::find_intersections(&isochrones);
-        let (candidates, debug_candidates) = Self::generate_candidates(&intersections, &center);
-        log::info!("🎯 Found {} intersections, generated {} candidates", intersections.len(), candidates.len());
+        // Step 4: Compute isochrone intersections
+        let intersections = isochrone_service.get_isochrone_intersections(&isochrones);
+        log::info!("🎯 Found {} intersection polygons", intersections.len());
         
-        // Step 4: Evaluate candidates and find optimal point
-        let (best_location, routes, final_candidates) = Self::evaluate_candidates(&locations, &candidates, &graphhopper).await?;
-
+        // Step 5: Generate candidates from intersections
+        let candidates = Self::generate_candidates_from_intersections(&intersections);
+        log::info!("🔍 Generated {} candidate points", candidates.len());
+        
+        // Step 6: Evaluate candidates (TODO: implement proper evaluation)
+        let best_candidate = Self::evaluate_candidates(locations, &candidates).await?;
+        log::info!("🏆 Selected best candidate at ({:.6}, {:.6})", 
+                  best_candidate.latitude, best_candidate.longitude);
+        
+        // Step 7: Generate final routes
+        let routes = Self::generate_final_routes(locations, &best_candidate).await?;
+        
         let meeting_point = MeetingPoint {
-            name: "Optimal Meeting Point".to_string(),
-            coordinates: (best_location.longitude, best_location.latitude),
-            travel_times: Self::create_travel_times(&locations, &routes),
+            name: "Intersection-based Meeting Point".to_string(),
+            coordinates: (best_candidate.longitude, best_candidate.latitude),
+            travel_times: Self::create_travel_times(locations, &routes),
         };
         
-        log::info!("🏆 Optimal meeting point: ({:.6}, {:.6})", best_location.latitude, best_location.longitude);
-        log::info!("🛣️  Generated {} complete routes", routes.len());
-        
+        // Create debug data
         let debug_data = Some(DebugData {
             geometric_centroid: (center.longitude, center.latitude),
-            isochrones: Self::convert_isochrones_debug(&isochrones, &locations),
-            intersection_polygons: Self::convert_polygons_debug(&intersections),
-            candidate_points: debug_candidates,
-            final_candidates,
+            isochrones: Self::convert_isochrones_debug(&isochrones, locations),
+            intersection_polygons: Self::convert_intersections_debug(&intersections),
+            candidate_points: Self::convert_candidates_debug(&candidates),
+            final_candidates: vec![], // All candidates are in candidate_points
         });
         
         Ok((meeting_point, routes, debug_data))
     }
 
-    /// Calculate geometric centroid of locations
     fn calculate_centroid(locations: &[(String, Location)]) -> Location {
         let points: Vec<Point<f64>> = locations
             .iter()
@@ -86,246 +87,312 @@ impl MeetingPointAlgorithm {
             .unwrap_or_else(|| locations[0].1.clone())
     }
 
-    /// Calculate appropriate time limit based on travel times
-    fn calculate_time_limit(travel_times: &[f64]) -> u32 {
-        let max_time = travel_times.iter().copied().fold(0.0, f64::max);
-        ((max_time * 1.2).max(600.0)) as u32 // 20% buffer, minimum 10 minutes
-    }
-
-    /// Find the actual geometric intersection between all isochrones
-    /// This represents the area reachable from ALL locations within the time limit
-    fn find_intersections(isochrones: &[IsochroneResult]) -> Vec<Polygon<f64>> {
-        if isochrones.is_empty() {
-            return Vec::new();
-        }
-        
-        if isochrones.len() == 1 {
-            return vec![isochrones[0].polygon.clone()];
-        }
-
-        log::info!("🔍 Computing intersection of {} isochrones", isochrones.len());
-        
-        // Start with the first polygon as the base intersection
-        let mut intersection_result = isochrones[0].polygon.clone();
-        let mut intersection_area = Self::polygon_area_km2(&intersection_result);
-        
-        log::debug!("Starting intersection area: {:.2} km²", intersection_area);
-        
-        // Intersect with each subsequent polygon
-        for (i, isochrone) in isochrones.iter().enumerate().skip(1) {
-            // For now, use geometric approximation by taking the smaller overlapping area
-            if intersection_result.intersects(&isochrone.polygon) {
-                // Choose the smaller polygon as intersection approximation
-                let current_area = Self::polygon_area_km2(&isochrone.polygon);
-                if current_area < intersection_area {
-                    intersection_result = isochrone.polygon.clone();
-                    intersection_area = current_area;
-                }
-                log::debug!("After intersecting with isochrone {}: area = {:.2} km²", i + 1, intersection_area);
-            } else {
-                // No intersection - return empty result
-                log::warn!("⚠️  No intersection found between isochrones - using centroid fallback");
-                return Vec::new();
-            }
-        }
-        
-        let final_area = Self::polygon_area_km2(&intersection_result);
-        log::info!("✅ Final intersection area: {:.2} km²", final_area);
-        
-        vec![intersection_result]
-    }
-
-    /// Generate candidate points from intersections and center
-    fn generate_candidates(
-        intersections: &[Polygon<f64>],
+    async fn estimate_time_to_center(
+        locations: &[(String, Location)],
         center: &Location,
-    ) -> (Vec<Location>, Vec<DebugCandidate>) {
-        let mut candidates = Vec::new();
-        let mut debug_candidates = Vec::new();
-
-        // Generate candidates from intersections
-        for (i, intersection) in intersections.iter().enumerate() {
-            let intersection_candidates = Self::sample_polygon_points(intersection, 3);
-            
-            for (j, candidate) in intersection_candidates.iter().enumerate() {
-                debug_candidates.push(DebugCandidate {
-                    id: format!("intersection_{}_{}", i, j),
-                    coordinates: (candidate.longitude, candidate.latitude),
-                    source: format!("intersection_{}", i),
-                    score: None,
-                });
-            }
-            candidates.extend(intersection_candidates);
-        }
-
-        // Add random candidates near center
-        for i in 0..5 {
-            let noisy_candidate = Self::add_random_offset(center, 1000.0);
-            debug_candidates.push(DebugCandidate {
-                id: format!("random_{}", i),
-                coordinates: (noisy_candidate.longitude, noisy_candidate.latitude),
-                source: "random".to_string(),
-                score: None,
-            });
-            candidates.push(noisy_candidate);
-        }
-
-        // Always include the geometric center
-        debug_candidates.push(DebugCandidate {
-            id: "centroid".to_string(),
-            coordinates: (center.longitude, center.latitude),
-            source: "centroid".to_string(),
-            score: None,
-        });
-        candidates.push(center.clone());
-
-        // Limit total candidates
-        candidates.truncate(12);
-        debug_candidates.truncate(12);
+    ) -> Result<u32> {
+        log::info!("📏 Estimating travel times to geometric center");
         
-        (candidates, debug_candidates)
+        let graphhopper = GraphHopperClient::new();
+        let mut travel_times = Vec::new();
+        
+        // Use batch request to get all travel times at once
+        let durations = graphhopper.get_transit_routes(locations, center).await;
+        
+        for (i, duration_seconds) in durations.iter().enumerate() {
+            let minutes = duration_seconds / 60.0;
+            travel_times.push(minutes);
+            
+            if i < locations.len() {
+                let (id, _) = &locations[i];
+                log::debug!("Travel time from {}: {:.1}min", id, minutes);
+            }
+        }
+
+        
+        if travel_times.is_empty() {
+            return Ok(30); // Default 30 minutes
+        }
+        
+        // Use the average travel time with a 20% margin as time limit
+        let avg_time = travel_times.iter().sum::<f64>() / travel_times.len() as f64;
+        let time_limit = (avg_time * 1.2).ceil() as u32;
+        
+        // Round up to nearest 5 minutes and cap at 90 minutes
+        let rounded_time_limit = ((time_limit + 4) / 5) * 5;
+        let capped_time_limit = rounded_time_limit.min(90);
+        
+        log::info!("📊 Average travel time: {:.1}min, time limit: {}min", avg_time, capped_time_limit);
+        
+        Ok(capped_time_limit)
     }
 
-    /// Sample random points within a polygon
-    fn sample_polygon_points(polygon: &Polygon<f64>, count: usize) -> Vec<Location> {
+    fn generate_candidates_from_intersections(intersections: &[Polygon<f64>]) -> Vec<Location> {
+        
         let mut candidates = Vec::new();
-        let mut rng = rand::thread_rng();
+        const MAX_CANDIDATES_PER_POLYGON: usize = 12;
+        const GRID_RESOLUTION: usize = 4; // 4x4 grid per polygon
         
-        if let Some(bbox) = polygon.bounding_rect() {
-            let (min_x, max_x) = (bbox.min().x, bbox.max().x);
-            let (min_y, max_y) = (bbox.min().y, bbox.max().y);
+        for (polygon_idx, intersection) in intersections.iter().enumerate() {
+            let mut polygon_candidates = Vec::new();
             
-            let mut attempts = 0;
-            while candidates.len() < count && attempts < count * 10 {
-                let point = Point::new(
-                    rng.gen_range(min_x..max_x),
-                    rng.gen_range(min_y..max_y)
-                );
+            // Strategy 1: Centroid (most important)
+            if let Some(centroid) = intersection.centroid() {
+                polygon_candidates.push(Location::new(centroid.y(), centroid.x()));
+            }
+            
+            // Strategy 2: Coarse grid sampling within bounding box
+            if let Some(bbox) = intersection.bounding_rect() {
+                let lat_step = (bbox.max().y - bbox.min().y) / GRID_RESOLUTION as f64;
+                let lng_step = (bbox.max().x - bbox.min().x) / GRID_RESOLUTION as f64;
                 
-                if polygon.contains(&point) {
-                    candidates.push(Location::new(point.y(), point.x()));
+                for i in 1..GRID_RESOLUTION {
+                    for j in 1..GRID_RESOLUTION {
+                        let lat = bbox.min().y + i as f64 * lat_step;
+                        let lng = bbox.min().x + j as f64 * lng_step;
+                        let point = Point::new(lng, lat);
+                        
+                        if intersection.contains(&point) {
+                            polygon_candidates.push(Location::new(lat, lng));
+                        }
+                    }
                 }
-                attempts += 1;
             }
+            
+            // Strategy 3: Sample polygon vertices/edge midpoints for complex shapes
+            let exterior_points: Vec<_> = intersection.exterior().points().collect();
+            for point in exterior_points.iter().step_by(exterior_points.len().max(1) / 3) {
+                polygon_candidates.push(Location::new(point.y(), point.x()));
+            }
+            
+            // Limit candidates per polygon and add to main list
+            polygon_candidates.truncate(MAX_CANDIDATES_PER_POLYGON);
+            candidates.extend(polygon_candidates.clone());
+            
+            log::debug!("📍 Generated {} candidates from intersection polygon {}", 
+                       polygon_candidates.len(), polygon_idx);
         }
         
-        // Fallback to centroid if no points found
-        if candidates.is_empty() {
-            if let Some(centroid) = polygon.centroid() {
-                candidates.push(Location::new(centroid.y(), centroid.x()));
-            }
-        }
+        // Cap total candidates to keep evaluation reasonable
+        candidates.truncate(50);
         
+        info!("🔍 Generated {} total candidate points using coarse grid + strategic sampling", candidates.len());
         candidates
     }
-
-    /// Evaluate candidates and find optimal meeting point
+    /// Evaluate candidates using minimax algorithm with tie-breaking
     async fn evaluate_candidates(
         locations: &[(String, Location)],
         candidates: &[Location],
-        graphhopper: &GraphHopperClient,
-    ) -> Result<(Location, Vec<crate::models::location::Route>, Vec<DebugCandidate>)> {
+    ) -> Result<Location> {
         if candidates.is_empty() {
-            return Err(anyhow::anyhow!("No candidates provided"));
+            return Err(anyhow::anyhow!("No candidates to evaluate"));
         }
-
-        let total_routes = candidates.len() * locations.len();
-        log::info!("📊 Evaluating {} candidates ({} routes) in parallel", candidates.len(), total_routes);
         
-        // Evaluate all candidates at once
-        let all_results = graphhopper.batch_evaluate_all_candidates(locations, candidates).await;
+        let graphhopper = GraphHopperClient::new();
+        let mut best_candidate: Option<CandidateEvaluationResult> = None;
         
-        let mut best_candidate = candidates[0].clone();
-        let mut best_score = f64::INFINITY;
-        let mut best_routes = Vec::new();
-        let mut final_debug_candidates = Vec::new();
+        log::info!("⚖️  Evaluating {} candidates using minimax algorithm", candidates.len());
         
-        for (i, (travel_times, routes)) in all_results.iter().enumerate() {
-            let candidate = &candidates[i];
-            let score = Self::calculate_candidate_score(travel_times);
+        for (i, candidate) in candidates.iter().enumerate() {
+            // Get travel times from all locations to this candidate
+            let travel_times = graphhopper.get_transit_routes(locations, candidate).await;
             
-            final_debug_candidates.push(DebugCandidate {
-                id: format!("candidate_{}", i),
-                coordinates: (candidate.longitude, candidate.latitude),
-                source: "evaluation".to_string(),
-                score: Some(score / 60.0), // Convert to minutes
-            });
+            if travel_times.is_empty() {
+                log::warn!("No travel times available for candidate {}", i);
+                continue;
+            }
             
-            if score < best_score {
-                best_score = score;
-                best_candidate = candidate.clone();
-                best_routes = routes.clone();
-                log::debug!("🌟 New best candidate {}: score={:.1}min", i + 1, score/60.0);
+            // Convert to minutes
+            let times_minutes: Vec<f64> = travel_times.iter().map(|&t| t / 60.0).collect();
+            
+            // Calculate minimax metrics
+            let max_time = times_minutes.iter().fold(0.0, |a: f64, &b| a.max(b));
+            let avg_time = times_minutes.iter().sum::<f64>() / times_minutes.len() as f64;
+            
+            // Primary score: minimize max time, use avg as tie-breaker
+            let minimax_score = max_time + (avg_time * 0.1); // Small penalty for avg time
+            
+            let evaluation = CandidateEvaluationResult {
+                location: candidate.clone(),
+                max_travel_time: max_time,
+                avg_travel_time: avg_time,
+                minimax_score,
+            };
+            
+            // Update best candidate if this one is better
+            let is_better = match &best_candidate {
+                None => true,
+                Some(current_best) => {
+                    // Primary: lower max time wins
+                    if evaluation.max_travel_time < current_best.max_travel_time - 0.5 {
+                        true
+                    } else if (evaluation.max_travel_time - current_best.max_travel_time).abs() < 0.5 {
+                        // Tie-breaker: lower average time wins
+                        evaluation.avg_travel_time < current_best.avg_travel_time
+                    } else {
+                        false
+                    }
+                }
+            };
+            
+            if is_better {
+                log::debug!("🎯 New best candidate {}: max={:.1}min, avg={:.1}min", 
+                           i, max_time, avg_time);
+                best_candidate = Some(evaluation);
             }
         }
         
-        log::info!("✅ Best candidate found with score {:.1}min", best_score/60.0);
-        Ok((best_candidate, best_routes, final_debug_candidates))
+        match best_candidate {
+            Some(result) => {
+                log::info!("🏆 Best candidate: max={:.1}min, avg={:.1}min", 
+                          result.max_travel_time, result.avg_travel_time);
+                Ok(result.location)
+            }
+            None => Err(anyhow::anyhow!("Failed to evaluate any candidates"))
+        }
     }
 
-    /// Calculate candidate score based on travel times
-    fn calculate_candidate_score(travel_times: &[f64]) -> f64 {
-        let total_time: f64 = travel_times.iter().sum();
-        let avg_time = total_time / travel_times.len() as f64;
+    /// Generate final routes to the meeting point
+    async fn generate_final_routes(
+        locations: &[(String, Location)],
+        meeting_point: &Location,
+    ) -> Result<Vec<Route>> {
+        log::info!("🛣️  Generating final routes");
         
-        // Add fairness penalty for high variance
-        let variance = travel_times.iter()
-            .map(|&time| (time - avg_time).powi(2))
-            .sum::<f64>() / travel_times.len() as f64;
-        let fairness_penalty = variance.sqrt() * 0.2;
+        let graphhopper = GraphHopperClient::new();
+        let mut routes = Vec::new();
         
-        total_time + fairness_penalty
+        for (id, origin) in locations {
+            let route = match graphhopper.get_transit_route(origin, meeting_point).await {
+                Ok((duration, distance, steps)) => {
+                    let geometry = GraphHopperClient::extract_geometry_from_steps(
+                        &steps, origin, meeting_point
+                    );
+                    
+                    Route {
+                        id: id.clone(),
+                        geometry: LineString::new(geometry),
+                        steps,
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to generate route for {}: {}", id, e);
+                    // Create fallback route with straight line
+                    Route {
+                        id: id.clone(),
+                        geometry: LineString::new(vec![
+                            (origin.longitude, origin.latitude),
+                            (meeting_point.longitude, meeting_point.latitude),
+                        ]),
+                        steps: vec![],
+                    }
+                }
+            };
+            
+            routes.push(route);
+        }
+        
+        log::info!("✅ Generated {} routes", routes.len());
+        Ok(routes)
     }
 
-    /// Add random offset to a location
-    fn add_random_offset(location: &Location, radius_meters: f64) -> Location {
-        let mut rng = rand::thread_rng();
-        let radius_deg = radius_meters / 111000.0;
-        
-        let angle: f64 = rng.gen_range(0.0..std::f64::consts::TAU);
-        let distance: f64 = rng.gen_range(0.0..radius_deg);
-        
-        Location::new(
-            location.latitude + distance * angle.cos(),
-            location.longitude + distance * angle.sin(),
-        )
-    }
-
-    /// Calculate polygon area in km²
-    fn polygon_area_km2(polygon: &Polygon<f64>) -> f64 {
-        let area_deg2 = polygon.unsigned_area();
-        area_deg2 * 111.0 * 111.0 // Convert degrees² to km²
-    }
-
-    /// Resolve addresses to locations
-    async fn resolve_addresses(addresses: &[AddressInput]) -> Result<Vec<(String, Location)>> {
-        let mut locations = Vec::new();
-        
-        for addr in addresses {
-            if let Some((lon, lat)) = addr.coordinates {
-                let location = Location::new(lat, lon)
-                    .with_address(addr.address.as_deref().unwrap_or("Unknown"));
-                locations.push((addr.id.clone(), location));
+    fn create_travel_times(
+        locations: &[(String, Location)],
+        routes: &[Route],
+    ) -> Vec<TravelTime> {
+        locations.iter().zip(routes.iter()).map(|((id, location), route)| {
+            let duration_minutes = if !route.steps.is_empty() {
+                route.steps.iter().map(|step| step.duration).sum::<u32>() / 60
             } else {
-                return Err(anyhow::anyhow!("Coordinates required for address: {}", addr.id));
-            }
-        }
-        
-        Ok(locations)
-    }
+                // Estimate based on geometry
+                let total_distance: f64 = route.geometry.coordinates.windows(2)
+                    .map(|pair| {
+                        let loc1 = Location::new(pair[0].1, pair[0].0);
+                        let loc2 = Location::new(pair[1].1, pair[1].0);
+                        loc1.distance_to(&loc2)
+                    })
+                    .sum();
+                (total_distance / 7.0 / 60.0) as u32
+            };
 
-    /// Convert polygons to debug format
-    fn convert_polygons_debug(polygons: &[Polygon<f64>]) -> Vec<DebugPolygon> {
-        polygons.iter().enumerate().map(|(i, polygon)| {
-            Self::polygon_to_debug(&format!("intersection_{}", i), polygon)
+            // Generate transit summary from route steps
+            let transit_summary = Self::generate_transit_summary(&route.steps);
+
+            TravelTime {
+                id: id.clone(),
+                address: location.address.clone().unwrap_or_else(|| 
+                    format!("{:.4}, {:.4}", location.latitude, location.longitude)
+                ),
+                duration: duration_minutes,
+                distance: 0.0,
+                estimated: route.steps.is_empty(),
+                transit_summary: Some(transit_summary),
+            }
         }).collect()
     }
 
-    /// Convert isochrones to debug format
-    fn convert_isochrones_debug(
-        isochrones: &[IsochroneResult], 
-        locations: &[(String, Location)]
-    ) -> Vec<DebugIsochrone> {
+    
+    
+
+    fn generate_transit_summary(steps: &[crate::models::transit::TransitStep]) -> String {
+        if steps.is_empty() {
+            return "Route details unavailable".to_string();
+        }
+
+        let mut summary_parts = Vec::new();
+        let mut total_walking_time = 0u32;
+        
+        for step in steps {
+            match step.mode.as_str() {
+                "transit" => {
+                    if let Some(details) = &step.transit_details {
+                        let line_info = if let Some(short_name) = &details.line.short_name {
+                            format!("{} {}", details.line.vehicle_type, short_name)
+                        } else {
+                            details.line.name.clone()
+                        };
+                        
+                        let duration_min = step.duration / 60;
+                        let stops_info = if details.num_stops > 0 {
+                            format!(" ({} stops)", details.num_stops)
+                        } else {
+                            String::new()
+                        };
+                        
+                        summary_parts.push(format!(
+                            "Take {} for {}min{}", 
+                            line_info, 
+                            duration_min.max(1),
+                            stops_info
+                        ));
+                    } else {
+                        summary_parts.push(format!("Transit for {}min", (step.duration / 60).max(1)));
+                    }
+                },
+                "walking" => {
+                    total_walking_time += step.duration;
+                },
+                _ => {
+                    summary_parts.push(format!("{} for {}min", step.mode, (step.duration / 60).max(1)));
+                }
+            }
+        }
+        
+        // Add walking summary if there's significant walking
+        if total_walking_time > 60 { // More than 1 minute
+            let walking_min = total_walking_time / 60;
+            summary_parts.push(format!("{}min walking", walking_min));
+        }
+        
+        if summary_parts.is_empty() {
+            "Direct route".to_string()
+        } else {
+            summary_parts.join(" → ")
+        }
+    }
+
+    /// Convert isochrones for debug display
+    fn convert_isochrones_debug(isochrones: &[IsochroneResult], locations: &[(String, Location)]) -> Vec<DebugIsochrone> {
         isochrones.iter().enumerate().map(|(i, iso)| {
             let origin_id = locations.get(i)
                 .map(|(id, _)| id.clone())
@@ -333,9 +400,28 @@ impl MeetingPointAlgorithm {
             
             DebugIsochrone {
                 origin_id,
-                time_limit_minutes: iso.time_limit_seconds as f64 / 60.0,
+                time_limit_minutes: iso.time_limit_minutes as f64,
                 area_km2: Self::polygon_area_km2(&iso.polygon),
                 polygon: Self::polygon_to_debug("isochrone", &iso.polygon),
+            }
+        }).collect()
+    }
+
+    /// Convert intersection polygons for debug display
+    fn convert_intersections_debug(intersections: &[Polygon<f64>]) -> Vec<DebugPolygon> {
+        intersections.iter().enumerate().map(|(i, polygon)| {
+            Self::polygon_to_debug(&format!("intersection_{}", i), polygon)
+        }).collect()
+    }
+
+    /// Convert candidate points for debug display
+    fn convert_candidates_debug(candidates: &[Location]) -> Vec<DebugCandidate> {
+        candidates.iter().enumerate().map(|(i, location)| {
+            DebugCandidate {
+                id: format!("candidate_{}", i),
+                coordinates: (location.longitude, location.latitude),
+                source: "intersection_centroid".to_string(),
+                score: None, // TODO: Add score when evaluation is implemented
             }
         }).collect()
     }
@@ -364,36 +450,9 @@ impl MeetingPointAlgorithm {
         }
     }
 
-    /// Create travel time summaries
-    fn create_travel_times(
-        locations: &[(String, Location)],
-        routes: &[crate::models::location::Route],
-    ) -> Vec<crate::models::location::TravelTime> {
-        locations.iter().zip(routes.iter()).map(|((id, location), route)| {
-            let duration_minutes = if !route.steps.is_empty() {
-                route.steps.iter().map(|step| step.duration).sum::<u32>() / 60
-            } else {
-                // Estimate based on geometry
-                let total_distance: f64 = route.geometry.coordinates.windows(2)
-                    .map(|pair| {
-                        let loc1 = Location::new(pair[0].1, pair[0].0);
-                        let loc2 = Location::new(pair[1].1, pair[1].0);
-                        loc1.distance_to(&loc2)
-                    })
-                    .sum();
-                (total_distance / 7.0 / 60.0) as u32
-            };
-
-            crate::models::location::TravelTime {
-                id: id.clone(),
-                address: location.address.clone().unwrap_or_else(|| 
-                    format!("{:.4}, {:.4}", location.latitude, location.longitude)
-                ),
-                duration: duration_minutes,
-                distance: 0.0,
-                estimated: route.steps.is_empty(),
-                transit_summary: None,
-            }
-        }).collect()
+    /// Calculate polygon area in km²
+    fn polygon_area_km2(polygon: &Polygon<f64>) -> f64 {
+        let area_deg2 = polygon.unsigned_area();
+        area_deg2 * 111.0 * 111.0 // Convert degrees² to km²
     }
 }

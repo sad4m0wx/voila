@@ -10,10 +10,12 @@ use tokio::sync::Semaphore;
 use once_cell::sync::Lazy;
 use futures::future::join_all;
 use tokio::time::timeout;
+use chrono::NaiveDate;
 
-use crate::models::Location;
+use crate::models::{Location, Route, LineString};
 use crate::models::transit::{TransitStep, GeoJson, TransitDetails, TransitLine};
-use crate::services::cache_service::cache;
+use crate::services::cache_service::{CacheService};
+use crate::routes::meeting_point::CACHE_TTL_SECONDS;
 
 // Limit concurrent requests to prevent overwhelming GraphHopper
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
@@ -46,37 +48,13 @@ impl GraphHopperClient {
         from: &Location,
         to: &Location,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
-        let cache_service = cache().await;
+        let cache_service = CacheService::cache().await;
         
-        // Check cache first (handled by global cache service with spatial tolerance)
-        if let Some(cached_route) = cache_service.get_nearby_route(
-            from, 
-            to, 
-            "pt", 
-            200.0 // 200m spatial tolerance
-        ).await {
-            info!("Cache hit for transit route");
-            // Extract duration and distance from cached route
-            let duration_secs = if !cached_route.steps.is_empty() {
-                cached_route.steps.iter().map(|step| step.duration).sum::<u32>() as u64
-            } else {
-                // Estimate based on distance
-                let distance = from.distance_to(to);
-                (distance / (20.0 * 1000.0 / 3600.0)) as u64 // 20 km/h average
-            };
-            
-            let distance = if !cached_route.steps.is_empty() {
-                cached_route.steps.iter().map(|step| step.distance).sum()
-            } else {
-                from.distance_to(to)
-            };
-            
-            return Ok((Duration::from_secs(duration_secs), distance, cached_route.steps));
-        }
-        
+        // TODO: Implement get_nearby_route in cache service if needed
+        // For now, skip cache lookup and compute directly
         
         let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
-        let result = self.compute_transit_route_uncached(from, to).await;
+        let result = self.compute_transit_route(from, to).await;
         drop(permit);
         
         match &result {
@@ -95,7 +73,7 @@ impl GraphHopperClient {
                     to,
                     "pt",
                     &route_to_cache,
-                    CACHE_TTL_SECONDS
+                    Some(CACHE_TTL_SECONDS)
                 ).await;
             
             }
@@ -108,7 +86,7 @@ impl GraphHopperClient {
     }
 
     /// Batch process multiple route requests in parallel
-    pub async fn batch_route_requests(
+    pub async fn get_transit_routes(
         &self,
         origins: &[(String, Location)],
         destination: &Location,
@@ -134,81 +112,14 @@ impl GraphHopperClient {
         join_all(route_futures).await
     }
 
-
-    /// Batch evaluate ALL candidates against all origins in one parallel operation
-    pub async fn batch_evaluate_all_candidates(
-        &self,
-        origins: &[(String, Location)],
-        candidates: &[Location],
-    ) -> Vec<(Vec<f64>, Vec<Route>)> {
-        let timeout_duration = Duration::from_secs(30);
-        
-        // Create futures for all candidate-origin combinations
-        let all_route_futures: Vec<_> = candidates.iter().enumerate().map(|(candidate_idx, candidate)| {
-            let candidate = candidate.clone();
-            
-            // For this candidate, create futures for all origins
-            let candidate_route_futures: Vec<_> = origins.iter().map(|(id, origin)| {
-                let candidate = candidate.clone();
-                let origin = origin.clone();
-                let id = id.clone();
-                
-                async move {
-                    match timeout(timeout_duration, self.get_transit_route(&origin, &candidate)).await {
-                        Ok(Ok((duration, _, steps))) => {
-                            let geometry = Self::extract_geometry_from_steps(&steps, &origin, &candidate);
-                            let route = Route {
-                                id: id.clone(),
-                                geometry: LineString::new(geometry),
-                                steps,
-                            };
-                            (duration.as_secs_f64(), route)
-                        }
-                        _ => {
-                            // Fallback route with realistic estimation
-                            let distance_km = origin.distance_to(&candidate) / 1000.0;
-                            let estimated_time = distance_km * 240.0; // 15 km/h
-                            let route = Route {
-                                id: id.clone(),
-                                geometry: LineString::new(vec![
-                                    (origin.longitude, origin.latitude),
-                                    (candidate.longitude, candidate.latitude),
-                                ]),
-                                steps: vec![],
-                            };
-                            (estimated_time, route)
-                        }
-                    }
-                }
-            }).collect();
-            
-            // Return the candidate index and its route futures
-            async move {
-                let results = join_all(candidate_route_futures).await;
-                let travel_times: Vec<f64> = results.iter().map(|(time, _)| *time).collect();
-                let routes: Vec<_> = results.into_iter().map(|(_, route)| route).collect();
-                (candidate_idx, travel_times, routes)
-            }
-        }).collect();
-
-        // Execute all futures in parallel
-        let all_results = join_all(all_route_futures).await;
-        
-        // Sort results by candidate index and return in order
-        let mut sorted_results: Vec<_> = all_results.into_iter().collect();
-        sorted_results.sort_by_key(|(candidate_idx, _, _)| *candidate_idx);
-        
-        sorted_results.into_iter().map(|(_, travel_times, routes)| (travel_times, routes)).collect()
-    }
-
     /// Compute transit route without caching
-    async fn compute_transit_route_uncached(
+    async fn compute_transit_route(
         &self,
         from: &Location,
         to: &Location,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
-        let today = Utc::now().date_naive();
-        let departure_time = today
+        let departure_time = chrono::Utc::now()
+            .date_naive()
             .and_hms_opt(12, 0, 0)
             .unwrap()
             .and_utc()
@@ -358,7 +269,6 @@ impl GraphHopperClient {
         Ok(steps)
     }
 
-    /// Extract geometry coordinates from transit steps
     pub fn extract_geometry_from_steps(
         steps: &[TransitStep],
         from: &Location,

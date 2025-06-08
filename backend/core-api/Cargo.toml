@@ -22,18 +22,12 @@ log = "0.4"
 env_logger = "0.10"
 
 # Config management
-config = "0.13"
 dotenv = "0.15"
 
 # Geo utilities
 geo-types = "0.7"
 geo = "0.24"
 geojson = "0.24"
-
-# Spatial indexing
-rstar = "0.11"              # R-tree spatial indexing
-geohash = "0.13"            # Geographic hashing
-kdtree = "0.6"              # Alternative spatial index
 
 # Error handling
 thiserror = "1.0"
@@ -44,12 +38,10 @@ uuid = { version = "1.0", features = ["v4"] }
 rand = "0.8"
 
 # Performance and async utilities
-lazy_static = "1.4"         # Global static variables
 dashmap = "5.5"             # Concurrent HashMap
-tokio-util = "0.7"          # Additional tokio utilities
+md5 = "0.7"                 # For cache key hashing
 
 # Optional Redis support (can be disabled)
 [features]
-default = ["spatial-cache", "redis-cache"]
+default = ["redis-cache"]
 redis-cache = ["redis"]
-spatial-cache = []
