@@ -1,4 +1,4 @@
-use crate::models::location::{Location, Route, MeetingPointResponse, AddressInput};
+use crate::models::{Location, Route, MeetingPointResponse, AddressInput};
 use crate::models::isochrone::IsochroneResult;
 use redis::{Client, RedisResult};
 use serde::{Serialize, Deserialize};
@@ -256,7 +256,7 @@ impl CacheService {
             return Ok(());
         }
 
-        let cache_key = self.route_cache_key(from, to, profile);
+        let cache_key = self.hash_route(from, to, profile);
         let route_data = serde_json::to_vec(route)?;
         
         let cached_route = CachedRoute {
@@ -315,8 +315,8 @@ impl CacheService {
                             Ok(polygon) => {
                                 let result = IsochroneResult {
                                     id: cache_key,
-                                    location: cached.location,
-                                    time_limit_seconds: cached.time_limit_seconds,
+                                    location: cached.origin,
+                                    time_limit_minutes: cached.time_limit_minutes,
                                     profile: cached.profile,
                                     polygon,
                                     created_at: chrono::DateTime::from_timestamp(cached.created_at, 0)

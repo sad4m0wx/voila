@@ -1,20 +1,22 @@
-use anyhow::{anyhow, Result};
-use geo::{Polygon, Coord, Area};
-use log::{info, error, debug, warn};
-use reqwest::Client;
-use std::env;
-use std::time::Duration;
+use reqwest;
 use uuid::Uuid;
 use futures::future::join_all;
+use std::time::Duration;
+use std::env;
+use log::{debug, info, warn, error};
+use anyhow::{Result, anyhow};
+use geo::{Polygon, Coord, Area, Point};
 
 use crate::models::isochrone::{
     IsochroneRequest, IsochroneResult, GraphHopperIsochroneResponse
 };
-use crate::models::location::Location;
+use crate::models::Location;
+use crate::services::cache_service::cache;
+
 
 #[derive(Clone)]
 pub struct IsochroneService {
-    client: Client,
+    client: reqwest::Client,
     graphhopper_url: String,
 }
 

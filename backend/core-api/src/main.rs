@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
         
     info!("Starting Voilà! API server on {}:{}", host, port);
     
-    let _ = services::cache_service::cache().await;
+    let _ = services::cache_service::CacheService::cache().await;
     info!("Global cache service initialized");
     
     HttpServer::new(|| {

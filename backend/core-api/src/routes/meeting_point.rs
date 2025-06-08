@@ -3,7 +3,7 @@ use log::{error, info};
 use serde::{Deserialize, Serialize};
 
 use crate::algorithms::MeetingPointAlgorithm;
-use crate::models::location::{AddressInput, MeetingPointResponse};
+use crate::models::{AddressInput, MeetingPointResponse};
 use crate::services::cache_service::cache;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

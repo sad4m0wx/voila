@@ -1,20 +1,33 @@
-use geo::{Polygon, Point, Contains, Centroid, MultiPoint, Intersects, Area, BoundingRect};
-use rand::Rng;
+use geo::{Point, Centroid, MultiPoint, Polygon, Contains, BoundingRect, Area};
 use anyhow::Result;
 
-use crate::models::location::{Location, MeetingPoint, AddressInput, DebugData, DebugIsochrone, DebugPolygon, DebugCandidate};
+use crate::models::{Location, MeetingPoint, AddressInput, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, LineString, TravelTime};
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::graphhopper_client::GraphHopperClient;
 
 pub struct MeetingPointAlgorithm;
 
+#[derive(Debug, Clone)]
+struct TimeOptimizationResult {
+    optimal_time_limit: u32,
+    confidence_score: f64,
+}
+
+#[derive(Debug, Clone)]
+struct CandidateEvaluationResult {
+    location: Location,
+    max_travel_time: f64,  // This is what we want to minimize (minimax)
+    avg_travel_time: f64,  // Used for tie-breaking
+    minimax_score: f64,    // Primary score: max_time + small avg_time penalty
+}
+
 impl MeetingPointAlgorithm {
     /// Find optimal meeting point with parallel processing
     pub async fn find_meeting_point(
         addresses: &[AddressInput],
-    ) -> Result<(MeetingPoint, Vec<crate::models::location::Route>, Option<DebugData>)> {
-        log::info!("🚀 Starting algorithm with {} addresses", addresses.len());
+    ) -> Result<(MeetingPoint, Vec<Route>, Option<DebugData>)> {
+        log::info!("🚀 Starting SPT + MINIMAX algorithm with {} addresses", addresses.len());
         let locations = Self::resolve_addresses(addresses).await?;
         
         // Step 1: Calculate geometric center and get realistic time bounds

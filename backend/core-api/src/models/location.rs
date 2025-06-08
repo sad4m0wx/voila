@@ -1,6 +1,6 @@
 use geo_types::Point;
 use serde::{Deserialize, Serialize};
-use crate::models::transit::TransitStep;
+use crate::models::api::TravelTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {
@@ -28,7 +28,7 @@ impl Location {
     pub fn to_point(&self) -> Point<f64> {
         Point::new(self.longitude, self.latitude)
     }
-    
+
     pub fn distance_to(&self, other: &Location) -> f64 {
         // Haversine formula to calculate distance between two points on Earth
         const EARTH_RADIUS: f64 = 6371000.0; // Earth radius in meters
@@ -48,27 +48,7 @@ impl Location {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddressInput {
-    pub id: String,
-    pub address: Option<String>,
-    pub coordinates: Option<(f64, f64)>, // [longitude, latitude]
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MeetingPointRequest {
-    pub addresses: Vec<AddressInput>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TravelTime {
-    pub id: String,
-    pub address: String,
-    pub duration: u32, // in minutes
-    pub distance: f64, // in meters
-    pub estimated: bool,
-    pub transit_summary: Option<String>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeetingPoint {
@@ -77,74 +57,3 @@ pub struct MeetingPoint {
     pub travel_times: Vec<TravelTime>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MeetingPointResponse {
-    pub meeting_point: MeetingPoint,
-    pub routes: Vec<Route>,
-    pub venues: Option<Vec<Venue>>, // Optional list of nearby venues
-    pub debug_data: Option<DebugData>, // Optional debugging information
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DebugData {
-    pub geometric_centroid: (f64, f64), // [longitude, latitude]
-    pub isochrones: Vec<DebugIsochrone>,
-    pub intersection_polygons: Vec<DebugPolygon>,
-    pub candidate_points: Vec<DebugCandidate>,
-    pub final_candidates: Vec<DebugCandidate>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DebugIsochrone {
-    pub origin_id: String,
-    pub time_limit_minutes: f64,
-    pub area_km2: f64,
-    pub polygon: DebugPolygon,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DebugPolygon {
-    pub r#type: String, // "Polygon"
-    pub coordinates: Vec<Vec<(f64, f64)>>, // GeoJSON format: [exterior, ...holes]
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DebugCandidate {
-    pub id: String,
-    pub coordinates: (f64, f64), // [longitude, latitude]
-    pub source: String, // "intersection", "noise", "centroid"
-    pub score: Option<f64>, // Total travel time score in minutes
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Route {
-    pub id: String,
-    pub geometry: LineString,
-    pub steps: Vec<TransitStep>
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LineString {
-    pub r#type: String, // Always "LineString"
-    pub coordinates: Vec<(f64, f64)>, // Array of [longitude, latitude] points
-}
-
-impl LineString {
-    pub fn new(coordinates: Vec<(f64, f64)>) -> Self {
-        Self {
-            r#type: "LineString".to_string(),
-            coordinates,
-        }
-    }
-}
-
-// Add the Venue struct definition here
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Venue {
-    pub id: String,
-    pub name: String,
-    pub location: (f64, f64),
-    pub photo_reference: Option<String>,
-    pub google_maps_links: Option<Vec<String>>,
-    pub types: String,
-}

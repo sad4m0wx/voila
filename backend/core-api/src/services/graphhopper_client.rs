@@ -11,13 +11,12 @@ use once_cell::sync::Lazy;
 use futures::future::join_all;
 use tokio::time::timeout;
 
-use crate::models::location::Location;
+use crate::models::Location;
 use crate::models::transit::{TransitStep, GeoJson, TransitDetails, TransitLine};
 use crate::services::cache_service::cache;
 
 // Limit concurrent requests to prevent overwhelming GraphHopper
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
-const ROUTE_CACHE_TTL: u32 = 3600 * 24 * 30; // 30 days
 
 #[derive(Clone)]
 pub struct GraphHopperClient {
@@ -83,9 +82,9 @@ impl GraphHopperClient {
         match &result {
             Ok((_duration, _distance, steps)) => {
                 // Cache the successful result using global cache service
-                let route_to_cache = crate::models::location::Route {
+                let route_to_cache = Route {
                     id: "cache".to_string(),
-                    geometry: crate::models::location::LineString::new(
+                    geometry: LineString::new(
                         Self::extract_geometry_from_steps(steps, from, to)
                     ),
                     steps: steps.clone(),
@@ -96,7 +95,7 @@ impl GraphHopperClient {
                     to,
                     "pt",
                     &route_to_cache,
-                    ROUTE_CACHE_TTL
+                    CACHE_TTL_SECONDS
                 ).await;
             
             }
@@ -141,7 +140,7 @@ impl GraphHopperClient {
         &self,
         origins: &[(String, Location)],
         candidates: &[Location],
-    ) -> Vec<(Vec<f64>, Vec<crate::models::location::Route>)> {
+    ) -> Vec<(Vec<f64>, Vec<Route>)> {
         let timeout_duration = Duration::from_secs(30);
         
         // Create futures for all candidate-origin combinations
@@ -158,9 +157,9 @@ impl GraphHopperClient {
                     match timeout(timeout_duration, self.get_transit_route(&origin, &candidate)).await {
                         Ok(Ok((duration, _, steps))) => {
                             let geometry = Self::extract_geometry_from_steps(&steps, &origin, &candidate);
-                            let route = crate::models::location::Route {
+                            let route = Route {
                                 id: id.clone(),
-                                geometry: crate::models::location::LineString::new(geometry),
+                                geometry: LineString::new(geometry),
                                 steps,
                             };
                             (duration.as_secs_f64(), route)
@@ -169,9 +168,9 @@ impl GraphHopperClient {
                             // Fallback route with realistic estimation
                             let distance_km = origin.distance_to(&candidate) / 1000.0;
                             let estimated_time = distance_km * 240.0; // 15 km/h
-                            let route = crate::models::location::Route {
+                            let route = Route {
                                 id: id.clone(),
-                                geometry: crate::models::location::LineString::new(vec![
+                                geometry: LineString::new(vec![
                                     (origin.longitude, origin.latitude),
                                     (candidate.longitude, candidate.latitude),
                                 ]),
@@ -360,7 +359,7 @@ impl GraphHopperClient {
     }
 
     /// Extract geometry coordinates from transit steps
-    fn extract_geometry_from_steps(
+    pub fn extract_geometry_from_steps(
         steps: &[TransitStep],
         from: &Location,
         to: &Location,
