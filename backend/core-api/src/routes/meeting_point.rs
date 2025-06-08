@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::algorithms::MeetingPointAlgorithm;
 use crate::models::location::{AddressInput, MeetingPointResponse};
+use crate::services::cache_service::cache;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -12,19 +13,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     );
 }
 
+static CACHE_TTL: u32 = 30; // 30 days
+static CACHE_TTL_SECONDS: u32 = CACHE_TTL * 24 * 3600; // 30 days
+
 #[derive(Debug, Deserialize)]
 struct MeetingPointRequest {
     addresses: Vec<AddressInput>,
-    max_travel_time_minutes: Option<u32>,
-    profile: Option<String>,
-    include_venues: Option<bool>,
-    venue_options: Option<VenueOptions>,
-}
-
-#[derive(Debug, Deserialize)]
-struct VenueOptions {
-    types: Vec<String>,
-    radius: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,12 +35,11 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
             error: "At least two addresses are required".to_string(),
         });
     }
-    
+
     // Validate that addresses have coordinates
     let valid_addresses: Vec<_> = request.addresses.iter()
         .filter(|addr| addr.coordinates.is_some())
         .collect();
-        
     if valid_addresses.len() < 2 {
         return HttpResponse::BadRequest().json(ErrorResponse {
             error: "At least two addresses with valid coordinates are required".to_string(),
@@ -54,27 +47,60 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
     }
     
     let start_time = std::time::Instant::now();
-    let result = MeetingPointAlgorithm::find_meeting_point(&request.addresses).await;
+    
+    // Step 1: Round coordinates and resolve to locations in one step
+    let resolved_locations: Vec<(String, crate::models::location::Location)> = request.addresses.iter()
+        .filter_map(|addr| {
+            if let Some((lon, lat)) = addr.coordinates {
+                // Round to 4 decimal places (~10m precision)
+                let rounded_lat = (lat * 10000.0).round() / 10000.0;
+                let rounded_lon = (lon * 10000.0).round() / 10000.0;
+                let location = crate::models::location::Location::new(rounded_lat, rounded_lon)
+                    .with_address(addr.address.as_deref().unwrap_or("Unknown"));
+                Some((addr.id.clone(), location))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Validate we have enough valid locations
+    if resolved_locations.len() < 2 {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            error: "At least two addresses with valid coordinates are required".to_string(),
+        });
+    }
+    
+    // Step 2: Check for complete cache hit
+    let cache_service = cache().await;
+    if let Some(cached_result) = cache_service.get_cached_meeting_point_result(&resolved_locations).await {
+        let processing_time_ms = start_time.elapsed().as_millis();
+        info!("🎯 Complete cache hit! Returned in {}ms", processing_time_ms);
+        return HttpResponse::Ok().json(cached_result);
+    }
+    
+    // Step 3: Cache miss - compute with algorithm
+    info!("💾 Cache miss - computing with algorithm");
+    let result = MeetingPointAlgorithm::find_meeting_point(&resolved_locations).await;
     let processing_time_ms = start_time.elapsed().as_millis();
     
     match result {
         Ok((meeting_point, routes, debug_data)) => {
             info!("Meeting point found using algorithm in {}ms", processing_time_ms);
-            
-            // TODO: Add venue fetching if requested
-            let venues = if request.include_venues.unwrap_or(false) {
-                // Venue fetching is disabled for now - can be re-enabled later
-                None
-            } else {
-                None
-            };
-            
+
             let response = MeetingPointResponse {
                 meeting_point,
                 routes,
-                venues,
+                venues: None,
                 debug_data,
             };
+            
+            // Step 4: Cache the complete result for 30 days
+            cache_service.cache_meeting_point_result(
+                &resolved_locations, 
+                &response, 
+                CACHE_TTL // 30 days TTL
+            ).await;
             
             HttpResponse::Ok().json(response)
         }
@@ -86,3 +112,4 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
         }
     }
 }
+
