@@ -3,6 +3,7 @@ use actix_web::{middleware, App, HttpServer, web};
 use dotenv::dotenv;
 use log::info;
 use std::env;
+use std::time::Duration;
 
 mod algorithms;
 mod models;
@@ -40,6 +41,9 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::configure)
             .route("/health", web::get().to(|| async { "OK" }))
     })
+    .keep_alive(Duration::from_secs(75))
+    .client_request_timeout(Duration::from_secs(300))
+    .client_disconnect_timeout(Duration::from_secs(30))
     .bind((host, port))?
     .run()
     .await
