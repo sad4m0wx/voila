@@ -13,7 +13,7 @@ use crate::models::isochrone::{
 };
 use crate::models::Location;
 use crate::services::cache_service::{CacheService};
-use crate::routes::meeting_point::CACHE_TTL;
+use crate::routes::meeting_point::CACHE_TTL_SECONDS;
 
 #[derive(Clone)]
 pub struct IsochroneService {
@@ -76,7 +76,10 @@ impl IsochroneService {
             request.profile.as_deref().unwrap_or("pt"),
             &result,
             Some(CACHE_TTL_SECONDS)
-        ).await;
+        ).await {
+            Ok(_) => info!("✅ Isochrone caching succeeded"),
+            Err(e) => error!("❌ Isochrone caching failed: {}", e),
+        }
 
         info!("✅ Isochrone computed successfully");
         Ok(result)
