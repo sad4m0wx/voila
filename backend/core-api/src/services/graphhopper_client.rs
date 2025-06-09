@@ -50,32 +50,29 @@ impl GraphHopperClient {
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
         let cache_service = CacheService::cache().await;
         
-        // TODO: Implement get_nearby_route in cache service if needed
-        // For now, skip cache lookup and compute directly
+
+        // Check for cached transit route with matching return type
+        if let Some(cached_result) = cache_service.get_cached_route(from, to, "pt").await {
+            info!("🎯 Transit route cache hit!");
+            return Ok(cached_result);
+        }
         
         let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
         let result = self.compute_transit_route(from, to).await;
         drop(permit);
         
         match &result {
-            Ok((_duration, _distance, steps)) => {
-                // Cache the successful result using global cache service
-                let route_to_cache = Route {
-                    id: "cache".to_string(),
-                    geometry: LineString::new(
-                        Self::extract_geometry_from_steps(steps, from, to)
-                    ),
-                    steps: steps.clone(),
-                };
-                
+            Ok(route_result) => {
+                // Cache the successful result using the new transit route cache method
                 let _ = cache_service.cache_route(
                     from,
                     to,
                     "pt",
-                    &route_to_cache,
+                    route_result,
                     Some(CACHE_TTL_SECONDS)
                 ).await;
-            
+                
+                info!("💾 Transit route cached successfully");
             }
             Err(e) => {
                 debug!("Route computation failed, not caching: {}", e);

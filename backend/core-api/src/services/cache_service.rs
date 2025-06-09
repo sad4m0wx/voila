@@ -1,5 +1,6 @@
 use crate::models::{Location, Route, MeetingPointResponse};
 use crate::models::isochrone::IsochroneResult;
+use crate::models::transit::TransitStep;
 use redis::{Client, RedisResult};
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use log::{info, warn, error, debug};
 use anyhow::{Result, anyhow};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 
 // Global cache instance - initialized once, reused everywhere
 static CACHE_SERVICE: OnceCell<Arc<CacheService>> = OnceCell::const_new();
@@ -30,6 +32,15 @@ struct CachedIsochrone {
 struct CachedRoute {
     pub from: Location,
     pub to: Location, 
+    pub profile: String,
+    pub route_data: Vec<u8>,
+    pub created_at: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct CachedTransitRoute {
+    pub from: Location,
+    pub to: Location,
     pub profile: String,
     pub route_data: Vec<u8>,
     pub created_at: i64,
@@ -106,18 +117,29 @@ impl CacheService {
         
         match redis::cmd("GET").arg(&cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
             Ok(data) => {
+                if data.is_empty() {
+                    debug!("Empty data returned from cache for key: {}", cache_key);
+                    return None;
+                }
+                
                 match serde_json::from_slice(&data) {
                     Ok(result) => {
-                        info!("🎯 Meeting point cache hit");
+                        info!("🎯 Meeting point cache hit for key: {}", cache_key);
                         Some(result)
                     }
                     Err(e) => {
-                        error!("Failed to deserialize cached meeting point: {}", e);
+                        error!("Failed to deserialize cached meeting point for key {}: {} (data length: {})", 
+                               cache_key, e, data.len());
+                        // Clear corrupted cache entry
+                        let _ = redis::cmd("DEL").arg(&cache_key).query_async::<_, ()>(&mut conn).await;
                         None
                     }
                 }
             }
-            Err(_) => None,
+            Err(e) => {
+                debug!("Cache miss for meeting point key {}: {}", cache_key, e);
+                None
+            }
         }
     }
 
@@ -160,20 +182,22 @@ impl CacheService {
             .collect::<Vec<_>>()
             .join(";");
         
-        // Use the existing hash_string method
-        self.hash_string(&location_str)
+        let hash = self.hash_string(&location_str);
+        debug!("Generated location hash: {} for location_str: {}", hash, location_str);
+        hash
     }
 
     // =============================================================================
     // ROUTE CACHING
     // =============================================================================
 
+    /// Cache transit route result (Duration, f64, Vec<TransitStep>)
     pub async fn get_cached_route(
         &self,
         from: &Location,
         to: &Location,
         profile: &str,
-    ) -> Option<Route> {
+    ) -> Option<(Duration, f64, Vec<TransitStep>)> {
 
         if !self.is_available().await {
             return None;
@@ -184,80 +208,62 @@ impl CacheService {
         
         match redis::cmd("GET").arg(&cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
             Ok(data) => {
-                match serde_json::from_slice::<CachedRoute>(&data) {
+                if data.is_empty() {
+                    debug!("Empty transit route data returned from cache for key: {}", cache_key);
+                    return None;
+                }
+                
+                match serde_json::from_slice::<CachedTransitRoute>(&data) {
                     Ok(cached) => {
                         match serde_json::from_slice(&cached.route_data) {
-                            Ok(route) => {
-                                info!("🛣️ Route cache hit");
-                                Some(route)
+                            Ok((duration, distance, steps)) => {
+                                info!("🛣️ Transit route cache hit for key: {}", cache_key);
+                                Some((duration, distance, steps))
                             }
                             Err(e) => {
-                                error!("Failed to deserialize route data: {}", e);
+                                error!("Failed to deserialize transit route data for key {}: {} (data length: {})", 
+                                       cache_key, e, cached.route_data.len());
+                                // Clear corrupted cache entry
+                                let _ = redis::cmd("DEL").arg(&cache_key).query_async::<_, ()>(&mut conn).await;
                                 None
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to deserialize cached route: {}", e);
-                        None
+                        error!("Failed to deserialize cached transit route for key {}: {} (data length: {})", 
+                               cache_key, e, data.len());
+                                // Clear corrupted cache entry
+                                let _ = redis::cmd("DEL").arg(&cache_key).query_async::<_, ()>(&mut conn).await;
+                                None
                     }
                 }
             }
-            Err(_) => None,
-        }
-    }
-
-    pub async fn get_cached_routes(
-        &self,
-        origins: &[Location],
-        destinations: &[Location],
-        profile: &str,
-    ) -> Vec<Option<Route>> {
-
-        if !self.is_available().await {
-            return vec![None; origins.len() * destinations.len()];
-        } 
-
-        let mut futures = Vec::with_capacity(origins.len() * destinations.len());
-        
-        for origin in origins.iter() {
-            for destination in destinations.iter() {
-                let origin = origin.clone();
-                let destination = destination.clone();
-                let profile = profile.to_string();
-                futures.push(async move {
-                    self.get_cached_route(&origin, &destination, &profile).await
-                });
+            Err(e) => {
+                debug!("Cache miss for transit route key {}: {}", cache_key, e);
+                None
             }
         }
-
-        let all_results = futures::future::join_all(futures).await;
-        
-        let cache_hits = all_results.iter().filter(|r| r.is_some()).count();
-        let total_requests = origins.len() * destinations.len();
-        
-        info!("🛣️ Route cache: {}/{} hits", cache_hits, total_requests);        
-        all_results
     }
 
+    /// Cache transit route result (Duration, f64, Vec<TransitStep>)
     pub async fn cache_route(
         &self,
         from: &Location,
         to: &Location,
         profile: &str,
-        route: &Route,
+        result: &(Duration, f64, Vec<TransitStep>),
         ttl_seconds: Option<u32>,
     ) -> Result<()> {
 
         if !self.is_available().await {
-            debug!("Cache not available, skipping route cache");
+            debug!("Cache not available, skipping transit route cache");
             return Ok(());
         }
 
         let cache_key = self.hash_route(from, to, profile);
-        let route_data = serde_json::to_vec(route)?;
+        let route_data = serde_json::to_vec(result)?;
         
-        let cached_route = CachedRoute {
+        let cached_route = CachedTransitRoute {
             from: from.clone(),
             to: to.clone(),
             profile: profile.to_string(),
@@ -274,15 +280,18 @@ impl CacheService {
             .arg(serialized)
             .query_async(&mut conn).await;
         
-        info!("💾 Cached route");
+        info!("💾 Cached transit route for key: {}", cache_key);
         Ok(())
     }
 
     fn hash_route(&self, from: &Location, to: &Location, profile: &str) -> String {
         let from_hash = format!("{:.4},{:.4}", from.latitude, from.longitude);
         let to_hash = format!("{:.4},{:.4}", to.latitude, to.longitude);
-        format!("route:{}:{}:{}:{}", profile, from_hash, to_hash, 
-                self.hash_string(&format!("{}{}{}", profile, from_hash, to_hash)))
+        let cache_key = format!("route:{}:{}:{}:{}", profile, from_hash, to_hash, 
+                self.hash_string(&format!("{}{}{}", profile, from_hash, to_hash)));
+        debug!("Generated route cache key: {} (from: {}, to: {}, profile: {})", 
+               cache_key, from_hash, to_hash, profile);
+        cache_key
     }
 
     // =============================================================================
@@ -428,5 +437,36 @@ impl CacheService {
         let _: RedisResult<()> = redis::cmd("FLUSHDB").query_async(&mut conn).await;
         info!("Cleared all cache data");
         Ok(())
+    }
+
+    /// Get cache statistics for debugging
+    pub async fn get_cache_stats(&self) -> Result<String> {
+        if !self.is_available().await {
+            return Ok("Cache not available".to_string());
+        }
+
+        let mut conn = self.redis.get_multiplexed_async_connection().await?;
+        
+        let info: String = redis::cmd("INFO").arg("memory").query_async(&mut conn).await?;
+        let keys_count: i32 = redis::cmd("DBSIZE").query_async(&mut conn).await.unwrap_or(0);
+        
+        // Get counts for different key types
+        let meeting_point_keys: Vec<String> = redis::cmd("KEYS").arg("meeting_point:*").query_async(&mut conn).await.unwrap_or_default();
+        let route_keys: Vec<String> = redis::cmd("KEYS").arg("route:*").query_async(&mut conn).await.unwrap_or_default();
+        let isochrone_keys: Vec<String> = redis::cmd("KEYS").arg("isochrone:*").query_async(&mut conn).await.unwrap_or_default();
+        
+        Ok(format!(
+            "Cache Stats:\n\
+             - Total keys: {}\n\
+             - Meeting point cache entries: {}\n\
+             - Route cache entries: {}\n\
+             - Isochrone cache entries: {}\n\
+             - Memory info: {}",
+            keys_count,
+            meeting_point_keys.len(),
+            route_keys.len(),
+            isochrone_keys.len(),
+            info.lines().take(3).collect::<Vec<_>>().join(", ")
+        ))
     }
 }
