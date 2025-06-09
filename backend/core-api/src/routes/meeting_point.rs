@@ -100,7 +100,7 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
             cache_service.cache_meeting_point_result(
                 &resolved_locations, 
                 &response, 
-                Some(CACHE_TTL) // 30 days TTL
+                Some(CACHE_TTL_SECONDS) // 30 days TTL
             ).await;
             
             HttpResponse::Ok().json(response)
