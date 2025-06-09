@@ -48,9 +48,6 @@ impl IsochroneService {
                request.time_limit.unwrap_or(600),
                request.profile.as_deref().unwrap_or("pt"));
         
-        // TEMPORARILY DISABLE CACHE FOR DEBUGGING
-        /*
-        // Check cache first
         if let Some(cached) = cache_service.get_cached_isochrone(
             &request.point,
             request.time_limit.unwrap_or(600),
@@ -60,9 +57,7 @@ impl IsochroneService {
             info!("✅ Isochrone cache hit - area: {:.2} km²", area_km2);
             return Ok(cached);
         }
-        */
-
-        debug!("💾 Cache disabled for debugging - computing new isochrone");
+        
         
         // Compute new isochrone
         let result = self.compute_isochrone(request).await?;
