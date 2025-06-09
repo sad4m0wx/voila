@@ -32,22 +32,58 @@ impl MeetingPointAlgorithm {
         let time_limit_minutes = Self::estimate_time_to_center(locations, &center).await?;
         log::info!("⏱️  Estimated time limit: {}min", time_limit_minutes);
         
-        // Step 3: Get isochrones from the isochrone service
+        // Step 3: Get isochrones with retry logic for better intersections
         let isochrone_service = IsochroneService::new();
-        let isochrones = isochrone_service.get_isochrones(
-            locations, 
-            time_limit_minutes, 
-            Some("pt".to_string())
-        ).await?;
-        log::info!("🌐 Generated {} isochrones", isochrones.len());
+        let mut intersections = Vec::new();
+        let mut candidates = Vec::new();
+        let mut final_time_limit = time_limit_minutes;
+        let mut final_isochrones = Vec::new();
         
-        // Step 4: Compute isochrone intersections
-        let intersections = isochrone_service.get_isochrone_intersections(&isochrones);
-        log::info!("🎯 Found {} intersection polygons", intersections.len());
+        // Try with original time limit, then +5min, then +10min
+        let time_limits_to_try = [time_limit_minutes, time_limit_minutes + 5, time_limit_minutes + 10];
         
-        // Step 5: Generate candidates from intersections
-        let candidates = Self::generate_candidates_from_intersections(&intersections);
-        log::info!("🔍 Generated {} candidate points", candidates.len());
+        for (attempt, time_limit) in time_limits_to_try.iter().enumerate() {
+            log::info!("🔄 Attempt {} with {}min time limit", attempt + 1, time_limit);
+            
+            let isochrones = isochrone_service.get_isochrones(
+                locations, 
+                *time_limit, 
+                Some("pt".to_string())
+            ).await?;
+
+            if isochrones.is_empty() {
+                log::warn!("❌ Failed to generate isochrones with {}min time limit", time_limit);
+                continue;
+            }
+
+            log::info!("🌐 Generated {} isochrones with {}min", isochrones.len(), time_limit);
+
+            // Try to find intersections
+            intersections = isochrone_service.get_isochrone_intersections(&isochrones);
+            log::info!("🎯 Found {} intersection polygons with {}min", intersections.len(), time_limit);
+
+            if !intersections.is_empty() {
+                // Generate candidates from successful intersections
+                candidates = Self::generate_candidates_from_intersections(&intersections);
+                log::info!("🔍 Generated {} candidate points with {}min", candidates.len(), time_limit);
+                
+                if !candidates.is_empty() {
+                    log::info!("✅ Found viable solution with {}min time limit on attempt {}", time_limit, attempt + 1);
+                    final_time_limit = *time_limit;
+                    final_isochrones = isochrones;
+                    break;
+                }
+            }
+            
+            log::warn!("⚠️  No viable candidates with {}min time limit, trying next...", time_limit);
+        }
+
+        if candidates.is_empty() {
+            return Err(anyhow::anyhow!("No viable candidates found even with extended time limits (tried {}min, {}min, {}min)", 
+                time_limits_to_try[0], time_limits_to_try[1], time_limits_to_try[2]));
+        }
+        
+        log::info!("🎯 Using {}min time limit for final solution", final_time_limit);
         
         // Step 6: Evaluate candidates (TODO: implement proper evaluation)
         let best_candidate = Self::evaluate_candidates(locations, &candidates).await?;
@@ -66,7 +102,7 @@ impl MeetingPointAlgorithm {
         // Create debug data
         let debug_data = Some(DebugData {
             geometric_centroid: (center.longitude, center.latitude),
-            isochrones: Self::convert_isochrones_debug(&isochrones, locations),
+            isochrones: Self::convert_isochrones_debug(&final_isochrones, locations),
             intersection_polygons: Self::convert_intersections_debug(&intersections),
             candidate_points: Self::convert_candidates_debug(&candidates),
             final_candidates: vec![], // All candidates are in candidate_points
