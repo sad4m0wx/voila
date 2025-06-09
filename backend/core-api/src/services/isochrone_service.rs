@@ -42,22 +42,17 @@ impl IsochroneService {
 
     pub async fn get_isochrone(&self, request: &IsochroneRequest) -> Result<IsochroneResult> {
         let cache_service = CacheService::cache().await;
-        
-        debug!("🔍 Looking for cached isochrone: point=({:.6}, {:.6}), time_limit={}, profile={}", 
-               request.point.latitude, request.point.longitude,
-               request.time_limit.unwrap_or(600),
-               request.profile.as_deref().unwrap_or("pt"));
+        let time_limit = request.time_limit.unwrap_or(30);
         
         if let Some(cached) = cache_service.get_cached_isochrone(
             &request.point,
-            request.time_limit.unwrap_or(600),
+            time_limit,
             request.profile.as_deref().unwrap_or("pt")
         ).await {
             let area_km2 = cached.polygon.unsigned_area() * 111.0 * 111.0;
             info!("✅ Isochrone cache hit - area: {:.2} km²", area_km2);
             return Ok(cached);
         }
-        
         
         // Compute new isochrone
         let result = self.compute_isochrone(request).await?;
@@ -69,10 +64,13 @@ impl IsochroneService {
             warn!("⚠️  Very small isochrone area detected: {:.6} km² - this might indicate an issue", area_km2);
         }
 
-        // Cache the result
-        let _ = cache_service.cache_isochrone(
+        // Cache the result using the same time_limit variable
+        info!("💾 Attempting to cache isochrone with time_limit={}, profile={}", 
+              time_limit, request.profile.as_deref().unwrap_or("pt"));
+        
+        match cache_service.cache_isochrone(
             &request.point,
-            request.time_limit.unwrap_or(30),
+            time_limit,
             request.profile.as_deref().unwrap_or("pt"),
             &result,
             Some(CACHE_TTL_SECONDS)
@@ -99,10 +97,20 @@ impl IsochroneService {
                   time_limit_minutes, capped_time_limit);
         }
 
-        info!("Computing {} isochrones with {}min time limit", locations.len(), time_limit_minutes);
+        info!("🚀 Starting isochrone computation for {} locations with {}min time limit", 
+              locations.len(), capped_time_limit);
+        
+        for (i, (id, location)) in locations.iter().enumerate() {
+            info!("  Location {}: {} at ({:.6}, {:.6})", 
+                  i+1, id, location.latitude, location.longitude);
+        }
+        
         // Try parallel processing first
         match self.try_parallel_isochrones(locations, capped_time_limit, &profile).await {
-            Ok(isochrones) => Ok(isochrones),
+            Ok(isochrones) => {
+                info!("✅ Parallel isochrone processing succeeded: {} isochrones", isochrones.len());
+                Ok(isochrones)
+            },
             Err(e) => {
                 warn!("Parallel processing failed ({}), falling back to sequential with retries", e);
                 self.try_sequential_with_retries(locations, capped_time_limit, &profile).await
@@ -462,14 +470,24 @@ impl IsochroneService {
             return vec![isochrones[0].polygon.clone()];
         }
         
+        // Log all isochrone areas first
+        info!("🔍 Computing intersections of {} isochrones", isochrones.len());
+        for (i, iso) in isochrones.iter().enumerate() {
+            let area_km2 = iso.polygon.unsigned_area() * 111.0 * 111.0;
+        }
+        
         // Start with the first isochrone and intersect with all others
         let mut current_intersection = isochrones[0].polygon.clone();
+        info!("🔍 Starting intersection with first isochrone area: {:.4} km²", 
+              current_intersection.unsigned_area() * 111.0 * 111.0);
         
-        for isochrone in isochrones.iter().skip(1) {
-            let intersection_result = current_intersection.intersection(&isochrone.polygon);
+        for (i, isochrone) in isochrones.iter().skip(1).enumerate() {
+            let before_area = current_intersection.unsigned_area() * 111.0 * 111.0;
+            let other_area = isochrone.polygon.unsigned_area() * 111.0 * 111.0;
             
+            let intersection_result = current_intersection.intersection(&isochrone.polygon);
+                        
             if intersection_result.is_empty() {
-                info!("❌ No intersection found - no area accessible from all points");
                 return Vec::new();
             }
             
@@ -477,6 +495,7 @@ impl IsochroneService {
             // Take the largest polygon from the intersection result
             if let Some(largest_polygon) = intersection_result.into_iter()
                 .max_by(|a, b| a.unsigned_area().partial_cmp(&b.unsigned_area()).unwrap()) {
+                let after_area = largest_polygon.unsigned_area() * 111.0 * 111.0;
                 current_intersection = largest_polygon;
             } else {
                 info!("❌ No valid intersection polygons found");
@@ -484,15 +503,13 @@ impl IsochroneService {
             }
         }
         
-        // Filter out very small intersections (likely numerical artifacts)
-        let min_area = 0.0001; // ~11m² in degrees
-        if current_intersection.unsigned_area() < min_area {
-            info!("⚠️  Intersection area too small - no meaningful common area");
+        let intersection_area_deg2 = current_intersection.unsigned_area();
+        let intersection_area_km2 = intersection_area_deg2 * 111.0 * 111.0;
+        
+        let min_area = 0.000005; // ~0.5m² in degrees, very permissive 
+        if intersection_area_deg2 < min_area {
             return Vec::new();
         }
-        
-        info!("✅ Found intersection area: {:.4} km²", 
-              current_intersection.unsigned_area() * 111.0 * 111.0);
         
         vec![current_intersection]
     }

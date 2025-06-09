@@ -315,12 +315,17 @@ impl CacheService {
         
         match redis::cmd("GET").arg(&isochrone_cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
             Ok(data) => {
+                if data.is_empty() {
+                    debug!("Empty isochrone data returned from cache for key: {}", isochrone_cache_key);
+                    return None;
+                }
+                
                 match serde_json::from_slice::<CachedIsochrone>(&data) {
                     Ok(cached) => {
                         match serde_json::from_slice(&cached.polygon_data) {
                             Ok(polygon) => {
                                 let result = IsochroneResult {
-                                    id: isochrone_cache_key,
+                                    id: isochrone_cache_key.clone(),
                                     location: cached.origin,
                                     time_limit_minutes: cached.time_limit_minutes,
                                     profile: cached.profile,
@@ -329,22 +334,31 @@ impl CacheService {
                                         .unwrap_or_else(chrono::Utc::now),
                                     bucket: 0,
                                 };
-                                info!("🌐 Isochrone cache hit");
+                                info!("🌐 Isochrone cache hit for key: {}", isochrone_cache_key);
                                 Some(result)
                             }
                             Err(e) => {
-                                error!("Failed to deserialize polygon data: {}", e);
+                                error!("Failed to deserialize polygon data for key {}: {} (polygon data length: {})", 
+                                       isochrone_cache_key, e, cached.polygon_data.len());
+                                // Clear corrupted cache entry
+                                let _ = redis::cmd("DEL").arg(&isochrone_cache_key).query_async::<_, ()>(&mut conn).await;
                                 None
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to deserialize cached isochrone: {}", e);
+                        error!("Failed to deserialize cached isochrone for key {}: {} (data length: {})", 
+                               isochrone_cache_key, e, data.len());
+                        // Clear corrupted cache entry
+                        let _ = redis::cmd("DEL").arg(&isochrone_cache_key).query_async::<_, ()>(&mut conn).await;
                         None
                     }
                 }
             }
-            Err(_) => None,
+            Err(e) => {
+                debug!("Cache miss for isochrone key {}: {}", isochrone_cache_key, e);
+                None
+            }
         }
     }
 
@@ -407,15 +421,18 @@ impl CacheService {
             .arg(serialized)
             .query_async(&mut conn).await;
         
-        info!("💾 Cached isochrone");
+        info!("💾 Cached isochrone for key: {}", cache_key);
         Ok(())
     }
 
     fn hash_isochrone(&self, location: &Location, time_limit: u32, profile: &str) -> String {
         let location_hash = format!("{:.4},{:.4}", location.latitude, location.longitude);
-        format!("isochrone:{}:{}:{}:{}", 
+        let cache_key = format!("isochrone:{}:{}:{}:{}", 
                 profile, time_limit, location_hash,
-                self.hash_string(&format!("{}{}{}", profile, time_limit, location_hash)))
+                self.hash_string(&format!("{}{}{}", profile, time_limit, location_hash)));
+        info!("🔑 Generated isochrone cache key: {} (location: {}, time_limit: {}, profile: {})", 
+               cache_key, location_hash, time_limit, profile);
+        cache_key
     }
 
     // =============================================================================
