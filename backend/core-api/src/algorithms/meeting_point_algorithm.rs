@@ -116,8 +116,9 @@ impl MeetingPointAlgorithm {
         
         // Use the average travel time with a 10% margin as time limit
         let avg_time = travel_times.iter().sum::<f64>() / travel_times.len() as f64;
-        let time_limit = (avg_time * 1.1).ceil() as u32;
-        let capped_time_limit = time_limit.min(90);
+        let margin_time = avg_time * 1.2;
+        let rounded_time_limit = ((margin_time as u32 + 4) / 5) * 5; // Rounds up to nearest 5
+        let capped_time_limit = rounded_time_limit.min(90);
         
         log::info!("📊 Average travel time: {:.1}min, time limit: {}min", avg_time, capped_time_limit);
         
