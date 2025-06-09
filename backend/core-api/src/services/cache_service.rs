@@ -295,9 +295,76 @@ impl CacheService {
     }
 
     // =============================================================================
-    // ISOCHRONE CACHING
+    // ISOCHRONE CACHING WITH RACE CONDITION PROTECTION
     // =============================================================================
 
+    /// Check if isochrone is being computed (lock exists)
+    pub async fn is_isochrone_computing(&self, origin: &Location, time_limit: u32, profile: &str) -> bool {
+        if !self.is_available().await {
+            return false;
+        }
+
+        let lock_key = format!("lock:{}", self.hash_isochrone(origin, time_limit, profile));
+        let mut conn = match self.redis.get_multiplexed_async_connection().await {
+            Ok(conn) => conn,
+            Err(_) => return false,
+        };
+        
+        match redis::cmd("EXISTS").arg(&lock_key).query_async::<_, i32>(&mut conn).await {
+            Ok(exists) => exists == 1,
+            Err(_) => false,
+        }
+    }
+
+    /// Acquire lock for isochrone computation (returns true if acquired)
+    pub async fn acquire_isochrone_lock(&self, origin: &Location, time_limit: u32, profile: &str) -> bool {
+        if !self.is_available().await {
+            return true; // If cache unavailable, allow computation
+        }
+
+        let lock_key = format!("lock:{}", self.hash_isochrone(origin, time_limit, profile));
+        let mut conn = match self.redis.get_multiplexed_async_connection().await {
+            Ok(conn) => conn,
+            Err(_) => return true, // If can't connect, allow computation
+        };
+        
+        // Use SET with NX (not exists) and EX (expiration) for atomic lock
+        match redis::cmd("SET")
+            .arg(&lock_key)
+            .arg("computing")
+            .arg("NX") // Only set if not exists
+            .arg("EX") // Set expiration
+            .arg(120) // 2 minutes expiration
+            .query_async::<_, Option<String>>(&mut conn).await {
+            Ok(Some(response)) if response == "OK" => {
+                info!("🔒 Acquired lock for isochrone computation: {}", lock_key);
+                true
+            },
+            Ok(_) => {
+                debug!("🔒 Lock already exists for: {}", lock_key);
+                false // Lock already exists
+            },
+            Err(e) => {
+                warn!("🔒 Lock acquisition error: {}, allowing computation", e);
+                true // If error, allow computation
+            }
+        }
+    }
+
+    /// Release lock for isochrone computation
+    pub async fn release_isochrone_lock(&self, origin: &Location, time_limit: u32, profile: &str) {
+        if !self.is_available().await {
+            return;
+        }
+
+        let lock_key = format!("lock:{}", self.hash_isochrone(origin, time_limit, profile));
+        let mut conn = match self.redis.get_multiplexed_async_connection().await {
+            Ok(conn) => conn,
+            Err(_) => return,
+        };
+        
+        let _: Result<(), _> = redis::cmd("DEL").arg(&lock_key).query_async(&mut conn).await;
+    }
 
     pub async fn get_cached_isochrone(
         &self,

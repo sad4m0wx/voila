@@ -1,12 +1,14 @@
 <script>
     import { onMount, createEventDispatcher } from 'svelte';
     import { googleMapsService } from '../../services/map/GoogleMapsService';
+    import { preloadForAddress } from '../../services/preloadApi.js';
     
     // Props
     export let value = '';
     export let placeholder = 'Enter an address';
     export let disabled = false;
     export let bounds = null;
+    export let enablePreload = true; 
     
     // Internal state
     let inputElement;
@@ -56,7 +58,7 @@
       isInitialized = true;
     }
     
-    function handlePlaceChanged() {
+    async function handlePlaceChanged() {
       const place = autocomplete.getPlace();
       
       if (!place.geometry) {
@@ -80,6 +82,13 @@
       
       // Update the input value
       value = address;
+      
+      // Trigger preload if enabled
+      if (enablePreload) {
+        preloadForAddress(location).catch(error => {
+          console.warn('Preload failed (non-critical):', error);
+        });
+      }
     }
     
     // Update bounds when the bounds prop changes

@@ -43,19 +43,60 @@ impl IsochroneService {
     pub async fn get_isochrone(&self, request: &IsochroneRequest) -> Result<IsochroneResult> {
         let cache_service = CacheService::cache().await;
         let time_limit = request.time_limit.unwrap_or(30);
-        
-        if let Some(cached) = cache_service.get_cached_isochrone(
-            &request.point,
-            time_limit,
-            request.profile.as_deref().unwrap_or("pt")
-        ).await {
+        let profile = request.profile.as_deref().unwrap_or("pt");
+
+        if let Some(cached) = cache_service.get_cached_isochrone(&request.point, time_limit, profile).await {
             let area_km2 = cached.polygon.unsigned_area() * 111.0 * 111.0;
             info!("✅ Isochrone cache hit - area: {:.2} km²", area_km2);
             return Ok(cached);
         }
         
+        // Try to acquire lock for computation
+        if !cache_service.acquire_isochrone_lock(&request.point, time_limit, profile).await {
+            info!("🔒 Another request is computing this isochrone, waiting...");
+            
+            // Wait up to 60 seconds for the other computation to complete
+            for i in 0..60 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                
+                // Check cache again
+                if let Some(cached) = cache_service.get_cached_isochrone(&request.point, time_limit, profile).await {
+                    let area_km2 = cached.polygon.unsigned_area() * 111.0 * 111.0;
+                    info!("✅ Got result from concurrent computation - area: {:.2} km²", area_km2);
+                    return Ok(cached);
+                }
+                
+                // Check if we should give up waiting (every 10 seconds)
+                if i > 0 && i % 10 == 0 {
+                    if !cache_service.is_isochrone_computing(&request.point, time_limit, profile).await {
+                        info!("🔒 Lock disappeared, other computation may have failed");
+                        break;
+                    }
+                    info!("🔒 Still waiting for concurrent computation... ({}s)", i);
+                }
+            }
+            
+            // If we're here, either timeout or the other computation failed
+            info!("⚠️ Timeout or failed concurrent computation, computing ourselves");
+            
+            // Try to acquire lock again (the other computation might have failed)
+            if !cache_service.acquire_isochrone_lock(&request.point, time_limit, profile).await {
+                // If still can't acquire lock, proceed without it as last resort
+                warn!("🔒 Still can't acquire lock, proceeding without lock protection");
+            }
+        }
+        
+        info!("🚀 Starting isochrone computation");
+        
         // Compute new isochrone
-        let result = self.compute_isochrone(request).await?;
+        let result = match self.compute_isochrone(request).await {
+            Ok(r) => r,
+            Err(e) => {
+                // Make sure to release lock on error
+                cache_service.release_isochrone_lock(&request.point, time_limit, profile).await;
+                return Err(e);
+            }
+        };
         
         let area_km2 = result.polygon.unsigned_area() * 111.0 * 111.0;
         info!("🆕 Computed new isochrone - area: {:.2} km²", area_km2);
@@ -64,20 +105,14 @@ impl IsochroneService {
             warn!("⚠️  Very small isochrone area detected: {:.6} km² - this might indicate an issue", area_km2);
         }
 
-        // Cache the result using the same time_limit variable
-        info!("💾 Attempting to cache isochrone with time_limit={}, profile={}", 
-              time_limit, request.profile.as_deref().unwrap_or("pt"));
-        
-        match cache_service.cache_isochrone(
-            &request.point,
-            time_limit,
-            request.profile.as_deref().unwrap_or("pt"),
-            &result,
-            Some(CACHE_TTL_SECONDS)
-        ).await {
+        // Cache the result
+        match cache_service.cache_isochrone(&request.point, time_limit, profile, &result, Some(CACHE_TTL_SECONDS)).await {
             Ok(_) => info!("✅ Isochrone caching succeeded"),
             Err(e) => error!("❌ Isochrone caching failed: {}", e),
         }
+
+        // Release the computation lock
+        cache_service.release_isochrone_lock(&request.point, time_limit, profile).await;
 
         info!("✅ Isochrone computed successfully");
         Ok(result)
