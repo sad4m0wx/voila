@@ -75,7 +75,7 @@ impl IsochroneService {
             request.time_limit.unwrap_or(30),
             request.profile.as_deref().unwrap_or("pt"),
             &result,
-            Some(CACHE_TTL)
+            Some(CACHE_TTL_SECONDS)
         ).await;
 
         info!("✅ Isochrone computed successfully");
