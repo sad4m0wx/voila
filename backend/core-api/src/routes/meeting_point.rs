@@ -1,10 +1,11 @@
 use actix_web::{web, HttpResponse, Responder};
 use log::{error, info};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::algorithms::MeetingPointAlgorithm;
-use crate::models::{AddressInput, MeetingPointResponse};
-use crate::services::cache_service::{CacheService};
+use crate::models::MeetingPointResponse;
+use crate::models::api::MeetingPointRequest;
+use crate::services::cache_service::CacheService;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(

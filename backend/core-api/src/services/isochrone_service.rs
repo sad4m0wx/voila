@@ -1,4 +1,4 @@
-use reqwest;
+use reqwest::Client;
 use uuid::Uuid;
 use futures::future::join_all;
 use std::time::Duration;
@@ -16,7 +16,7 @@ use crate::routes::meeting_point::CACHE_TTL_SECONDS;
 
 #[derive(Clone)]
 pub struct IsochroneService {
-    client: reqwest::Client,
+    client: Client,
     graphhopper_url: String,
 }
 
@@ -26,7 +26,7 @@ impl IsochroneService {
         let graphhopper_url = env::var("GRAPHHOPPER_URL")
             .unwrap_or_else(|_| "http://voila-app.fr:8989".to_string());
             
-        let client = reqwest::Client::builder()
+        let client = Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minutes HTTP timeout for PT isochrones
             .pool_max_idle_per_host(10)        // Connection pooling
             .pool_idle_timeout(Duration::from_secs(60))
