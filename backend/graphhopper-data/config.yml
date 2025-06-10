@@ -1,5 +1,5 @@
 graphhopper:
-  datareader.file: /data/osm/ile-de-france-foot-transit.osm.pbf  # https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
+  datareader.file: /data/osm/ile-de-france-simplified.osm.pbf  # https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
   graph.location: /data/graphs
   gtfs.file: /data/gtfs/IDFM-gtfs-filtered.zip   # https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip
   import.osm.ignored_highways: motorway,trunk,primary,secondary
@@ -19,6 +19,11 @@ graphhopper:
   prepare.min_one_way_network_size: 0
 
   isochrone: true
+  
+  # Isochrone Performance Optimizations
+  isochrone.simplify: true
+  isochrone.geometry_simplification: 50.0   # Reduce geometry complexity
+  isochrone.snap_preventions: tunnel,ferry
   
   # GTFS-specific settings optimized for frequency-based routing
   gtfs.max_transfer_distance: 800  
@@ -47,8 +52,10 @@ graphhopper:
   web.jsonp_allowed: false
   web.cors_origin: "*"
 
-  isochrone.max_buckets: 10
+  isochrone.max_buckets: 20
   isochrone.max_time: 3600
+  isochrone.max_distance: 5000
+  isochrone.precision_reduction: 0.1   # Reduce coordinate precision to ~10m accuracy
   
   datareader:
     gtfs:
@@ -72,6 +79,10 @@ graphhopper:
       skip-stops-outside-border: true
       skip-shapes: false 
       skip-trips-without-shapes: false
+
+  # GPS Precision Reduction for Performance
+  routing.response.way_point_max_distance: 30000
+  routing.max_visited_nodes: 1000000
 
 server:
   application_connectors:
