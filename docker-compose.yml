@@ -25,7 +25,7 @@ services:
     volumes:
       - ./backend/graphhopper-data:/data
     environment:
-      - JAVA_OPTS=-Xmx10g -Xms10g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:G1HeapRegionSize=32m -XX:G1MixedGCCountTarget=8 -XX:InitiatingHeapOccupancyPercent=45 -XX:G1MixedGCLiveThresholdPercent=85 -XX:G1HeapWastePercent=5 -XX:+OptimizeStringConcat -XX:+UseCompressedOops -XX:+UseCompressedClassPointers -XX:ReservedCodeCacheSize=256m -XX:InitialCodeCacheSize=64m -XX:CompileThreshold=1500 -XX:ConcGCThreads=2 -XX:ParallelGCThreads=4 -XX:+DisableExplicitGC     
+      - JAVA_OPTS=-Xmx10g -Xms10g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:G1HeapRegionSize=32m -XX:G1MixedGCCountTarget=8 -XX:InitiatingHeapOccupancyPercent=45 -XX:G1HeapWastePercent=5 -XX:+OptimizeStringConcat -XX:+UseCompressedOops -XX:+UseCompressedClassPointers -XX:ReservedCodeCacheSize=256m -XX:InitialCodeCacheSize=64m -XX:CompileThreshold=1500 -XX:ConcGCThreads=2 -XX:ParallelGCThreads=4 -XX:+DisableExplicitGC     
       - GRAPHHOPPER_OPTS=-Dgraphhopper.graph.flagEncoders=foot,pt|turn_costs=true -Djetty.threadPool.maxThreads=128 -Djetty.threadPool.minThreads=16
     command: >
       --config /data/config.yml
