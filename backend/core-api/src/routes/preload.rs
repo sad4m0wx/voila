@@ -37,7 +37,7 @@ async fn preload_isochrone_handler(request: web::Json<PreloadRequest>) -> impl R
     // Precompute multiple time limits that the meeting point algorithm might use
     // Algorithm tries: [original, original+5, original+10], so we cover common ranges
     let time_limits = if base_time_limit == 30 {
-        vec![25, 30, 35, 40, 50, 60] // Common case: cover 25-35 minutes, also 20 is quick enough
+        vec![25, 30, 35, 40] // Common case: cover 25-40 minutes, also 20 is quick enough
     } else {
         vec![base_time_limit] // Custom case: use specified time limit
     };
