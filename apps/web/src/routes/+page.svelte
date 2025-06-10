@@ -421,7 +421,7 @@
                         on:venue-selected={(e) => console.log("Venue selected:", e.detail)}
                         on:toggle-results={toggleResults}
                       />
-                    {:else if !isMobile}
+                    {:else if !isMobile && !isCalculating}
                       <!-- Enhanced Empty State (Desktop only) -->
                       <div
                         class="flex flex-col items-center justify-center h-full"
