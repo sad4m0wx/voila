@@ -207,6 +207,11 @@
     
     return polygons;
   }
+
+  function handleCreateGroup(event) {
+    console.log('Creating group with addresses:', event.detail.addresses);
+    window.location.href = '/groups/create';
+  }
 </script>
 
 <svelte:head>
