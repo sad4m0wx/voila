@@ -1,5 +1,5 @@
 <script>
-    import { createEventDispatcher } from "svelte";
+    import { createEventDispatcher, tick } from "svelte";
     import VenueList from "$components/venues/VenueList.svelte";
     import RouteDetails from "./RouteDetails.svelte";
 
@@ -12,6 +12,7 @@
     export let isMobile = false;
     
     let showRouteDetails = false;
+    let routeDetailsElement;
 
     function handleVenueSelected(event) {
         dispatch("venue-selected", event.detail);
@@ -33,29 +34,30 @@
         if (minutes <= 20) return 'text-warning-600 bg-warning-50';
         return 'text-error-600 bg-error-50';
     }
+
+    // Auto-scroll to detailed routes when opened
+    $: if (showRouteDetails && routeDetailsElement) {
+        tick().then(() => {
+            routeDetailsElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start',
+                inline: 'nearest'
+            });
+        });
+    }
 </script>
 
 {#if meetingPoint}
     <div class="card card-gradient p-4 mb-4 animate-fade-in">
         <!-- Header -->
-        <div class="flex justify-between items-start mb-4">
-            <div class="flex items-center">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-lg mr-3 shadow-sm">
-                    📍
-                </div>
-                <div>
-                    <h2 class="text-lg font-bold text-secondary-800">Perfect Meeting Spot</h2>
-                    <p class="text-secondary-600 text-xs">{meetingPoint.name}</p>
-                </div>
+        <div class="flex items-center mb-4">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-lg mr-3 shadow-sm">
+                📍
             </div>
-            {#if isMobile}
-                <button class="btn btn-secondary btn-sm" on:click={toggleResults}>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M19 12H5M12 19l-7-7 7-7"/>
-                    </svg>
-                    Back
-                </button>
-            {/if}
+            <div>
+                <h2 class="text-lg font-bold text-secondary-800">Perfect Meeting Spot</h2>
+                <p class="text-secondary-600 text-xs">{meetingPoint.name}</p>
+            </div>
         </div>
 
         <!-- Google Maps Link -->
@@ -91,15 +93,10 @@
                             <div class="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-semibold mr-2 flex-shrink-0">
                                 {index + 1}
                             </div>
-                            <div class="min-w-0 flex-1">
-                                <p class="font-medium text-secondary-800 truncate text-xs">
+                            <div class="min-w-0 flex-1 overflow-hidden">
+                                <p class="font-medium text-secondary-800 truncate text-xs max-w-[120px] md:max-w-[180px]">
                                     {time.address}
                                 </p>
-                                {#if time.transitSummary}
-                                    <p class="text-xs text-secondary-500 mt-1 truncate">
-                                        {time.transitSummary}
-                                    </p>
-                                {/if}
                             </div>
                         </div>
                         <div class="ml-2 flex-shrink-0">
@@ -139,9 +136,6 @@
                     class="w-full btn btn-outline btn-sm text-xs"
                     on:click={() => showRouteDetails = !showRouteDetails}
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M9 11H7l-4-4v8h4l2-2h6.6l2.7 2.7c.9.9 2.3.9 3.2 0L24 12l-2.8-2.8c-.9-.9-2.3-.9-3.2 0L15.3 12H13l-2-2z"/>
-                    </svg>
                     {showRouteDetails ? 'Hide' : 'Show'} Detailed Routes
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 ml-1 transition-transform {showRouteDetails ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M6 9l6 6 6-6"/>
@@ -153,11 +147,18 @@
 
     <!-- Route Details -->
     {#if showRouteDetails && routes && routes.length > 0}
-        <div class="mb-4">
-            <RouteDetails 
-                {routes}
-                travelTimes={meetingPoint.travelTimes}
-            />
+        <div class="mb-4" bind:this={routeDetailsElement}>
+            <div class="bg-white/70 backdrop-blur-sm rounded-xl border border-white/30 shadow-lg overflow-hidden">
+                <div class="px-4 py-3 bg-gradient-to-r from-primary-50 to-primary-100 border-b border-primary-200">
+                    <h3 class="text-sm font-semibold text-secondary-800 flex items-center">Detailed Routes</h3>
+                </div>
+                <div class="max-h-96 overflow-y-auto scrollbar-thin p-4">
+                    <RouteDetails 
+                        {routes}
+                        travelTimes={meetingPoint.travelTimes}
+                    />
+                </div>
+            </div>
         </div>
     {/if}
 
@@ -174,3 +175,24 @@
         </div>
     {/if}
 {/if}
+
+<style>
+  /* Enhanced Scrollbar for Route Details */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: rgba(148, 163, 184, 0.1);
+    border-radius: 2px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, #3b82f6, #8b5cf6);
+    border-radius: 2px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, #2563eb, #7c3aed);
+  }
+</style>

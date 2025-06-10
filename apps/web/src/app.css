@@ -22,11 +22,15 @@
   }
 
   .btn-secondary {
-    @apply bg-gradient-to-r from-secondary-100 to-secondary-200 text-secondary-700 hover:shadow-sm hover:from-secondary-200 hover:to-secondary-300 focus:ring-secondary-500 transform hover:scale-105 active:scale-95;
+    @apply bg-gradient-to-r from-secondary-500 to-secondary-600 text-white shadow-sm hover:shadow-md hover:from-secondary-600 hover:to-secondary-700 focus:ring-secondary-500 transform hover:scale-105 active:scale-95;
+  }
+
+  .btn-accent {
+    @apply bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-sm hover:shadow-md hover:from-orange-600 hover:to-pink-600 focus:ring-orange-500 transform hover:scale-105 active:scale-95;
   }
 
   .btn-outline {
-    @apply border-2 border-primary-300 text-primary-600 bg-white hover:bg-primary-50 hover:border-primary-400 focus:ring-primary-500 transform hover:scale-105 active:scale-95;
+    @apply border-2 border-secondary-300 text-secondary-700 hover:bg-secondary-50 hover:border-secondary-400 focus:ring-secondary-500 rounded-xl;
   }
 
   .btn-ghost {

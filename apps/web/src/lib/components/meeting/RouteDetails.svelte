@@ -56,14 +56,7 @@
 </script>
 
 {#if routesWithTravelTime.length > 0}
-  <div class="space-y-4">
-    <h3 class="text-sm font-semibold text-secondary-800 flex items-center">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-2 text-primary-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M9 11H7l-4-4v8h4l2-2h6.6l2.7 2.7c.9.9 2.3.9 3.2 0L24 12l-2.8-2.8c-.9-.9-2.3-.9-3.2 0L15.3 12H13l-2-2z"/>
-      </svg>
-      Detailed Routes
-    </h3>
-    
+  <div class="space-y-4">    
     {#each routesWithTravelTime as route, index}
       <div class="bg-white rounded-lg border border-neutral-200 overflow-hidden">
         <!-- Route Header -->
@@ -77,16 +70,11 @@
                 <p class="font-medium text-secondary-800 text-sm">
                   {route.travelTime?.address || `Route ${index + 1}`}
                 </p>
-                {#if route.travelTime?.transitSummary}
-                  <p class="text-xs text-secondary-600 mt-1">
-                    {route.travelTime.transitSummary}
-                  </p>
-                {/if}
               </div>
             </div>
             <div class="text-right">
               <div class="text-sm font-semibold text-primary-700">
-                {route.travelTime?.duration || 0} min
+                {route.travelTime?.duration || 0} mins
               </div>
               {#if route.travelTime?.estimated}
                 <div class="text-xs text-secondary-500">estimated</div>
@@ -130,11 +118,6 @@
                       </span>
                     </div>
                     
-                    {#if step.instructions}
-                      <p class="text-sm text-secondary-600 mb-2">
-                        {step.instructions}
-                      </p>
-                    {/if}
                     
                     {#if step.mode === 'transit' && step.transit_details}
                       <div class="bg-secondary-50 rounded-lg p-3 space-y-2">
@@ -145,9 +128,6 @@
                               <span class="text-secondary-700 font-medium">From:</span>
                               <span class="text-secondary-600">{step.transit_details.departure_stop}</span>
                             </div>
-                            {#if step.transit_details.departure_time}
-                              <span class="text-secondary-500">{step.transit_details.departure_time.split('T')[1]?.split('.')[0]}</span>
-                            {/if}
                           </div>
                           <div class="flex items-center justify-between text-xs">
                             <div class="flex items-center space-x-1">
@@ -155,9 +135,6 @@
                               <span class="text-secondary-700 font-medium">To:</span>
                               <span class="text-secondary-600">{step.transit_details.arrival_stop}</span>
                             </div>
-                            {#if step.transit_details.arrival_time}
-                              <span class="text-secondary-500">{step.transit_details.arrival_time.split('T')[1]?.split('.')[0]}</span>
-                            {/if}
                           </div>
                         {/if}
                         {#if step.transit_details.num_stops > 0}
