@@ -1,4 +1,4 @@
-use crate::models::{Location, Route, MeetingPointResponse};
+use crate::models::{Location, MeetingPointResponse};
 use crate::models::isochrone::IsochroneResult;
 use crate::models::transit::TransitStep;
 use redis::{Client, RedisResult};
@@ -429,6 +429,8 @@ impl CacheService {
         }
     }
 
+    //for future use
+    #[allow(dead_code)]
     pub async fn get_cached_isochrones(
         &self,
         origins: &[(String, Location)],
@@ -512,6 +514,7 @@ impl CacheService {
         format!("{:x}", hasher.finish())
     }
 
+    #[allow(dead_code)]
     pub async fn clear_all(&self) -> Result<()> {
         if !self.is_available().await {
             return Ok(());
@@ -524,6 +527,7 @@ impl CacheService {
     }
 
     /// Get cache statistics for debugging
+    #[allow(dead_code)]
     pub async fn get_cache_stats(&self) -> Result<String> {
         if !self.is_available().await {
             return Ok("Cache not available".to_string());

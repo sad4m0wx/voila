@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use chrono::Utc;
 use reqwest::Client;
 use serde::Deserialize;
 use std::env;
@@ -10,9 +9,8 @@ use tokio::sync::Semaphore;
 use once_cell::sync::Lazy;
 use futures::future::join_all;
 use tokio::time::timeout;
-use chrono::NaiveDate;
 
-use crate::models::{Location, Route, LineString};
+use crate::models::Location;
 use crate::models::transit::{TransitStep, GeoJson, TransitDetails, TransitLine};
 use crate::services::cache_service::{CacheService};
 use crate::routes::meeting_point::CACHE_TTL_SECONDS;

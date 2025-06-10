@@ -19,7 +19,6 @@ pub static CACHE_TTL_SECONDS: u32 = CACHE_TTL * 24 * 3600; // 30 days
 #[derive(Debug, Deserialize)]
 struct MeetingPointRequest {
     addresses: Vec<AddressInput>,
-    algorithm: Option<String>, // "isochrone" (default) or "matrix"
 }
 
 #[derive(Debug, Serialize)]
@@ -97,7 +96,7 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
             };
             
             // Step 4: Cache the complete result for 30 days
-            cache_service.cache_meeting_point_result(
+            let _ = cache_service.cache_meeting_point_result(
                 &resolved_locations, 
                 &response, 
                 Some(CACHE_TTL_SECONDS) // 30 days TTL

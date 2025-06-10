@@ -1,11 +1,11 @@
-use geo::{Point, MultiPoint, Polygon, Area, HasDimensions, BoundingRect, Contains, Centroid};
+use geo::{Point, MultiPoint, Polygon, Area, BoundingRect, Contains, Centroid};
 use anyhow::Result;
 
 use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, LineString, TravelTime};
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::graphhopper_client::GraphHopperClient;
-use log::{info, debug, warn};
+use log::warn;
 
 pub struct MeetingPointAlgorithm;
 
@@ -14,7 +14,6 @@ struct CandidateEvaluationResult {
     location: Location,
     max_travel_time: f64,
     avg_travel_time: f64, 
-    minimax_score: f64,
 }
 
 impl MeetingPointAlgorithm {
@@ -214,14 +213,11 @@ impl MeetingPointAlgorithm {
             let max_time = times_minutes.iter().fold(0.0, |a: f64, &b| a.max(b));
             let avg_time = times_minutes.iter().sum::<f64>() / times_minutes.len() as f64;
             
-            // Primary score: minimize max time, use avg as tie-breaker
-            let minimax_score = max_time + (avg_time * 0.1); // Small penalty for avg time
             
             let evaluation = CandidateEvaluationResult {
                 location: candidate.clone(),
                 max_travel_time: max_time,
                 avg_travel_time: avg_time,
-                minimax_score,
             };
             
             // Update best candidate if this one is better
@@ -261,7 +257,7 @@ impl MeetingPointAlgorithm {
         
         for (id, origin) in locations {
             let route = match graphhopper.get_transit_route(origin, meeting_point).await {
-                Ok((duration, distance, steps)) => {
+                Ok((_duration, _distance, steps)) => {
                     let geometry = GraphHopperClient::extract_geometry_from_steps(
                         &steps, origin, meeting_point
                     );

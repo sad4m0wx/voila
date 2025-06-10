@@ -6,7 +6,6 @@ use std::env;
 use log::{debug, info, warn, error};
 use anyhow::{Result, anyhow};
 use geo::{Polygon, Coord, BooleanOps, Area, HasDimensions};
-use chrono::NaiveDate;
 
 use crate::models::isochrone::{
     IsochroneRequest, IsochroneResult, GraphHopperIsochroneResponse
@@ -505,20 +504,14 @@ impl IsochroneService {
             return vec![isochrones[0].polygon.clone()];
         }
         
-        // Log all isochrone areas first
-        info!("🔍 Computing intersections of {} isochrones", isochrones.len());
-        for (i, iso) in isochrones.iter().enumerate() {
-            let area_km2 = iso.polygon.unsigned_area() * 111.0 * 111.0;
-        }
-        
         // Start with the first isochrone and intersect with all others
         let mut current_intersection = isochrones[0].polygon.clone();
         info!("🔍 Starting intersection with first isochrone area: {:.4} km²", 
               current_intersection.unsigned_area() * 111.0 * 111.0);
         
-        for (i, isochrone) in isochrones.iter().skip(1).enumerate() {
-            let before_area = current_intersection.unsigned_area() * 111.0 * 111.0;
-            let other_area = isochrone.polygon.unsigned_area() * 111.0 * 111.0;
+        for isochrone in isochrones.iter().skip(1) {
+            let _before_area = current_intersection.unsigned_area() * 111.0 * 111.0;
+            let _other_area = isochrone.polygon.unsigned_area() * 111.0 * 111.0;
             
             let intersection_result = current_intersection.intersection(&isochrone.polygon);
                         
@@ -530,7 +523,6 @@ impl IsochroneService {
             // Take the largest polygon from the intersection result
             if let Some(largest_polygon) = intersection_result.into_iter()
                 .max_by(|a, b| a.unsigned_area().partial_cmp(&b.unsigned_area()).unwrap()) {
-                let after_area = largest_polygon.unsigned_area() * 111.0 * 111.0;
                 current_intersection = largest_polygon;
             } else {
                 info!("❌ No valid intersection polygons found");
@@ -539,7 +531,6 @@ impl IsochroneService {
         }
         
         let intersection_area_deg2 = current_intersection.unsigned_area();
-        let intersection_area_km2 = intersection_area_deg2 * 111.0 * 111.0;
         
         let min_area = 0.000005; // ~0.5m² in degrees, very permissive 
         if intersection_area_deg2 < min_area {
