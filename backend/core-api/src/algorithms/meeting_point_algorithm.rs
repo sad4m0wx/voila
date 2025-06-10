@@ -132,9 +132,11 @@ impl MeetingPointAlgorithm {
         if durations.is_empty() {
             return Ok(30);
         }
+
+        let durations_minutes: Vec<f64> = durations.iter().map(|&d| d / 60.0).collect();
         
         // Use the average travel time with a 10% margin as time limit
-        let avg_time = travel_times.iter().sum::<f64>() / travel_times.len() as f64;
+        let avg_time = durations_minutes.iter().sum::<f64>() / durations_minutes.len() as f64;
         let margin_time = avg_time * 1.2;
         let rounded_time_limit = ((margin_time as u32 + 4) / 5) * 5; // Rounds up to nearest 5
         let capped_time_limit = rounded_time_limit.min(90);
