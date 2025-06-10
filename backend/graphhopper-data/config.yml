@@ -31,12 +31,24 @@ graphhopper:
   gtfs.use_frequencies: true  # Enable frequency-based routing
   gtfs.ignore_real_time: true  # Ignore schedule variations
   
-  # Optimize for frequency-based queries
+  # Optimize for frequency-based queries - REDUCED FOR CPU OPTIMIZATION
   graph.do_sort: true
   graph.optimize_storage: true
-  graph.import_threads: 4
-  graph.precalculate: true
-  graph.precalculate_distance: 500
+  graph.import_threads: 2              # Reduced from 4 to 2
+  graph.precalculate: false            # Disabled to reduce CPU load
+  graph.precalculate_distance: 200     # Reduced from 500
+  
+  routing.calc_points: true
+  routing.debug: false
+  
+  index.high_resolution: 2000
+  prepare.lm.landmarks: 4
+  
+  web.jsonp_allowed: false
+  web.cors_origin: "*"
+
+  isochrone.max_buckets: 10
+  isochrone.max_time: 3600
   
   datareader:
     gtfs:
@@ -66,6 +78,13 @@ server:
     - type: http
       port: 8989
       bind_host: 0.0.0.0
+      idle_timeout: 120s
+      max_request_header_size: 32KiB
+      max_response_header_size: 32KiB
   request_log:
     appenders: []
   max_threads: 32
+  min_threads: 4
+  shutdown_grace_period: 30s
+  request_log:
+    appenders: []
