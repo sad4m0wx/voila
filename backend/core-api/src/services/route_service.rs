@@ -19,12 +19,12 @@ use crate::routes::meeting_point::CACHE_TTL_SECONDS;
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
 
 #[derive(Clone)]
-pub struct GraphHopperClient {
+pub struct RouteService {
     client: Client,
     base_url: String,
 }
 
-impl GraphHopperClient {
+impl RouteService {
     pub fn new() -> Self {
         let base_url = env::var("GRAPHHOPPER_URL")
             .unwrap_or_else(|_| "http://voila-app.fr:8989".to_string());
@@ -106,8 +106,8 @@ impl GraphHopperClient {
 
         join_all(route_futures).await
     }
+    
 
-    /// Compute transit route without caching
     async fn compute_transit_route(
         &self,
         from: &Location,
