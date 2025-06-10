@@ -5,17 +5,16 @@ use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsoc
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::graphhopper_client::GraphHopperClient;
-use log::{info, debug};
-
+use log::{info, debug, warn};
 
 pub struct MeetingPointAlgorithm;
 
 #[derive(Debug, Clone)]
 struct CandidateEvaluationResult {
     location: Location,
-    max_travel_time: f64,  // This is what we want to minimize (minimax)
-    avg_travel_time: f64,  // Used for tie-breaking
-    minimax_score: f64,    // Primary score: max_time + small avg_time penalty
+    max_travel_time: f64,
+    avg_travel_time: f64, 
+    minimax_score: f64,
 }
 
 impl MeetingPointAlgorithm {
@@ -105,7 +104,7 @@ impl MeetingPointAlgorithm {
             isochrones: Self::convert_isochrones_debug(&final_isochrones, locations),
             intersection_polygons: Self::convert_intersections_debug(&intersections),
             candidate_points: Self::convert_candidates_debug(&candidates),
-            final_candidates: vec![], // All candidates are in candidate_points
+            final_candidates: vec![],
         });
         
         Ok((meeting_point, routes, debug_data))
@@ -127,27 +126,11 @@ impl MeetingPointAlgorithm {
         locations: &[(String, Location)],
         center: &Location,
     ) -> Result<u32> {
-        log::info!("📏 Estimating travel times to geometric center");
-        
         let graphhopper = GraphHopperClient::new();
-        let mut travel_times = Vec::new();
-        
-        // Use batch request to get all travel times at once
         let durations = graphhopper.get_transit_routes(locations, center).await;
         
-        for (i, duration_seconds) in durations.iter().enumerate() {
-            let minutes = duration_seconds / 60.0;
-            travel_times.push(minutes);
-            
-            if i < locations.len() {
-                let (id, _) = &locations[i];
-                log::debug!("Travel time from {}: {:.1}min", id, minutes);
-            }
-        }
-
-        
-        if travel_times.is_empty() {
-            return Ok(30); // Default 30 minutes
+        if durations.is_empty() {
+            return Ok(30);
         }
         
         // Use the average travel time with a 10% margin as time limit
@@ -162,12 +145,12 @@ impl MeetingPointAlgorithm {
     }
 
     fn generate_candidates_from_intersections(intersections: &[Polygon<f64>]) -> Vec<Location> {
-        
         let mut candidates = Vec::new();
         const MAX_CANDIDATES_PER_POLYGON: usize = 12;
-        const GRID_RESOLUTION: usize = 4; // 4x4 grid per polygon
+        const MAX_CANDIDATES: usize = 50;
+        const GRID_RESOLUTION: usize = 4;
         
-        for (polygon_idx, intersection) in intersections.iter().enumerate() {
+        for intersection in intersections.iter() {
             let mut polygon_candidates = Vec::new();
             
             // Strategy 1: Centroid (most important)
@@ -193,24 +176,17 @@ impl MeetingPointAlgorithm {
                 }
             }
             
-            // Strategy 3: Sample polygon vertices/edge midpoints for complex shapes
+            // Sample polygon vertices
             let exterior_points: Vec<_> = intersection.exterior().points().collect();
             for point in exterior_points.iter().step_by(exterior_points.len().max(1) / 3) {
                 polygon_candidates.push(Location::new(point.y(), point.x()));
             }
             
-            // Limit candidates per polygon and add to main list
             polygon_candidates.truncate(MAX_CANDIDATES_PER_POLYGON);
-            candidates.extend(polygon_candidates.clone());
-            
-            log::debug!("📍 Generated {} candidates from intersection polygon {}", 
-                       polygon_candidates.len(), polygon_idx);
+            candidates.extend(polygon_candidates);
         }
         
-        // Cap total candidates to keep evaluation reasonable
-        candidates.truncate(50);
-        
-        info!("🔍 Generated {} total candidate points using coarse grid + strategic sampling", candidates.len());
+        candidates.truncate(MAX_CANDIDATES);
         candidates
     }
     /// Evaluate candidates using minimax algorithm with tie-breaking
@@ -225,21 +201,14 @@ impl MeetingPointAlgorithm {
         let graphhopper = GraphHopperClient::new();
         let mut best_candidate: Option<CandidateEvaluationResult> = None;
         
-        log::info!("⚖️  Evaluating {} candidates using minimax algorithm", candidates.len());
-        
-        for (i, candidate) in candidates.iter().enumerate() {
-            // Get travel times from all locations to this candidate
+        for candidate in candidates.iter() {
             let travel_times = graphhopper.get_transit_routes(locations, candidate).await;
             
             if travel_times.is_empty() {
-                log::warn!("No travel times available for candidate {}", i);
                 continue;
             }
             
-            // Convert to minutes
             let times_minutes: Vec<f64> = travel_times.iter().map(|&t| t / 60.0).collect();
-            
-            // Calculate minimax metrics
             let max_time = times_minutes.iter().fold(0.0, |a: f64, &b| a.max(b));
             let avg_time = times_minutes.iter().sum::<f64>() / times_minutes.len() as f64;
             
@@ -270,18 +239,12 @@ impl MeetingPointAlgorithm {
             };
             
             if is_better {
-                log::debug!("🎯 New best candidate {}: max={:.1}min, avg={:.1}min", 
-                           i, max_time, avg_time);
                 best_candidate = Some(evaluation);
             }
         }
         
         match best_candidate {
-            Some(result) => {
-                log::info!("🏆 Best candidate: max={:.1}min, avg={:.1}min", 
-                          result.max_travel_time, result.avg_travel_time);
-                Ok(result.location)
-            }
+            Some(result) => Ok(result.location),
             None => Err(anyhow::anyhow!("Failed to evaluate any candidates"))
         }
     }
@@ -291,8 +254,6 @@ impl MeetingPointAlgorithm {
         locations: &[(String, Location)],
         meeting_point: &Location,
     ) -> Result<Vec<Route>> {
-        log::info!("🛣️  Generating final routes");
-        
         let graphhopper = GraphHopperClient::new();
         let mut routes = Vec::new();
         
@@ -310,8 +271,7 @@ impl MeetingPointAlgorithm {
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to generate route for {}: {}", id, e);
-                    // Create fallback route with straight line
+                    warn!("Failed to generate route for {}: {}", id, e);
                     Route {
                         id: id.clone(),
                         geometry: LineString::new(vec![
@@ -326,7 +286,6 @@ impl MeetingPointAlgorithm {
             routes.push(route);
         }
         
-        log::info!("✅ Generated {} routes", routes.len());
         Ok(routes)
     }
 
@@ -338,7 +297,6 @@ impl MeetingPointAlgorithm {
             let duration_minutes = if !route.steps.is_empty() {
                 route.steps.iter().map(|step| step.duration).sum::<u32>() / 60
             } else {
-                // Estimate based on geometry
                 let total_distance: f64 = route.geometry.coordinates.windows(2)
                     .map(|pair| {
                         let loc1 = Location::new(pair[0].1, pair[0].0);
@@ -349,7 +307,6 @@ impl MeetingPointAlgorithm {
                 (total_distance / 7.0 / 60.0) as u32
             };
 
-            // Generate transit summary from route steps
             let transit_summary = Self::generate_transit_summary(&route.steps);
 
             TravelTime {
@@ -364,9 +321,6 @@ impl MeetingPointAlgorithm {
             }
         }).collect()
     }
-
-    
-    
 
     fn generate_transit_summary(steps: &[crate::models::transit::TransitStep]) -> String {
         if steps.is_empty() {
@@ -399,29 +353,24 @@ impl MeetingPointAlgorithm {
                             duration_min.max(1),
                             stops_info
                         ));
-                    } else {
-                        summary_parts.push(format!("Transit for {}min", (step.duration / 60).max(1)));
                     }
-                },
-                "walking" => {
-                    total_walking_time += step.duration;
-                },
-                _ => {
-                    summary_parts.push(format!("{} for {}min", step.mode, (step.duration / 60).max(1)));
                 }
+                "walk" => {
+                    total_walking_time += step.duration;
+                }
+                _ => {}
             }
         }
         
-        // Add walking summary if there's significant walking
-        if total_walking_time > 60 { // More than 1 minute
+        if total_walking_time > 60 {
             let walking_min = total_walking_time / 60;
-            summary_parts.push(format!("{}min walking", walking_min));
+            summary_parts.push(format!("Walk {}min", walking_min));
         }
         
         if summary_parts.is_empty() {
-            "Direct route".to_string()
+            "Transit route".to_string()
         } else {
-            summary_parts.join(" → ")
+            summary_parts.join(", ")
         }
     }
 
