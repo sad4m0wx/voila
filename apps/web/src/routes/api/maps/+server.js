@@ -3,14 +3,14 @@ import { error, json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
 // Access the API key from server environment variable (not exposed to client)
-const GOOGLE_MAPS_API_KEY = env.GOOGLE_MAPS_API_KEY;
+const GOOGLE_MAPS_GEOCODE_API_KEY = env.GOOGLE_MAPS_GEOCODE_API_KEY;
 
 // Create a proxy for geocoding requests
 export async function POST({ request }) {
   try {
     const { action, payload } = await request.json();
 
-    if (!GOOGLE_MAPS_API_KEY) {
+    if (!GOOGLE_MAPS_GEOCODE_API_KEY) {
       throw new Error('Google Maps API key not configured on server');
     }
 
@@ -27,7 +27,7 @@ export async function POST({ request }) {
 async function geocodeAddress(address) {
   const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
   url.searchParams.append('address', address);
-  url.searchParams.append('key', GOOGLE_MAPS_API_KEY);
+  url.searchParams.append('key', GOOGLE_MAPS_GEOCODE_API_KEY);
 
   const response = await fetch(url);
   const data = await response.json();

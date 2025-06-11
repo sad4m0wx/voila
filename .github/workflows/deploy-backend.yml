@@ -88,7 +88,7 @@ jobs:
             echo "📝 Updating environment variables..."
             {
               echo "MAPS_PLACES_API_KEY=${{ secrets.MAPS_PLACES_API_KEY }}"
-              echo "GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}"
+              echo "GOOGLE_MAPS_GEOCODE_API_KEY=${{ secrets.GOOGLE_MAPS_GEOCODE_API_KEY }}"
             } > .env
             
             echo "🚀 Pulling latest backend image..."
