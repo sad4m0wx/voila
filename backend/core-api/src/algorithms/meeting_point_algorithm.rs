@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, LineString, TravelTime};
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
-use crate::services::graphhopper_client::GraphHopperClient;
+use crate::services::route_service::RouteService;
 use log::warn;
 
 pub struct MeetingPointAlgorithm;
@@ -125,8 +125,8 @@ impl MeetingPointAlgorithm {
         locations: &[(String, Location)],
         center: &Location,
     ) -> Result<u32> {
-        let graphhopper = GraphHopperClient::new();
-        let durations = graphhopper.get_transit_routes(locations, center).await;
+        let route_service = RouteService::new();
+        let durations = route_service.get_transit_routes(locations, center).await;
         
         if durations.is_empty() {
             return Ok(30);
@@ -199,11 +199,11 @@ impl MeetingPointAlgorithm {
             return Err(anyhow::anyhow!("No candidates to evaluate"));
         }
         
-        let graphhopper = GraphHopperClient::new();
+        let route_service = RouteService::new();
         let mut best_candidate: Option<CandidateEvaluationResult> = None;
         
         for candidate in candidates.iter() {
-            let travel_times = graphhopper.get_transit_routes(locations, candidate).await;
+            let travel_times = route_service.get_transit_routes(locations, candidate).await;
             
             if travel_times.is_empty() {
                 continue;
@@ -252,13 +252,13 @@ impl MeetingPointAlgorithm {
         locations: &[(String, Location)],
         meeting_point: &Location,
     ) -> Result<Vec<Route>> {
-        let graphhopper = GraphHopperClient::new();
+        let route_service = RouteService::new();
         let mut routes = Vec::new();
         
         for (id, origin) in locations {
-            let route = match graphhopper.get_transit_route(origin, meeting_point).await {
+            let route = match route_service.get_transit_route(origin, meeting_point).await {
                 Ok((_duration, _distance, steps)) => {
-                    let geometry = GraphHopperClient::extract_geometry_from_steps(
+                    let geometry = RouteService::extract_geometry_from_steps(
                         &steps, origin, meeting_point
                     );
                     

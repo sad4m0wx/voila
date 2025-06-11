@@ -17,10 +17,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 pub static CACHE_TTL: u32 = 30; // 30 days
 pub static CACHE_TTL_SECONDS: u32 = CACHE_TTL * 24 * 3600; // 30 days
 
-#[derive(Debug, Deserialize)]
-struct MeetingPointRequest {
-    addresses: Vec<AddressInput>,
-}
+
 
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
