@@ -3,7 +3,7 @@ import { error, json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
 // Access the API key from server environment variable (not exposed to client)
-const GOOGLE_MAPS_GEOCODE_API_KEY = env.GOOGLE_MAPS_GEOCODE_API_KEY;
+const GOOGLE_MAPS_GEOCODE_API_KEY = env.VITE_GOOGLE_MAPS_GEOCODE_API_KEY;
 
 // Create a proxy for geocoding requests
 export async function POST({ request }) {
