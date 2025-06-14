@@ -1,19 +1,19 @@
 use actix_web::{web, HttpResponse, Responder};
-use log::{error, info};
-use serde::Serialize;
+use log::info;
 
-use crate::algorithms::MeetingPointAlgorithm;
-use crate::models::MeetingPointResponse;
-use crate::models::api::MeetingPointRequest;
+use crate::algorithms::meeting_point_algorithm::MeetingPointAlgorithm;
+use crate::models::api::{MeetingPointRequest, MeetingPointResponse};
 use crate::services::cache_service::CacheService;
+
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::resource("/api/meeting-point")
-            .route(web::post().to(find_meeting_point_handler)),
+            .route(web::post().to(meeting_point_handler)),
     );
 }
 
+<<<<<<< Updated upstream
 pub static CACHE_TTL: u32 = 30; // 30 days
 pub static CACHE_TTL_SECONDS: u32 = CACHE_TTL * 24 * 3600; // 30 days
 
@@ -44,10 +44,16 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
         });
     }
     
+=======
+async fn meeting_point_handler(
+    request: web::Json<MeetingPointRequest>,
+) -> impl Responder {
+>>>>>>> Stashed changes
     let start_time = std::time::Instant::now();
-    
-    // Step 1: Round coordinates and resolve to locations in one step
-    let resolved_locations: Vec<(String, crate::models::location::Location)> = request.addresses.iter()
+    info!("📍 Processing meeting point request with {} addresses", request.addresses.len());
+
+    // Convert addresses to locations
+    let locations: Vec<(String, _)> = request.addresses.iter()
         .filter_map(|addr| {
             if let Some((lon, lat)) = addr.coordinates {
                 // Round to 4 decimal places (~10m precision)
@@ -61,14 +67,22 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
             }
         })
         .collect();
+    
+    if locations.len() < 2 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "At least two valid locations are required"
+        }));
+    }
 
-    // Validate we have enough valid locations
-    if resolved_locations.len() < 2 {
-        return HttpResponse::BadRequest().json(ErrorResponse {
-            error: "At least two addresses with valid coordinates are required".to_string(),
-        });
+    // Step 2: Check for complete cache hit
+    let cache_service = CacheService::global().await;
+    if let Some(cached_result) = cache_service.get_cached_meeting_point_result(&locations).await {
+        let processing_time_ms = start_time.elapsed().as_millis();
+        info!("🎯 Complete cache hit! Returned in {}ms", processing_time_ms);
+        HttpResponse::Ok().json(cached_result);
     }
     
+<<<<<<< Updated upstream
     // Step 2: Check for complete cache hit
     let cache_service = CacheService::cache().await;
     if let Some(cached_result) = cache_service.get_cached_meeting_point_result(&resolved_locations).await {
@@ -86,13 +100,24 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
         Ok((meeting_point, routes, debug_data)) => {
             info!("Meeting point found using algorithm in {}ms", processing_time_ms);
 
+=======
+    let algorithm = MeetingPointAlgorithm::new();
+    
+    match algorithm.find_meeting_point(&locations).await {
+        Ok((meeting_point, routes, debug_data)) => {
+            let processing_time_ms = start_time.elapsed().as_millis();
+            info!("💾 Caching meeting point result for {} addresses in {}ms", locations.len(), processing_time_ms);
+            
+>>>>>>> Stashed changes
             let response = MeetingPointResponse {
                 meeting_point,
                 routes,
                 venues: None,
                 debug_data,
             };
+
             
+<<<<<<< Updated upstream
             // Step 4: Cache the complete result for 30 days
             let _ = cache_service.cache_meeting_point_result(
                 &resolved_locations, 
@@ -100,13 +125,17 @@ async fn find_meeting_point_handler(request: web::Json<MeetingPointRequest>) -> 
                 Some(CACHE_TTL_SECONDS) // 30 days TTL
             ).await;
             
+=======
+            if let Err(e) = cache_service.cache_meeting_point_result(&locations, &response, None).await {
+                warn!("❌ Failed to cache meeting point result: {}", e);
+            }
+>>>>>>> Stashed changes
             HttpResponse::Ok().json(response)
         }
-        Err(err) => {
-            error!("Error finding meeting point: {}", err);
-            HttpResponse::InternalServerError().json(ErrorResponse {
-                error: format!("Failed to calculate meeting point: {}", err),
-            })
+        Err(e) => {
+            HttpResponse::BadRequest().json(serde_json::json!({
+                "error": e.to_string()
+            }))
         }
     }
 }

@@ -11,7 +11,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
-// Global cache instance - initialized once, reused everywhere
+pub const CACHE_TTL_SECONDS: u32 = 30 * 24 * 3600;
+
 static CACHE_SERVICE: OnceCell<Arc<CacheService>> = OnceCell::const_new();
 
 #[derive(Clone)]
@@ -25,15 +26,6 @@ struct CachedIsochrone {
     pub time_limit_minutes: u32,
     pub profile: String,
     pub polygon_data: Vec<u8>,
-    pub created_at: i64,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct CachedRoute {
-    pub from: Location,
-    pub to: Location, 
-    pub profile: String,
-    pub route_data: Vec<u8>,
     pub created_at: i64,
 }
 
@@ -75,17 +67,10 @@ impl CacheService {
         Ok(Self { redis: client })
     }
 
-    pub async fn cache() -> Arc<CacheService> {
-        CacheService::global().await
-    }
-
     pub async fn is_available(&self) -> bool {
         match self.redis.get_multiplexed_async_connection().await {
             Ok(mut conn) => {
-                match redis::cmd("PING").query_async::<_, String>(&mut conn).await {
-                    Ok(_) => true,
-                    Err(_) => false
-                }
+                redis::cmd("PING").query_async::<_, String>(&mut conn).await.is_ok()
             }
             Err(_) => false
         }
@@ -116,25 +101,22 @@ impl CacheService {
         let mut conn = self.redis.get_multiplexed_async_connection().await.ok()?;
         
         match redis::cmd("GET").arg(&cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
-            Ok(data) => {
-                if data.is_empty() {
-                    debug!("Empty data returned from cache for key: {}", cache_key);
-                    return None;
-                }
-                
+            Ok(data) if !data.is_empty() => {
                 match serde_json::from_slice(&data) {
                     Ok(result) => {
                         info!("🎯 Meeting point cache hit for key: {}", cache_key);
                         Some(result)
                     }
                     Err(e) => {
-                        error!("Failed to deserialize cached meeting point for key {}: {} (data length: {})", 
-                               cache_key, e, data.len());
-                        // Clear corrupted cache entry
-                        let _ = redis::cmd("DEL").arg(&cache_key).query_async::<_, ()>(&mut conn).await;
+                        error!("Failed to deserialize cached meeting point for key {}: {}", cache_key, e);
+                        self.clear_corrupted_entry(&cache_key).await;
                         None
                     }
                 }
+            }
+            Ok(_) => {
+                debug!("Empty data returned from cache for key: {}", cache_key);
+                None
             }
             Err(e) => {
                 debug!("Cache miss for meeting point key {}: {}", cache_key, e);
@@ -161,7 +143,7 @@ impl CacheService {
         let mut conn = self.redis.get_multiplexed_async_connection().await?;
         let _: RedisResult<()> = redis::cmd("SETEX")
             .arg(&cache_key)
-            .arg(ttl)
+            .arg(ttl.unwrap_or(CACHE_TTL_SECONDS))
             .arg(serialized)
             .query_async(&mut conn).await;
         
@@ -207,36 +189,31 @@ impl CacheService {
         let mut conn = self.redis.get_multiplexed_async_connection().await.ok()?;
         
         match redis::cmd("GET").arg(&cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
-            Ok(data) => {
-                if data.is_empty() {
-                    debug!("Empty transit route data returned from cache for key: {}", cache_key);
-                    return None;
-                }
-                
+            Ok(data) if !data.is_empty() => {
                 match serde_json::from_slice::<CachedTransitRoute>(&data) {
                     Ok(cached) => {
                         match serde_json::from_slice(&cached.route_data) {
-                            Ok((duration, distance, steps)) => {
+                            Ok(result) => {
                                 info!("🛣️ Transit route cache hit for key: {}", cache_key);
-                                Some((duration, distance, steps))
+                                Some(result)
                             }
                             Err(e) => {
-                                error!("Failed to deserialize transit route data for key {}: {} (data length: {})", 
-                                       cache_key, e, cached.route_data.len());
-                                // Clear corrupted cache entry
-                                let _ = redis::cmd("DEL").arg(&cache_key).query_async::<_, ()>(&mut conn).await;
+                                error!("Failed to deserialize transit route data for key {}: {}", cache_key, e);
+                                self.clear_corrupted_entry(&cache_key).await;
                                 None
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to deserialize cached transit route for key {}: {} (data length: {})", 
-                               cache_key, e, data.len());
-                                // Clear corrupted cache entry
-                                let _ = redis::cmd("DEL").arg(&cache_key).query_async::<_, ()>(&mut conn).await;
-                                None
+                        error!("Failed to deserialize cached transit route for key {}: {}", cache_key, e);
+                        self.clear_corrupted_entry(&cache_key).await;
+                        None
                     }
                 }
+            }
+            Ok(_) => {
+                debug!("Empty transit route data returned from cache for key: {}", cache_key);
+                None
             }
             Err(e) => {
                 debug!("Cache miss for transit route key {}: {}", cache_key, e);
@@ -276,7 +253,7 @@ impl CacheService {
         let mut conn = self.redis.get_multiplexed_async_connection().await?;
         let _: RedisResult<()> = redis::cmd("SETEX")
             .arg(&cache_key)
-            .arg(ttl_seconds)
+            .arg(ttl_seconds.unwrap_or(CACHE_TTL_SECONDS))
             .arg(serialized)
             .query_async(&mut conn).await;
         
@@ -381,12 +358,7 @@ impl CacheService {
         let mut conn = self.redis.get_multiplexed_async_connection().await.ok()?;
         
         match redis::cmd("GET").arg(&isochrone_cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
-            Ok(data) => {
-                if data.is_empty() {
-                    debug!("Empty isochrone data returned from cache for key: {}", isochrone_cache_key);
-                    return None;
-                }
-                
+            Ok(data) if !data.is_empty() => {
                 match serde_json::from_slice::<CachedIsochrone>(&data) {
                     Ok(cached) => {
                         match serde_json::from_slice(&cached.polygon_data) {
@@ -405,22 +377,22 @@ impl CacheService {
                                 Some(result)
                             }
                             Err(e) => {
-                                error!("Failed to deserialize polygon data for key {}: {} (polygon data length: {})", 
-                                       isochrone_cache_key, e, cached.polygon_data.len());
-                                // Clear corrupted cache entry
-                                let _ = redis::cmd("DEL").arg(&isochrone_cache_key).query_async::<_, ()>(&mut conn).await;
+                                error!("Failed to deserialize polygon data for key {}: {}", isochrone_cache_key, e);
+                                self.clear_corrupted_entry(&isochrone_cache_key).await;
                                 None
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Failed to deserialize cached isochrone for key {}: {} (data length: {})", 
-                               isochrone_cache_key, e, data.len());
-                        // Clear corrupted cache entry
-                        let _ = redis::cmd("DEL").arg(&isochrone_cache_key).query_async::<_, ()>(&mut conn).await;
+                        error!("Failed to deserialize cached isochrone for key {}: {}", isochrone_cache_key, e);
+                        self.clear_corrupted_entry(&isochrone_cache_key).await;
                         None
                     }
                 }
+            }
+            Ok(_) => {
+                debug!("Empty isochrone data returned from cache for key: {}", isochrone_cache_key);
+                None
             }
             Err(e) => {
                 debug!("Cache miss for isochrone key {}: {}", isochrone_cache_key, e);
@@ -475,7 +447,7 @@ impl CacheService {
         
         let cached_isochrone = CachedIsochrone {
             origin: origin.clone(),
-            time_limit_minutes: time_limit_minutes,
+            time_limit_minutes,
             profile: profile.to_string(),
             polygon_data,
             created_at: chrono::Utc::now().timestamp(),
@@ -486,7 +458,7 @@ impl CacheService {
         let mut conn = self.redis.get_multiplexed_async_connection().await?;
         let _: RedisResult<()> = redis::cmd("SETEX")
             .arg(&cache_key)
-            .arg(ttl)
+            .arg(ttl.unwrap_or(CACHE_TTL_SECONDS))
             .arg(serialized)
             .query_async(&mut conn).await;
         
@@ -499,7 +471,7 @@ impl CacheService {
         let cache_key = format!("isochrone:{}:{}:{}:{}", 
                 profile, time_limit, location_hash,
                 self.hash_string(&format!("{}{}{}", profile, time_limit, location_hash)));
-        info!("🔑 Generated isochrone cache key: {} (location: {}, time_limit: {}, profile: {})", 
+        debug!("🔑 Generated isochrone cache key: {} (location: {}, time_limit: {}, profile: {})", 
                cache_key, location_hash, time_limit, profile);
         cache_key
     }
@@ -507,6 +479,13 @@ impl CacheService {
     // =============================================================================
     // UTILITY
     // =============================================================================
+
+    /// Clear a corrupted cache entry
+    async fn clear_corrupted_entry(&self, cache_key: &str) {
+        if let Ok(mut conn) = self.redis.get_multiplexed_async_connection().await {
+            let _ = redis::cmd("DEL").arg(cache_key).query_async::<_, ()>(&mut conn).await;
+        }
+    }
 
     fn hash_string(&self, input: &str) -> String {
         let mut hasher = DefaultHasher::new();

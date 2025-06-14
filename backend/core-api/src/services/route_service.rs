@@ -8,14 +8,12 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use once_cell::sync::Lazy;
 use futures::future::join_all;
-use tokio::time::timeout;
+
 
 use crate::models::Location;
 use crate::models::transit::{TransitStep, GeoJson, TransitDetails, TransitLine};
-use crate::services::cache_service::{CacheService};
-use crate::routes::meeting_point::CACHE_TTL_SECONDS;
+use crate::services::cache_service::{CacheService, CACHE_TTL_SECONDS};
 
-// Limit concurrent requests to prevent overwhelming GraphHopper
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
 
 #[derive(Clone)]
@@ -40,16 +38,14 @@ impl RouteService {
         Self { client, base_url }
     }
     
-    /// Get transit route with caching handled by global cache service
     pub async fn get_transit_route(
         &self,
         from: &Location,
         to: &Location,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
-        let cache_service = CacheService::cache().await;
+        let cache_service = CacheService::global().await;
         
-
-        // Check for cached transit route with matching return type
+        // Check for cached transit route
         if let Some(cached_result) = cache_service.get_cached_route(from, to, "pt").await {
             info!("🎯 Transit route cache hit!");
             return Ok(cached_result);
@@ -61,7 +57,6 @@ impl RouteService {
         
         match &result {
             Ok(route_result) => {
-                // Cache the successful result using the new transit route cache method
                 let _ = cache_service.cache_route(
                     from,
                     to,
@@ -69,44 +64,28 @@ impl RouteService {
                     route_result,
                     Some(CACHE_TTL_SECONDS)
                 ).await;
-                
                 info!("💾 Transit route cached successfully");
             }
             Err(e) => {
                 debug!("Route computation failed, not caching: {}", e);
             }
         }
-        
+
         result
     }
 
-    /// Batch process multiple route requests in parallel
     pub async fn get_transit_routes(
         &self,
         origins: &[(String, Location)],
         destination: &Location,
-    ) -> Vec<f64> {
-        let timeout_duration = Duration::from_secs(30*origins.len() as u64);
-        
-        let route_futures: Vec<_> = origins.iter().map(|(_id, origin)| {
-            let destination = destination.clone();
-            let origin = origin.clone();
-            
-            async move {
-                match timeout(timeout_duration, self.get_transit_route(&origin, &destination)).await {
-                    Ok(Ok((duration, _, _))) => duration.as_secs_f64(),
-                    _ => {
-                        // Fallback: realistic urban transit speed (15 km/h)
-                        let distance_km = origin.distance_to(&destination) / 1000.0;
-                        distance_km * 240.0 // 15 km/h = 240 seconds per km
-                    }
-                }
-            }
+    ) -> Vec<Result<(Duration, f64, Vec<TransitStep>)>> {
+
+        let futures: Vec<_> = origins.iter().map(|(_, origin)| {
+            self.get_transit_route(&origin, &destination)
         }).collect();
 
-        join_all(route_futures).await
+        join_all(futures).await 
     }
-    
 
     async fn compute_transit_route(
         &self,
@@ -263,38 +242,9 @@ impl RouteService {
         
         Ok(steps)
     }
-
-    pub fn extract_geometry_from_steps(
-        steps: &[TransitStep],
-        from: &Location,
-        to: &Location,
-    ) -> Vec<(f64, f64)> {
-        if steps.is_empty() {
-            return vec![
-                (from.longitude, from.latitude),
-                (to.longitude, to.latitude),
-            ];
-        }
-
-        let mut geometry = vec![(from.longitude, from.latitude)];
-        
-        // Extract coordinates from step geometry if available
-        for step in steps {
-            if let Some(ref geom) = step.geometry {
-                for coord_pair in &geom.coordinates {
-                    if coord_pair.len() >= 2 {
-                        geometry.push((coord_pair[0], coord_pair[1]));
-                    }
-                }
-            }
-        }
-        
-        geometry.push((to.longitude, to.latitude));
-        geometry
-    }
 }
 
-// GraphHopper API response structures
+
 #[derive(Debug, Deserialize)]
 struct PtRouteResponse {
     paths: Vec<PtPath>,

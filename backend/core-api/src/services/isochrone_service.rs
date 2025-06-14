@@ -11,8 +11,8 @@ use crate::models::isochrone::{
     IsochroneRequest, IsochroneResult, GraphHopperIsochroneResponse
 };
 use crate::models::Location;
-use crate::services::cache_service::{CacheService};
-use crate::routes::meeting_point::CACHE_TTL_SECONDS;
+use crate::services::cache_service::{CacheService, CACHE_TTL_SECONDS};
+
 
 #[derive(Clone)]
 pub struct IsochroneService {
@@ -40,7 +40,7 @@ impl IsochroneService {
     }
 
     pub async fn get_isochrone(&self, request: &IsochroneRequest) -> Result<IsochroneResult> {
-        let cache_service = CacheService::cache().await;
+        let cache_service = CacheService::global().await;
         let time_limit = request.time_limit.unwrap_or(30);
         let profile = request.profile.as_deref().unwrap_or("pt");
 
@@ -548,3 +548,4 @@ impl Default for IsochroneService {
         Self::new()
     }
 }
+

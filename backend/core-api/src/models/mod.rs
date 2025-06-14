@@ -7,5 +7,5 @@ pub mod debug;
 
 pub use api::{MeetingPointResponse, TravelTime};
 pub use debug::{DebugData, DebugIsochrone, DebugPolygon, DebugCandidate};
-pub use geometry::{Route, LineString};
+pub use geometry::Route;
 pub use location::{Location, MeetingPoint};
