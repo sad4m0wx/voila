@@ -32,9 +32,15 @@ graphhopper:
   
   # Frequency-based routing settings
   gtfs.max_wait_time: 600  # Maximum wait time (10 minutes)
-  gtfs.min_transfer_time: 120  # Minimum transfer time (2 minutes)
+  gtfs.min_transfer_time: 180  # Increased from 120 to 180 seconds (3 minutes) to add transfer cost
   gtfs.use_frequencies: true  # Enable frequency-based routing
   gtfs.ignore_real_time: true  # Ignore schedule variations
+  
+  # Transit boarding and transfer penalties to increase cost of changes
+  gtfs.boarding_time: 120  # Time penalty for boarding transit (2 minutes)
+  gtfs.alighting_time: 60  # Time penalty for alighting transit (1 minute)
+  gtfs.transfer_penalty: 150  # Additional penalty for transfers (2.5 minutes equivalent)
+  gtfs.mode_transfer_penalty: 300  # Extra penalty for changing transit modes (5 minutes equivalent)
   
   # Optimize for frequency-based queries - REDUCED FOR CPU OPTIMIZATION
   graph.do_sort: true
@@ -62,19 +68,21 @@ graphhopper:
       base-osm-filter: true
       walk-speed: 5.0
       use-optimized-transfers: true  
-      transfers-min-transfer-time: 60
+      transfers-min-transfer-time: 180 
       
       use-frequencies: true
       ignore-stop-times: false 
       default-headway: 600 
       
-      
+      # Transfer penalties and costs
+      boarding-cost: 120  
+      transfer-cost: 300
       max-transfer-distance: 800  
       create-walk-connections: true 
       cluster-stops: false 
       
       fare-approximation: false
-      transfer-time-cutoff: 1200
+      transfer-time-cutoff: 1800  # Increased from 1200 to 1800 to account for higher transfer costs
       memory-mapped: true
       skip-stops-outside-border: true
       skip-shapes: false 
