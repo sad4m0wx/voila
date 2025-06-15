@@ -8,7 +8,14 @@ use crate::models::debug::DebugIsochroneData;
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::route_service::RouteService;
-use log::info;
+use log::{info, error};
+
+#[derive(Debug, PartialEq)]
+enum AreaFitness {
+    TooSmall,
+    JustRight,
+    TooLarge,
+}
 
 pub struct MeetingPointAlgorithm {
     isochrone_service: IsochroneService,
@@ -24,11 +31,12 @@ impl MeetingPointAlgorithm {
         }
     }
 
-    /// Find optimal meeting point using isochrones
     pub async fn find_meeting_point(
         &self,
         locations: &[(String, Location)],
     ) -> Result<(MeetingPoint, Vec<Route>, Option<DebugData>)> {
+
+        let start_time = std::time::Instant::now();
 
         // Step 1: Calculate geometric center
         let center = Self::calculate_centroid(locations);
@@ -38,49 +46,10 @@ impl MeetingPointAlgorithm {
         let time_limit_minutes = self.estimate_time_to_center(locations, &center).await?;
         info!("⏱️  Estimated time limit: {}min", time_limit_minutes);
         
-        // Step 3: Get isochrones with retry logic for better intersections
-        let isochrone_service = IsochroneService::new();
-        let mut intersections = Vec::new();
-        let mut candidates = Vec::new();
-
-        let mut final_isochrones = Vec::new();
-
-        
-        let time_limits_to_try = [time_limit_minutes, time_limit_minutes + 5, time_limit_minutes + 10];
-        
-        for (attempt, time_limit) in time_limits_to_try.iter().enumerate() {
-            log::info!("🔄 Attempt {} with {}min time limit", attempt + 1, time_limit);
-            
-            let isochrones = isochrone_service.get_isochrones(
-                locations, 
-                *time_limit, 
-                Some("pt".to_string())
-            ).await?;
-
-            if isochrones.is_empty() {
-                log::warn!("❌ Failed to generate isochrones with {}min time limit", time_limit);
-                continue;
-            }
-
-            log::info!("🌐 Generated {} isochrones with {}min", isochrones.len(), time_limit);
-
-            // Try to find intersections
-            intersections = isochrone_service.get_isochrone_intersections(&isochrones);
-            log::info!("🎯 Found {} intersection polygons with {}min", intersections.len(), time_limit);
-
-            if !intersections.is_empty() {
-                // Generate candidates from successful intersections
-                candidates = self.generate_candidates(&intersections);
-                log::info!("🔍 Generated {} candidate points with {}min", candidates.len(), time_limit);
-                
-                if !candidates.is_empty() {
-                    log::info!("✅ Found viable solution with {}min time limit on attempt {}", time_limit, attempt + 1);
-
-                    final_isochrones = isochrones;
-                    break;
-                }
-            }
-        }
+        // Step 3: Get optimal isochrones with adaptive area control
+        let (final_isochrones, intersections, candidates) = self
+            .find_optimal_isochrone_candidates(locations, time_limit_minutes)
+            .await?;
         
         if intersections.is_empty() || candidates.is_empty() {
             return Err(anyhow::anyhow!("No valid intersections or candidates found"));
@@ -88,18 +57,18 @@ impl MeetingPointAlgorithm {
         info!("🎯 Generated {} candidate points", candidates.len());
         
         // Step 5: Evaluate candidates and find optimal meeting point
-        let (optimal_point, routes) = self.evaluate_candidates(&candidates, locations).await?;
+        let (optimal_point, routes, durations) = self.evaluate_candidates(&candidates, locations).await?;
         
         let meeting_point = MeetingPoint {
             name: "Optimal Meeting Point".to_string(),
             coordinates: (optimal_point.longitude, optimal_point.latitude),
-            travel_times: routes.iter().zip(locations.iter()).map(|(route, (id, location))| {
+            travel_times: routes.iter().zip(locations.iter()).zip(durations.iter()).map(|((route, (id, location)), &duration)| {
                 TravelTime {
                     id: id.clone(),
                     address: location.address.clone().unwrap_or_else(|| 
                         format!("{:.4}, {:.4}", location.latitude, location.longitude)
                     ),
-                    duration: route.steps.iter().map(|step| step.duration).sum::<u32>() / 60, // Convert to minutes
+                    duration: duration / 60, // Convert seconds to minutes
                     distance: route.steps.iter().map(|step| step.distance).sum(),
                     estimated: false,
                     transit_summary: None,
@@ -122,6 +91,10 @@ impl MeetingPointAlgorithm {
             isochrone_data: Some(Self::convert_isochrone_data_debug(&final_isochrones)),
         });
         
+        let end_time = std::time::Instant::now();
+        let duration = end_time.duration_since(start_time);
+        info!("🕒 Total execution time: {:?}", duration);
+
         Ok((meeting_point, routes, debug_data))
     }
 
@@ -142,7 +115,7 @@ impl MeetingPointAlgorithm {
 
         let max_time_seconds : u32 = routes.iter()
             .filter_map(|route| route.as_ref().ok())
-            .map(|route| route.1 as u32)
+            .map(|route| route.0.as_secs() as u32)
             .max()
             .unwrap_or(0);
         
@@ -151,19 +124,227 @@ impl MeetingPointAlgorithm {
         let rounded_time_limit = ((margin_time as u32 + 4) / 5) * 5; // Rounds up to nearest 5
         let capped_time_limit = rounded_time_limit.min(90);
         
-        info!("⏱️  Estimated travel time: {}min, using time limit: {}min", avg_time_minutes, capped_time_limit);
+        info!("⏱️  Estimated travel time: {}min, margin: {}min, using time limit: {}min", avg_time_minutes, margin_time, capped_time_limit);
         Ok(capped_time_limit)
+    }
+
+    async fn find_optimal_isochrone_candidates(
+        &self,
+        locations: &[(String, Location)],
+        initial_time_limit: u32,
+    ) -> Result<(Vec<IsochroneResult>, Vec<Polygon<f64>>, Vec<Location>)> {
+        const MIN_INTERSECTION_AREA_KM2: f64 = 0.1;  
+        const MAX_INTERSECTION_AREA_KM2: f64 = 10.0; 
+        const MAX_GENERATED_CANDIDATES: usize = 50;
+        const MIN_TIME_LIMIT_MINUTES: u32 = 10;
+        const MAX_TIME_LIMIT_MINUTES: u32 = 90;
+        const TIME_LIMIT_INCREMENT_MINUTES: u32 = 5;
+
+        let mut current_time_limit = initial_time_limit;
+        let mut tried_results: std::collections::HashMap<u32, (Vec<IsochroneResult>, Vec<Polygon<f64>>, f64)> = std::collections::HashMap::new();
+        
+        loop {
+            // Check for oscillation and return current result if detected
+            if tried_results.contains_key(&current_time_limit) {
+                info!("⚠️  Oscillation detected at {}min, using current result", current_time_limit);
+                
+                let current_result = &tried_results[&current_time_limit];
+                let candidates = self.generate_candidates(&current_result.1)
+                    .into_iter()
+                    .take(MAX_GENERATED_CANDIDATES)
+                    .collect::<Vec<_>>();
+                
+                if !candidates.is_empty() {
+                    info!("🎯 Using oscillation result with area {:.2} km² and {} candidates", 
+                          current_result.2, candidates.len());
+                    return Ok((current_result.0.clone(), current_result.1.clone(), candidates));
+                }
+                break;
+            }
+            let isochrones = self.isochrone_service
+                .get_isochrones(locations, current_time_limit, Some("pt".to_string()))
+                .await?;
+
+            if isochrones.is_empty() {
+                info!("❌ No isochrones at {}min, increasing time limit", current_time_limit);
+                current_time_limit = (current_time_limit + TIME_LIMIT_INCREMENT_MINUTES).min(MAX_TIME_LIMIT_MINUTES);
+                continue;
+            }
+
+            let intersections = self.isochrone_service.get_isochrone_intersections(&isochrones);
+            info!("🌐 {}min → {} isochrones → {} intersections", 
+                  current_time_limit, isochrones.len(), intersections.len());
+
+            if intersections.is_empty() {
+                info!("❌ No intersections at {}min, increasing time limit", current_time_limit);
+                current_time_limit = (current_time_limit + TIME_LIMIT_INCREMENT_MINUTES).min(MAX_TIME_LIMIT_MINUTES);
+                continue;
+            }
+
+            let area_km2 = Self::calculate_total_area_km2(&intersections);
+            
+            tried_results.insert(current_time_limit, (isochrones.clone(), intersections.clone(), area_km2));
+            
+            match self.evaluate_area_fitness(area_km2, MIN_INTERSECTION_AREA_KM2, MAX_INTERSECTION_AREA_KM2) {
+                AreaFitness::JustRight => {
+                    let candidates = self.generate_candidates(&intersections)
+                        .into_iter()
+                        .take(MAX_GENERATED_CANDIDATES)
+                        .collect::<Vec<_>>();
+                    
+                    if !candidates.is_empty() {
+                        info!("🎯 Found optimal area ({:.2} km²) with {} candidates at {}min", 
+                              area_km2, candidates.len(), current_time_limit);
+                        return Ok((isochrones, intersections, candidates));
+                    }
+                },
+                AreaFitness::TooLarge => {
+                    info!("📏 Area too large ({:.2} km²), reducing time limit", area_km2);
+                    current_time_limit = (current_time_limit.saturating_sub(TIME_LIMIT_INCREMENT_MINUTES)).max(MIN_TIME_LIMIT_MINUTES);
+                },
+                AreaFitness::TooSmall => {
+                    info!("📏 Area too small ({:.2} km²), increasing time limit", area_km2);
+                    current_time_limit = (current_time_limit + TIME_LIMIT_INCREMENT_MINUTES).min(MAX_TIME_LIMIT_MINUTES);
+                }
+            }
+            
+            if current_time_limit <= MIN_TIME_LIMIT_MINUTES || current_time_limit >= MAX_TIME_LIMIT_MINUTES {
+                break;
+            }
+        }
+
+        Err(anyhow::anyhow!("Could not find optimal intersection area within time limits {}-{}min", MIN_TIME_LIMIT_MINUTES, MAX_TIME_LIMIT_MINUTES))
+    }
+
+    fn evaluate_area_fitness(&self, area_km2: f64, min_area: f64, max_area: f64) -> AreaFitness {
+        if area_km2 < min_area {
+            AreaFitness::TooSmall
+        } else if area_km2 > max_area {
+            AreaFitness::TooLarge
+        } else {
+            AreaFitness::JustRight
+        }
+    }
+
+    fn calculate_total_area_km2(intersections: &[Polygon<f64>]) -> f64 {
+        intersections.iter()
+            .map(|polygon| polygon.unsigned_area())
+            .sum::<f64>() * 111.0 * 111.0
     }
 
 
     fn generate_candidates(&self, intersections: &[Polygon<f64>]) -> Vec<Location> {
-        //TODO: add more candidates
+        if intersections.is_empty() {
+            return Vec::new();
+        }
+
         let mut candidates: Vec<Location> = Vec::new();
         
+        // Configuration
+        let grid_spacing_degrees = 0.001; // ~100m at equator
+        let area_threshold_km2 = 0.5; // 1 km²
+        let area_threshold_degrees2 = area_threshold_km2 / (111.0 * 111.0); // Convert to degrees²
+        
+        // Separate polygons by size
+        let mut large_polygons = Vec::new();
+        let mut small_polygons = Vec::new();
+        
+        for polygon in intersections {
+            let area = polygon.unsigned_area();
+            if area >= area_threshold_degrees2 {
+                large_polygons.push(polygon);
+            } else {
+                small_polygons.push(polygon);
+            }
+        }
+        
+        info!("🔍 Generating candidates: {} large polygons, {} small polygons", 
+              large_polygons.len(), small_polygons.len());
+        
+        for polygon in large_polygons {
+            let polygon_candidates = self.generate_candidates_large_polygon(polygon, grid_spacing_degrees);
+            candidates.extend(polygon_candidates.clone());
+            info!("📍 Generated {} candidates for large polygon", polygon_candidates.len());
+        }
+        
+        if !small_polygons.is_empty() {
+            let collective_candidates = self.generate_candidates_small_polygons(&small_polygons, grid_spacing_degrees);
+            candidates.extend(collective_candidates.clone());
+            info!("📍 Generated {} candidates for {} small polygons", collective_candidates.len(), small_polygons.len());
+        }
+        
+        // Always include centroids as candidates (they're often good)
         for polygon in intersections {
             if let Some(centroid) = polygon.centroid() {
                 candidates.push(Location::new(centroid.y(), centroid.x()));
             }
+        }
+        
+        info!("🎯 Total candidates generated: {}", candidates.len());
+        candidates
+    }
+
+    fn generate_candidates_large_polygon(&self, polygon: &Polygon<f64>, grid_spacing: f64) -> Vec<Location> {
+        let mut candidates = Vec::new();
+        
+        if let Some(bounding_rect) = polygon.bounding_rect() {
+            let min_x = bounding_rect.min().x;
+            let max_x = bounding_rect.max().x;
+            let min_y = bounding_rect.min().y;
+            let max_y = bounding_rect.max().y;
+            
+            let mut y = min_y;
+            while y <= max_y {
+                let mut x = min_x;
+                while x <= max_x {
+                    let point = Point::new(x, y);
+                    if polygon.contains(&point) {
+                        candidates.push(Location::new(y, x));
+                    }
+                    x += grid_spacing;
+                }
+                y += grid_spacing;
+            }
+        }
+        
+        candidates
+    }
+
+    fn generate_candidates_small_polygons(&self, polygons: &[&Polygon<f64>], grid_spacing: f64) -> Vec<Location> {
+        let mut candidates = Vec::new();
+        
+        // Calculate bounding box that encompasses all small polygons
+        let mut min_x = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        
+        for polygon in polygons {
+            if let Some(bounding_rect) = polygon.bounding_rect() {
+                min_x = min_x.min(bounding_rect.min().x);
+                max_x = max_x.max(bounding_rect.max().x);
+                min_y = min_y.min(bounding_rect.min().y);
+                max_y = max_y.max(bounding_rect.max().y);
+            }
+        }
+        
+        // Generate grid over the collective bounding box
+        let mut y = min_y;
+        while y <= max_y {
+            let mut x = min_x;
+            while x <= max_x {
+                let point = Point::new(x, y);
+                
+                // Check if point is contained in any of the small polygons
+                for polygon in polygons {
+                    if polygon.contains(&point) {
+                        candidates.push(Location::new(y, x));
+                        break; // No need to check other polygons for this point
+                    }
+                }
+                x += grid_spacing;
+            }
+            y += grid_spacing;
         }
         
         candidates
@@ -196,7 +377,7 @@ impl MeetingPointAlgorithm {
             
             let avg_time_seconds = travel_times.iter().sum::<u32>() as f64 / travel_times.len() as f64;
             let avg_time_minutes = avg_time_seconds / 60.0;
-            
+
             info!("📊 Candidate {}: avg={:.1}min", 
                 candidate_idx, avg_time_minutes);
 
@@ -209,8 +390,8 @@ impl MeetingPointAlgorithm {
                 for (route_result, (id, _)) in route_results.iter().zip(locations.iter()) {
                     if let Ok((duration, _distance, steps)) = route_result {
                         routes.push(Route {
-                                geometry: LineString::new(vec![]), // TODO: Add actual geometry
-                                steps: steps.clone(),
+                            geometry: LineString::new(vec![]), // TODO: Add actual geometry
+                            steps: steps.clone(),
                         });
                         durations.push(duration.as_secs() as u32);
                     }
