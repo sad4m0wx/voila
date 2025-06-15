@@ -1,17 +1,14 @@
 use geo::{Point, MultiPoint, Polygon, Centroid, Area};
 use anyhow::Result;
 
-<<<<<<< Updated upstream
-use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, LineString, TravelTime};
-=======
 use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, TravelTime};
 use crate::models::geometry::LineString;
 use crate::models::debug::DebugIsochroneData;
->>>>>>> Stashed changes
+
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::route_service::RouteService;
-use log::{info, warn};
+use log::info;
 
 pub struct MeetingPointAlgorithm {
     isochrone_service: IsochroneService,
@@ -19,13 +16,7 @@ pub struct MeetingPointAlgorithm {
 }
 
 impl MeetingPointAlgorithm {
-<<<<<<< Updated upstream
-    /// Find optimal meeting point using isochrone intersection approach
-    pub async fn find_meeting_point(
-        locations: &[(String, Location)],
-    ) -> Result<(MeetingPoint, Vec<Route>, Option<DebugData>)> {
-        
-=======
+
     pub fn new() -> Self {
         Self {
             isochrone_service: IsochroneService::new(),
@@ -39,7 +30,6 @@ impl MeetingPointAlgorithm {
         locations: &[(String, Location)],
     ) -> Result<(MeetingPoint, Vec<Route>, Option<DebugData>)> {
 
->>>>>>> Stashed changes
         // Step 1: Calculate geometric center
         let center = Self::calculate_centroid(locations);
         info!("📍 Geometric center: ({:.6}, {:.6})", center.latitude, center.longitude);
@@ -49,20 +39,15 @@ impl MeetingPointAlgorithm {
         info!("⏱️  Estimated time limit: {}min", time_limit_minutes);
         
         // Step 3: Get isochrones with retry logic for better intersections
-<<<<<<< Updated upstream
         let isochrone_service = IsochroneService::new();
         let mut intersections = Vec::new();
         let mut candidates = Vec::new();
-        let mut final_time_limit = time_limit_minutes;
+
         let mut final_isochrones = Vec::new();
-=======
-        let mut intersections = Vec::new();
-        let mut final_isochrone_results = Vec::new();
->>>>>>> Stashed changes
+
         
         let time_limits_to_try = [time_limit_minutes, time_limit_minutes + 5, time_limit_minutes + 10];
         
-<<<<<<< Updated upstream
         for (attempt, time_limit) in time_limits_to_try.iter().enumerate() {
             log::info!("🔄 Attempt {} with {}min time limit", attempt + 1, time_limit);
             
@@ -85,44 +70,21 @@ impl MeetingPointAlgorithm {
 
             if !intersections.is_empty() {
                 // Generate candidates from successful intersections
-                candidates = Self::generate_candidates_from_intersections(&intersections);
+                candidates = self.generate_candidates(&intersections);
                 log::info!("🔍 Generated {} candidate points with {}min", candidates.len(), time_limit);
                 
                 if !candidates.is_empty() {
                     log::info!("✅ Found viable solution with {}min time limit on attempt {}", time_limit, attempt + 1);
-                    final_time_limit = *time_limit;
+
                     final_isochrones = isochrones;
                     break;
                 }
-=======
-        for time_limit in time_limits_to_try {
-            info!("🔄 Trying time limit: {}min", time_limit);
-            
-            let isochrone_results = self.isochrone_service.get_isochrones(locations, time_limit, Some("pt".to_string())).await?;
-
-            if isochrone_results.is_empty() {
-                warn!("⚠️  No isochrone results for time limit {}min", time_limit);
-                continue;
->>>>>>> Stashed changes
-            }
-
-            // Compute intersections using improved method
-            let current_intersections = self.isochrone_service.get_isochrone_intersections(&isochrone_results);
-            
-            if !current_intersections.is_empty() {
-                info!("✅ Found {} intersections for time limit {}min", current_intersections.len(), time_limit);
-                intersections = current_intersections;
-                final_isochrone_results = isochrone_results;
-                break;
             }
         }
         
-        if intersections.is_empty() {
-            return Err(anyhow::anyhow!("No valid intersections found"));
+        if intersections.is_empty() || candidates.is_empty() {
+            return Err(anyhow::anyhow!("No valid intersections or candidates found"));
         }
-        
-        // Step 4: Generate candidate points from intersections
-        let candidates: Vec<Location> = self.generate_candidates(&intersections);
         info!("🎯 Generated {} candidate points", candidates.len());
         
         // Step 5: Evaluate candidates and find optimal meeting point
@@ -148,13 +110,7 @@ impl MeetingPointAlgorithm {
         // Step 6: Prepare debug data with full isochrones for frontend visualization
         let debug_data = Some(DebugData {
             geometric_centroid: (center.longitude, center.latitude),
-<<<<<<< Updated upstream
-            isochrones: Self::convert_isochrones_debug(&final_isochrones, locations),
-            intersection_polygons: Self::convert_intersections_debug(&intersections),
-            candidate_points: Self::convert_candidates_debug(&candidates),
-            final_candidates: vec![],
-=======
-            isochrones: Self::convert_isochrone_results_debug(&final_isochrone_results, locations),
+            isochrones: Self::convert_isochrone_results_debug(&final_isochrones, locations),
             intersection_polygons: Self::convert_intersections_debug(&intersections),
             candidate_points: Self::convert_candidates_debug(&candidates),
             final_candidates: vec![DebugCandidate {
@@ -163,12 +119,12 @@ impl MeetingPointAlgorithm {
                 source: "optimal".to_string(),
                 score: None,
             }],
-            isochrone_data: Some(Self::convert_isochrone_data_debug(&final_isochrone_results)),
->>>>>>> Stashed changes
+            isochrone_data: Some(Self::convert_isochrone_data_debug(&final_isochrones)),
         });
         
         Ok((meeting_point, routes, debug_data))
     }
+
 
     fn calculate_centroid(locations: &[(String, Location)]) -> Location {
         let points: Vec<Point<f64>> = locations.iter()
@@ -265,9 +221,6 @@ impl MeetingPointAlgorithm {
         }).collect()
     }
 
-<<<<<<< Updated upstream
-    /// Convert intersection polygons for debug display
-=======
     fn convert_isochrone_data_debug(isochrone_results: &[IsochroneResult]) -> Vec<DebugIsochroneData> {
         isochrone_results.iter().enumerate().map(|(i, isochrone_result)| {
             DebugIsochroneData {
@@ -283,7 +236,6 @@ impl MeetingPointAlgorithm {
         }).collect()
     }
 
->>>>>>> Stashed changes
     fn convert_intersections_debug(intersections: &[Polygon<f64>]) -> Vec<DebugPolygon> {
         intersections.iter().enumerate().map(|(i, polygon)| {
             Self::polygon_to_debug(&format!("intersection_{}", i), polygon)

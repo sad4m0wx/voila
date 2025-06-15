@@ -13,7 +13,6 @@ use crate::models::isochrone::{
 use crate::models::Location;
 use crate::services::cache_service::{CacheService, CACHE_TTL_SECONDS};
 
-
 #[derive(Clone)]
 pub struct IsochroneService {
     client: Client,
@@ -548,4 +547,3 @@ impl Default for IsochroneService {
         Self::new()
     }
 }
-
