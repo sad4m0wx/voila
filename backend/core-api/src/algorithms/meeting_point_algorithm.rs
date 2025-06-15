@@ -169,45 +169,65 @@ impl MeetingPointAlgorithm {
         candidates
     }
 
+    //For now, we only consider the minimal average travel time to the candidate
+    async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Location, Vec<Route>, Vec<u32>)> {
+        if candidates.is_empty() {
+            return Err(anyhow::anyhow!("No candidates to evaluate"));
+        }
 
-    //TODO!!!
-    async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Location, Vec<Route>)> {
         let mut best_candidate = None;
-        let mut best_max_time = u32::MAX;
+        let mut best_avg_time = f64::INFINITY;
         let mut best_routes = Vec::new();
+        let mut best_durations = Vec::new();
 
-        for candidate in candidates {   
-            let route_results = self.route_service.get_transit_routes(locations, &candidate).await;
 
-            let max_time = route_results.iter()
+        for (candidate_idx, candidate) in candidates.iter().enumerate() {
+            let route_results = self.route_service.get_transit_routes(locations, candidate).await;
+
+            let travel_times: Vec<u32> = route_results.iter()
                 .filter_map(|route| route.as_ref().ok())
-                .map(|route| route.1 as u32)
-                .max()
-                .unwrap_or(0);
+                .map(|route| route.0.as_secs() as u32)
+                .collect();
+
+            if travel_times.len() != locations.len() {
+                info!("⚠️  Candidate {} has {} failed routes, skipping", candidate_idx, locations.len() - travel_times.len());
+                continue;
+            }
             
-            if max_time < best_max_time {
-                best_max_time = max_time;
+            let avg_time_seconds = travel_times.iter().sum::<u32>() as f64 / travel_times.len() as f64;
+            let avg_time_minutes = avg_time_seconds / 60.0;
+            
+            info!("📊 Candidate {}: avg={:.1}min", 
+                candidate_idx, avg_time_minutes);
+
+            if avg_time_seconds < best_avg_time {
+                best_avg_time = avg_time_seconds;
                 best_candidate = Some(candidate.clone());
-                // Convert successful route results to Route structs
-                best_routes = route_results.iter().zip(locations.iter())
-                    .filter_map(|(route_result, (id, _))| {
-                        route_result.as_ref().ok().map(|(_duration, _distance, steps)| {
-                            Route {
-                                id: id.clone(),
+                let mut routes = Vec::new();
+                let mut durations = Vec::new();
+                
+                for (route_result, (id, _)) in route_results.iter().zip(locations.iter()) {
+                    if let Ok((duration, _distance, steps)) = route_result {
+                        routes.push(Route {
                                 geometry: LineString::new(vec![]), // TODO: Add actual geometry
                                 steps: steps.clone(),
-                            }
-                        })
-                    })
-                    .collect();
+                        });
+                        durations.push(duration.as_secs() as u32);
+                    }
+                }
+                
+                best_routes = routes;
+                best_durations = durations;
             }
         }
 
         match best_candidate {
-            Some(candidate) => Ok((candidate, best_routes)),
-            None => Err(anyhow::anyhow!("No valid candidate found"))
+            Some(candidate) => {
+                info!("🏆 Selected candidate with average travel time: {:.1}min", best_avg_time / 60.0);
+                Ok((candidate, best_routes, best_durations))
+            },
+            None => Err(anyhow::anyhow!("No valid candidates found after evaluation"))
         }
-
     }
 
     fn convert_isochrone_results_debug(isochrone_results: &[IsochroneResult], _locations: &[(String, Location)]) -> Vec<DebugIsochrone> {
