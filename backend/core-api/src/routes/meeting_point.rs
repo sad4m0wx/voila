@@ -23,10 +23,7 @@ async fn meeting_point_handler(
     let locations: Vec<(String, _)> = request.addresses.iter()
         .filter_map(|addr| {
             if let Some((lon, lat)) = addr.coordinates {
-                // Round to 4 decimal places (~10m precision)
-                let rounded_lat = (lat * 10000.0).round() / 10000.0;
-                let rounded_lon = (lon * 10000.0).round() / 10000.0;
-                let location = crate::models::location::Location::new(rounded_lat, rounded_lon)
+                let location = crate::models::location::Location::new(lat, lon)
                     .with_address(addr.address.as_deref().unwrap_or("Unknown"));
                 Some((addr.id.clone(), location))
             } else {

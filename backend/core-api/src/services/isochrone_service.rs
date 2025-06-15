@@ -43,14 +43,24 @@ impl IsochroneService {
         let time_limit = request.time_limit.unwrap_or(30);
         let profile = request.profile.as_deref().unwrap_or("pt");
 
-        if let Some(cached) = cache_service.get_cached_isochrone(&request.point, time_limit, profile).await {
+        // Round coordinates to 5 decimal places for cache key consistency
+        let rounded_lat = (request.point.latitude * 100000.0).round() / 100000.0;
+        let rounded_lon = (request.point.longitude * 100000.0).round() / 100000.0;
+        let rounded_point = Location {
+            latitude: rounded_lat,
+            longitude: rounded_lon,
+            address: None,
+            place_id: None,
+        };
+
+        if let Some(cached) = cache_service.get_cached_isochrone(&rounded_point, time_limit, profile).await {
             let area_km2 = cached.polygon.unsigned_area() * 111.0 * 111.0;
             info!("✅ Isochrone cache hit - area: {:.2} km²", area_km2);
             return Ok(cached);
         }
         
         // Try to acquire lock for computation
-        if !cache_service.acquire_isochrone_lock(&request.point, time_limit, profile).await {
+        if !cache_service.acquire_isochrone_lock(&rounded_point, time_limit, profile).await {
             info!("🔒 Another request is computing this isochrone, waiting...");
             
             // Wait up to 60 seconds for the other computation to complete
@@ -58,7 +68,7 @@ impl IsochroneService {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 
                 // Check cache again
-                if let Some(cached) = cache_service.get_cached_isochrone(&request.point, time_limit, profile).await {
+                if let Some(cached) = cache_service.get_cached_isochrone(&rounded_point, time_limit, profile).await {
                     let area_km2 = cached.polygon.unsigned_area() * 111.0 * 111.0;
                     info!("✅ Got result from concurrent computation - area: {:.2} km²", area_km2);
                     return Ok(cached);
@@ -66,7 +76,7 @@ impl IsochroneService {
                 
                 // Check if we should give up waiting (every 10 seconds)
                 if i > 0 && i % 10 == 0 {
-                    if !cache_service.is_isochrone_computing(&request.point, time_limit, profile).await {
+                    if !cache_service.is_isochrone_computing(&rounded_point, time_limit, profile).await {
                         info!("🔒 Lock disappeared, other computation may have failed");
                         break;
                     }
@@ -78,7 +88,7 @@ impl IsochroneService {
             info!("⚠️ Timeout or failed concurrent computation, computing ourselves");
             
             // Try to acquire lock again (the other computation might have failed)
-            if !cache_service.acquire_isochrone_lock(&request.point, time_limit, profile).await {
+            if !cache_service.acquire_isochrone_lock(&rounded_point, time_limit, profile).await {
                 // If still can't acquire lock, proceed without it as last resort
                 warn!("🔒 Still can't acquire lock, proceeding without lock protection");
             }
@@ -91,7 +101,7 @@ impl IsochroneService {
             Ok(r) => r,
             Err(e) => {
                 // Make sure to release lock on error
-                cache_service.release_isochrone_lock(&request.point, time_limit, profile).await;
+                cache_service.release_isochrone_lock(&rounded_point, time_limit, profile).await;
                 return Err(e);
             }
         };
@@ -104,13 +114,13 @@ impl IsochroneService {
         }
 
         // Cache the result
-        match cache_service.cache_isochrone(&request.point, time_limit, profile, &result, Some(CACHE_TTL_SECONDS)).await {
+        match cache_service.cache_isochrone(&rounded_point, time_limit, profile, &result, Some(CACHE_TTL_SECONDS)).await {
             Ok(_) => info!("✅ Isochrone caching succeeded"),
             Err(e) => error!("❌ Isochrone caching failed: {}", e),
         }
 
         // Release the computation lock
-        cache_service.release_isochrone_lock(&request.point, time_limit, profile).await;
+        cache_service.release_isochrone_lock(&rounded_point, time_limit, profile).await;
 
         info!("✅ Isochrone computed successfully");
         Ok(result)
@@ -355,9 +365,14 @@ impl IsochroneService {
     }
 
     fn build_query_params(&self, request: &IsochroneRequest) -> Vec<(&str, String)> {
+
+        // Round to 4 decimal places (~10m precision) for isochrone computation
+        let rounded_lat = (request.point.latitude * 10000.0).round() / 10000.0;
+        let rounded_lon = (request.point.longitude * 10000.0).round() / 10000.0;
+
         let profile = request.profile.as_deref().unwrap_or("pt");
         let mut params = vec![
-            ("point", format!("{},{}", request.point.latitude, request.point.longitude)),
+            ("point", format!("{},{}", rounded_lat, rounded_lon)),
             ("buckets", request.buckets.unwrap_or(1).to_string()),
             ("reverse_flow", request.reverse_flow.unwrap_or(false).to_string()),
         ];
