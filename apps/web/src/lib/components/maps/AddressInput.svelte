@@ -1,7 +1,7 @@
 <script>
     import { onMount, createEventDispatcher } from 'svelte';
     import { googleMapsService } from '../../services/map/GoogleMapsService';
-    import { preloadForAddress } from '../../services/preloadApi.js';
+    import { preloadIsochroneForAddress } from '../../services/preloadApi.js';
     
     // Props
     export let value = '';
@@ -85,7 +85,7 @@
       
       // Trigger preload if enabled
       if (enablePreload) {
-        preloadForAddress(location).catch(error => {
+        preloadIsochroneForAddress(location).catch(error => {
           console.warn('Preload failed (non-critical):', error);
         });
       }
