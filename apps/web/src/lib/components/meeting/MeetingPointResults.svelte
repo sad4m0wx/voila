@@ -77,6 +77,21 @@
             </svg>
         </a>
 
+        <div class="grid grid-cols-2 gap-3 p-3 bg-primary-50 rounded-lg mb-4">
+            <div class="text-center">
+                <div class="text-xl font-bold text-primary-700">
+                    {Math.round(meetingPoint.travelTimes.reduce((sum, time) => sum + parseInt(time.duration), 0) / meetingPoint.travelTimes.length)}
+                </div>
+                <div class="text-xs text-primary-600 font-medium">Avg. Travel Time</div>
+            </div>
+            <div class="text-center">
+                <div class="text-xl font-bold text-primary-700">
+                    {Math.max(...meetingPoint.travelTimes.map(time => parseInt(time.duration)))}
+                </div>
+                <div class="text-xs text-primary-600 font-medium">Max Travel Time</div>
+            </div>
+        </div>
+
         <!-- Travel Times -->
         <div class="mb-4">
             <h3 class="text-sm font-semibold mb-3 flex items-center text-secondary-800">
@@ -115,20 +130,7 @@
 
         <!-- Summary Stats and Route Details Toggle -->
         <div class="space-y-3">
-            <div class="grid grid-cols-2 gap-3 p-3 bg-primary-50 rounded-lg">
-                <div class="text-center">
-                    <div class="text-xl font-bold text-primary-700">
-                        {Math.round(meetingPoint.travelTimes.reduce((sum, time) => sum + parseInt(time.duration), 0) / meetingPoint.travelTimes.length)}
-                    </div>
-                    <div class="text-xs text-primary-600 font-medium">Avg. Travel Time</div>
-                </div>
-                <div class="text-center">
-                    <div class="text-xl font-bold text-primary-700">
-                        {Math.max(...meetingPoint.travelTimes.map(time => parseInt(time.duration)))}
-                    </div>
-                    <div class="text-xs text-primary-600 font-medium">Max Travel Time</div>
-                </div>
-            </div>
+            
             
             <!-- Route Details Toggle -->
             {#if routes && routes.length > 0}
