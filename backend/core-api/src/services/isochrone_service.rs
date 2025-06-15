@@ -20,14 +20,14 @@ pub struct IsochroneService {
 }
 
 impl IsochroneService {
-    /// Create new isochrone service
+
     pub fn new() -> Self {
         let graphhopper_url = env::var("GRAPHHOPPER_URL")
             .unwrap_or_else(|_| "http://voila-app.fr:8989".to_string());
             
         let client = Client::builder()
-            .timeout(Duration::from_secs(120)) // 2 minutes HTTP timeout for PT isochrones
-            .pool_max_idle_per_host(10)        // Connection pooling
+            .timeout(Duration::from_secs(120))
+            .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(60))
             .tcp_keepalive(Duration::from_secs(30))
             .build()
@@ -43,7 +43,7 @@ impl IsochroneService {
         let time_limit = request.time_limit.unwrap_or(30);
         let profile = request.profile.as_deref().unwrap_or("pt");
 
-        // Round coordinates to 5 decimal places for cache key consistency
+        // Round coordinates to 5 decimal places
         let rounded_lat = (request.point.latitude * 100000.0).round() / 100000.0;
         let rounded_lon = (request.point.longitude * 100000.0).round() / 100000.0;
         let rounded_point = Location {
@@ -126,7 +126,6 @@ impl IsochroneService {
         Ok(result)
     }
 
-    /// Get multiple isochrones with parallel processing and retries
     pub async fn get_isochrones(
         &self,
         locations: &[(String, Location)],
@@ -135,175 +134,95 @@ impl IsochroneService {
     ) -> Result<Vec<IsochroneResult>> {
 
         let capped_time_limit = time_limit_minutes.min(90);
-        if time_limit_minutes > 90 {
-            info!("Time limit capped from {}min to {}min ", 
-                  time_limit_minutes, capped_time_limit);
-        }
+        let cache_service = CacheService::global().await; 
 
-        info!("🚀 Starting isochrone computation for {} locations with {}min time limit", 
-              locations.len(), capped_time_limit);
+        info!("🚀 Starting isochrone computation for {} locations with {}min time limit", locations.len(), capped_time_limit);
         
-        for (i, (id, location)) in locations.iter().enumerate() {
-            info!("  Location {}: {} at ({:.6}, {:.6})", 
-                  i+1, id, location.latitude, location.longitude);
-        }
-        
-        // Try parallel processing first
-        match self.try_parallel_isochrones(locations, capped_time_limit, &profile).await {
-            Ok(isochrones) => {
-                info!("✅ Parallel isochrone processing succeeded: {} isochrones", isochrones.len());
-                Ok(isochrones)
-            },
-            Err(e) => {
-                warn!("Parallel processing failed ({}), falling back to sequential with retries", e);
-                self.try_sequential_with_retries(locations, capped_time_limit, &profile).await
-            }
-        }
-    }
+        let cached_results = cache_service.get_cached_isochrones(locations, capped_time_limit, profile.as_deref().unwrap_or("pt")).await;
 
-    /// Try parallel isochrone processing (faster but more prone to timeouts)
-    async fn try_parallel_isochrones(
-        &self,
-        locations: &[(String, Location)],
-        time_limit: u32,
-        profile: &Option<String>,
-    ) -> Result<Vec<IsochroneResult>> {
-        let timeout_duration = Duration::from_secs(90); // 90 second timeout per isochrone
-        let isochrone_futures: Vec<_> = locations.iter().enumerate().map(|(i, (id, location))| {
-            let request = IsochroneRequest {
-                point: location.clone(),
-                time_limit: Some(time_limit),
-                distance_limit: None,
-                profile: profile.clone(),
-                buckets: Some(1),
-                reverse_flow: Some(false),
-            };
-            let id = id.clone();
-            let service = self.clone();
-            
-            async move {
-                info!("🚀 Parallel isochrone {} for '{}'", i + 1, id);
-                let result = tokio::time::timeout(timeout_duration, service.get_isochrone(&request)).await;
-                
-                match result {
-                    Ok(Ok(iso)) => {
-                        let area_km2 = iso.polygon.signed_area().abs() * 111.0 * 111.0;
-                        info!("✅ Isochrone {} SUCCESS: {:.2} km²", i + 1, area_km2);
-                        Ok(iso)
-                    }
-                    Ok(Err(e)) => {
-                        error!("❌ Isochrone {} FAILED: {}", i + 1, e);
-                        Err(e)
-                    }
-                    Err(_) => {
-                        error!("⏰ Isochrone {} TIMEOUT after 90s", i + 1);
-                        Err(anyhow!("Timeout after 90 seconds"))
-                    }
-                }
-            }
-        }).collect();
+        let cache_hits = cached_results.iter().filter(|r| r.is_some()).count();
+        info!("🎯 Cache hit for {} out of {} isochrones", cache_hits, locations.len());
 
-        let results = join_all(isochrone_futures).await;
-        let mut isochrones = Vec::new();
-        let mut failed_count = 0;
-        
-        for result in results {
-            match result {
-                Ok(iso) => isochrones.push(iso),
-                Err(_) => failed_count += 1,
-            }
-        }
-
-        if isochrones.len() >= 2 {
-            info!("✅ Parallel processing succeeded: {} isochrones", isochrones.len());
-            Ok(isochrones)
-        } else {
-            Err(anyhow!("Too many parallel failures: {} succeeded, {} failed", isochrones.len(), failed_count))
-        }
-    }
-
-    /// Sequential processing with retries and reduced time limits
-    async fn try_sequential_with_retries(
-        &self,
-        locations: &[(String, Location)],
-        initial_time_limit: u32,
-        profile: &Option<String>,
-    ) -> Result<Vec<IsochroneResult>> {
-        let mut isochrones = Vec::new();
-        
-        for (i, (id, location)) in locations.iter().enumerate() {
-            info!("🔄 Sequential isochrone {} for '{}' at ({:.6}, {:.6})", 
-                  i + 1, id, location.latitude, location.longitude);
-            
-            // Try with progressively shorter time limits if needed
-            let time_limits = [initial_time_limit, initial_time_limit / 2, 600]; // Original, half, 10min
-            let mut success = false;
-            
-            for (attempt, &time_limit) in time_limits.iter().enumerate() {
-                let request = IsochroneRequest {
-                    point: location.clone(),
-                    time_limit: Some(time_limit),
-                    distance_limit: None,
-                    profile: profile.clone(),
-                    buckets: Some(1),
-                    reverse_flow: Some(false),
+        // Compute missing isochrones in parallel
+        let timeout_duration = Duration::from_secs(90);
+        let isochrone_futures: Vec<_> = locations.iter().enumerate()
+            .zip(cached_results.iter())
+            .filter_map(|((i, (id, location)), cached)| {
+                if cached.is_some() {
+                    None
+                } else {
+                    let request = IsochroneRequest {
+                        point: location.clone(),
+                        time_limit: Some(capped_time_limit),
+                        distance_limit: None,
+                        profile: Some(profile.as_deref().unwrap_or("pt").to_string()),
+                        buckets: Some(1),
+                        reverse_flow: Some(false),
+                    };
+                    let id = id.clone();
+                    let service = self.clone();
                     
-                };
-                
-                let timeout_duration = Duration::from_secs(60); // 60 second timeout
-                let result = tokio::time::timeout(timeout_duration, self.get_isochrone(&request)).await;
-                
-                match result {
-                    Ok(Ok(iso)) => {
-                        let area_km2 = iso.polygon.signed_area().abs() * 111.0 * 111.0;
-                        info!("✅ Isochrone {} SUCCESS (attempt {}, {}min): {:.2} km²", 
-                              i + 1, attempt + 1, time_limit / 60, area_km2);
-                        isochrones.push(iso);
-                        success = true;
-                        break;
-                    }
-                    Ok(Err(e)) => {
-                        warn!("⚠️  Isochrone {} attempt {} failed: {}", i + 1, attempt + 1, e);
-                    }
-                    Err(_) => {
-                        warn!("⏰ Isochrone {} attempt {} timeout ({}min)", i + 1, attempt + 1, time_limit / 60);
-                    }
+                    Some(async move {
+                        info!("🚀 Computing isochrone {} for '{}'", i + 1, id);
+                        let result = tokio::time::timeout(timeout_duration, service.get_isochrone(&request)).await;
+                        
+                        match result {
+                            Ok(Ok(iso)) => {
+                                let area_km2 = iso.polygon.signed_area().abs() * 111.0 * 111.0;
+                                info!("✅ Isochrone {} SUCCESS: {:.2} km²", i + 1, area_km2);
+                                (i, Some(iso))
+                            }
+                            Ok(Err(e)) => {
+                                error!("❌ Isochrone {} FAILED: {}", i + 1, e);
+                                (i, None)
+                            }
+                            Err(_) => {
+                                error!("⏰ Isochrone {} TIMEOUT after 90s", i + 1);
+                                (i, None)
+                            }
+                        }
+                    })
                 }
-            }
-            
-            if !success {
-                error!("❌ Isochrone {} FAILED after all retries", i + 1);
+            }).collect();
+
+
+        let computation_results = join_all(isochrone_futures).await;
+
+        let mut final_results = cached_results;
+        for (index, computed_result) in computation_results {
+            if let Some(iso) = computed_result {
+                final_results[index] = Some(iso);
             }
         }
-        
-        info!("🏁 Sequential processing result: {} succeeded out of {}", isochrones.len(), locations.len());
-        
+
+        let isochrones: Vec<IsochroneResult> = final_results.into_iter()
+            .filter_map(|r| r)
+            .collect();
+
+        let success_count = isochrones.len();
+        info!("🏁 Final result: {} out of {} isochrones succeeded", success_count, locations.len());
+
         if isochrones.is_empty() {
             return Err(anyhow!("All {} isochrone computations failed", locations.len()));
         }
-        
-        if isochrones.len() < locations.len() {
-            warn!("⚠️  Only {} out of {} isochrones succeeded - algorithm will continue", 
-                  isochrones.len(), locations.len());
+
+        if success_count < locations.len() {
+            warn!("⚠️  Only {} out of {} isochrones succeeded - algorithm will continue", success_count, locations.len());
         }
 
         Ok(isochrones)
     }
 
-    /// Compute isochrone by calling GraphHopper API
     async fn compute_isochrone(&self, request: &IsochroneRequest) -> Result<IsochroneResult> {
         let profile = request.profile.as_deref().unwrap_or("pt");
         
-        // Use the unified isochrone endpoint with profile parameter
-        let url = format!("{}/isochrone", self.graphhopper_url);
         info!("🌐 Using unified isochrone endpoint with profile '{}'", profile);
         
         let params = self.build_query_params(request);
-        let full_url = format!("{}?{}", url, params.iter()
+        let url = format!("{}/isochrone?{}", self.graphhopper_url, params.iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect::<Vec<_>>()
             .join("&"));
-        info!("📋 Full isochrone request URL: {}", full_url);
 
         let response = match self.client
             .get(&url)
@@ -318,7 +237,6 @@ impl IsochroneService {
         };
 
         let status = response.status();
-        info!("📡 GraphHopper response status: {}", status);
         
         if !status.is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -326,16 +244,7 @@ impl IsochroneService {
             return Err(anyhow!("GraphHopper API error: {} - {}", status, error_text));
         }
 
-        let response_text = match response.text().await {
-            Ok(text) => {
-                debug!("Isochrone response length: {} bytes", text.len());
-                text
-            }
-            Err(e) => {
-                error!("Failed to read isochrone response body: {}", e);
-                return Err(anyhow!("Failed to read response: {}", e));
-            }
-        };
+        let response_text = response.text().await.unwrap_or_default();
         
         let polygon = match self.parse_isochrone_response(&response_text) {
             Ok(poly) => poly,
@@ -349,13 +258,10 @@ impl IsochroneService {
         let profile = request.profile.as_deref().unwrap_or("pt");
         
         let result = IsochroneResult {
-            id: Uuid::new_v4().to_string(),
             location: request.point.clone(),
             time_limit_minutes: request.time_limit.unwrap_or(600),
             profile: profile.to_string(),
             polygon,
-            created_at: chrono::Utc::now(),
-            bucket: 0,
         };
 
         debug!("Successfully computed isochrone with {} exterior points", 
@@ -366,7 +272,6 @@ impl IsochroneService {
 
     fn build_query_params(&self, request: &IsochroneRequest) -> Vec<(&str, String)> {
 
-        // Round to 4 decimal places (~10m precision) for isochrone computation
         let rounded_lat = (request.point.latitude * 10000.0).round() / 10000.0;
         let rounded_lon = (request.point.longitude * 10000.0).round() / 10000.0;
 
@@ -377,7 +282,6 @@ impl IsochroneService {
             ("reverse_flow", request.reverse_flow.unwrap_or(false).to_string()),
         ];
 
-        // Add time or distance limit
         if let Some(time_limit) = request.time_limit {
             params.push(("time_limit", (time_limit*60).to_string()));
         } else if let Some(distance_limit) = request.distance_limit {
@@ -386,10 +290,8 @@ impl IsochroneService {
             params.push(("time_limit", "600".to_string()));
         }
 
-        // Always add the profile parameter for the unified endpoint
         params.push(("profile", profile.to_string()));
 
-        // Add departure time for public transport profiles
         if profile == "pt" || profile == "public_transport" {
             let today = chrono::Utc::now().date_naive();
             let departure_time = today
@@ -404,14 +306,8 @@ impl IsochroneService {
         params
     }
 
-    /// Parse GraphHopper isochrone response into a polygon
     fn parse_isochrone_response(&self, response_text: &str) -> Result<Polygon<f64>> {
-        debug!("Parsing isochrone response of {} bytes", response_text.len());
-        
-        if response_text.len() < 500 {
-            warn!("Short/suspicious isochrone response ({}bytes): '{}'", response_text.len(), response_text);
-        }
-        
+
         let response: GraphHopperIsochroneResponse = serde_json::from_str(response_text)
             .map_err(|e| anyhow!("Failed to parse isochrone response: {}", e))?;
         
@@ -421,7 +317,6 @@ impl IsochroneService {
             return Err(anyhow!("No isochrone polygons returned"));
         }
         
-        // Take the first polygon (or the one with lowest bucket for multiple buckets)
         let target_polygon = response.polygons
             .iter()
             .min_by_key(|p| p.properties.bucket)
@@ -429,7 +324,6 @@ impl IsochroneService {
         
         debug!("Using polygon with bucket: {}", target_polygon.properties.bucket);
         
-        // Convert coordinates to geo::Polygon
         if !target_polygon.geometry.coordinates.is_empty() {
             let polygon_rings = &target_polygon.geometry.coordinates;
             debug!("Polygon has {} rings", polygon_rings.len());
@@ -444,7 +338,6 @@ impl IsochroneService {
                         return Err(anyhow!("Exterior ring has only {} coordinates (need at least 3)", exterior_coords.len()));
                     }
                     
-                    // Convert coordinates - handle Vec<f64> format
                     let exterior: Vec<Coord<f64>> = exterior_coords
                         .iter()
                         .filter_map(|coord| {
@@ -457,11 +350,10 @@ impl IsochroneService {
                         })
                         .collect();
                     
-                    // Handle interior rings (holes) if any
                     let interiors: Vec<geo::LineString<f64>> = rings
                         .iter()
-                        .skip(1) // Skip the exterior ring
-                        .take(5) // Limit interior rings for simplicity
+                        .skip(1)
+                        .take(5)
                         .map(|interior_coords| {
                             let interior: Vec<Coord<f64>> = interior_coords
                                 .iter()
@@ -507,18 +399,15 @@ impl IsochroneService {
         Err(anyhow!("No valid coordinates found in polygon"))
     }
 
-    /// Compute intersections of multiple isochrones
     pub fn get_isochrone_intersections(&self, isochrones: &[IsochroneResult]) -> Vec<Polygon<f64>> {
         if isochrones.is_empty() {
             return Vec::new();
         }
         
         if isochrones.len() == 1 {
-            // With only one isochrone, return it as-is
             return vec![isochrones[0].polygon.clone()];
         }
         
-        // Start with the first isochrone and intersect with all others
         let mut current_intersection = isochrones[0].polygon.clone();
         info!("🔍 Starting intersection with first isochrone area: {:.4} km²", 
               current_intersection.unsigned_area() * 111.0 * 111.0);
@@ -533,8 +422,6 @@ impl IsochroneService {
                 return Vec::new();
             }
             
-            // For the next iteration, we need to work with individual polygons
-            // Take the largest polygon from the intersection result
             if let Some(largest_polygon) = intersection_result.into_iter()
                 .max_by(|a, b| a.unsigned_area().partial_cmp(&b.unsigned_area()).unwrap()) {
                 current_intersection = largest_polygon;
@@ -546,7 +433,7 @@ impl IsochroneService {
         
         let intersection_area_deg2 = current_intersection.unsigned_area();
         
-        let min_area = 0.000005; // ~0.5m² in degrees, very permissive 
+        let min_area = 0.00005; // ~0.5m² in degrees, very permissive 
         if intersection_area_deg2 < min_area {
             return Vec::new();
         }
@@ -555,10 +442,4 @@ impl IsochroneService {
     }
 
     
-}
-
-impl Default for IsochroneService {
-    fn default() -> Self {
-        Self::new()
-    }
 }
