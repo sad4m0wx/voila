@@ -97,7 +97,8 @@ impl RouteService {
             .and_hms_opt(12, 0, 0)
             .unwrap()
             .and_utc()
-            .to_rfc3339();
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
             
         let params = [
             ("point", format!("{},{}", from.latitude, from.longitude)),

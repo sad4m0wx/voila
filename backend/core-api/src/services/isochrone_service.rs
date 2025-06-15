@@ -298,7 +298,8 @@ impl IsochroneService {
                 .and_hms_opt(12, 0, 0)
                 .unwrap()
                 .and_utc()
-                .to_rfc3339();
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string();
         
             params.push(("pt.earliest_departure_time", departure_time));
         }
