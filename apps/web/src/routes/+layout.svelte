@@ -4,7 +4,6 @@
   import AuthProvider from "$components/auth/AuthProvider.svelte";
   import MobileNavbar from "$components/core/MobileNavbar.svelte";
   import PullToRefresh from "$components/core/PullToRefresh.svelte";
-  import AuthDebug from "$components/debug/AuthDebug.svelte";
   import MobileHeader from "$components/core/MobileHeader.svelte";
   import { onMount, setContext } from "svelte";
   import { page } from "$app/stores";
@@ -119,7 +118,4 @@
       </footer>
     {/if}
   </div>
-  
-  <!-- Debug component (only shows in development) -->
-  <AuthDebug />
 </AuthProvider>
