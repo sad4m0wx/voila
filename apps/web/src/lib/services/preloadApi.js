@@ -9,8 +9,7 @@ const CORE_API_URL = import.meta.env.VITE_CORE_API_URL || '';
  * @returns {Promise<Object>} Response object
  */
 export async function preloadIsochrone(location, timeLimit = 30, profile = "pt") {
-  console.log(`🎯 Preloading isochrone for (${location.lat}, ${location.lng}) - ${timeLimit}min ${profile}`);
-  
+ 
   try {
     const response = await fetch(`${CORE_API_URL}/api/preload/isochrone`, {
       method: 'POST',
