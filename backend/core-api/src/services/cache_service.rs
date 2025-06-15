@@ -364,14 +364,10 @@ impl CacheService {
                         match serde_json::from_slice(&cached.polygon_data) {
                             Ok(polygon) => {
                                 let result = IsochroneResult {
-                                    id: isochrone_cache_key.clone(),
                                     location: cached.origin,
                                     time_limit_minutes: cached.time_limit_minutes,
                                     profile: cached.profile,
                                     polygon,
-                                    created_at: chrono::DateTime::from_timestamp(cached.created_at, 0)
-                                        .unwrap_or_else(chrono::Utc::now),
-                                    bucket: 0,
                                 };
                                 info!("🌐 Isochrone cache hit for key: {}", isochrone_cache_key);
                                 Some(result)

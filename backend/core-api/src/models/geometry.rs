@@ -3,7 +3,6 @@ use crate::models::transit::TransitStep;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Route {
-    pub id: String,
     pub geometry: LineString,
     pub steps: Vec<TransitStep>
 }
