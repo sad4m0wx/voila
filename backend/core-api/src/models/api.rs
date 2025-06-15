@@ -27,8 +27,8 @@ pub struct TravelTime {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeetingPointResponse {
-    pub meeting_point: MeetingPoint,
-    pub routes: Vec<Route>,
+    pub meeting_points: Vec<MeetingPoint>,
+    pub routes: Vec<Vec<Route>>,
     pub venues: Option<Vec<Venue>>, // Optional list of nearby venues
     pub debug_data: Option<DebugData>, // Optional debugging information
 }

@@ -1,4 +1,4 @@
-use geo::{Point, MultiPoint, Polygon, Centroid, Area};
+use geo::{Point, MultiPoint, Polygon, Centroid, Area, BoundingRect, Contains};
 use anyhow::Result;
 
 use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, TravelTime};
@@ -8,7 +8,7 @@ use crate::models::debug::DebugIsochroneData;
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::route_service::RouteService;
-use log::{info, error};
+use log::info;
 
 #[derive(Debug, PartialEq)]
 enum AreaFitness {
@@ -34,7 +34,7 @@ impl MeetingPointAlgorithm {
     pub async fn find_meeting_point(
         &self,
         locations: &[(String, Location)],
-    ) -> Result<(MeetingPoint, Vec<Route>, Option<DebugData>)> {
+    ) -> Result<(Vec<MeetingPoint>, Vec<Vec<Route>>, Option<DebugData>)> {
 
         let start_time = std::time::Instant::now();
 
@@ -57,24 +57,36 @@ impl MeetingPointAlgorithm {
         info!("🎯 Generated {} candidate points", candidates.len());
         
         // Step 5: Evaluate candidates and find optimal meeting point
-        let (optimal_point, routes, durations) = self.evaluate_candidates(&candidates, locations).await?;
+        let (optimal_points, all_routes, all_durations) = self.evaluate_candidates(&candidates, locations).await?;
         
-        let meeting_point = MeetingPoint {
-            name: "Optimal Meeting Point".to_string(),
-            coordinates: (optimal_point.longitude, optimal_point.latitude),
-            travel_times: routes.iter().zip(locations.iter()).zip(durations.iter()).map(|((route, (id, location)), &duration)| {
-                TravelTime {
-                    id: id.clone(),
-                    address: location.address.clone().unwrap_or_else(|| 
-                        format!("{:.4}, {:.4}", location.latitude, location.longitude)
-                    ),
-                    duration: duration / 60, // Convert seconds to minutes
-                    distance: route.steps.iter().map(|step| step.distance).sum(),
-                    estimated: false,
-                    transit_summary: None,
-                }
-            }).collect(),
-        };
+        let mut meeting_points = Vec::new();
+        let mut routes_per_point = Vec::new();
+        
+        for (i, ((optimal_point, routes), durations)) in optimal_points.iter().zip(all_routes.iter()).zip(all_durations.iter()).enumerate() {
+            let meeting_point = MeetingPoint {
+                name: if i == 0 { 
+                    "Optimal Meeting Point".to_string() 
+                } else { 
+                    format!("Alternative Meeting Point {}", i + 1) 
+                },
+                coordinates: (optimal_point.longitude, optimal_point.latitude),
+                travel_times: routes.iter().zip(locations.iter()).zip(durations.iter()).map(|((route, (id, location)), &duration)| {
+                    TravelTime {
+                        id: id.clone(),
+                        address: location.address.clone().unwrap_or_else(|| 
+                            format!("{:.4}, {:.4}", location.latitude, location.longitude)
+                        ),
+                        duration: duration / 60, // Convert seconds to minutes
+                        distance: route.steps.iter().map(|step| step.distance).sum(),
+                        estimated: false,
+                        transit_summary: None,
+                    }
+                }).collect(),
+            };
+            
+            meeting_points.push(meeting_point);
+            routes_per_point.push(routes.clone());
+        }
         
         // Step 6: Prepare debug data with full isochrones for frontend visualization
         let debug_data = Some(DebugData {
@@ -82,12 +94,12 @@ impl MeetingPointAlgorithm {
             isochrones: Self::convert_isochrone_results_debug(&final_isochrones, locations),
             intersection_polygons: Self::convert_intersections_debug(&intersections),
             candidate_points: Self::convert_candidates_debug(&candidates),
-            final_candidates: vec![DebugCandidate {
-                id: "optimal".to_string(),
-                coordinates: (optimal_point.longitude, optimal_point.latitude),
-                source: "optimal".to_string(),
+            final_candidates: optimal_points.iter().enumerate().map(|(i, point)| DebugCandidate {
+                id: if i == 0 { "optimal".to_string() } else { format!("alternative_{}", i) },
+                coordinates: (point.longitude, point.latitude),
+                source: if i == 0 { "optimal".to_string() } else { "alternative".to_string() },
                 score: None,
-            }],
+            }).collect(),
             isochrone_data: Some(Self::convert_isochrone_data_debug(&final_isochrones)),
         });
         
@@ -95,7 +107,7 @@ impl MeetingPointAlgorithm {
         let duration = end_time.duration_since(start_time);
         info!("🕒 Total execution time: {:?}", duration);
 
-        Ok((meeting_point, routes, debug_data))
+        Ok((meeting_points, routes_per_point, debug_data))
     }
 
 
@@ -351,16 +363,12 @@ impl MeetingPointAlgorithm {
     }
 
     //For now, we only consider the minimal average travel time to the candidate
-    async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Location, Vec<Route>, Vec<u32>)> {
+    async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Vec<Location>, Vec<Vec<Route>>, Vec<Vec<u32>>)> {
         if candidates.is_empty() {
             return Err(anyhow::anyhow!("No candidates to evaluate"));
         }
 
-        let mut best_candidate = None;
-        let mut best_avg_time = f64::INFINITY;
-        let mut best_routes = Vec::new();
-        let mut best_durations = Vec::new();
-
+        let mut candidate_results: Vec<(Location, Vec<Route>, Vec<u32>, f64)> = Vec::new();
 
         for (candidate_idx, candidate) in candidates.iter().enumerate() {
             let route_results = self.route_service.get_transit_routes(locations, candidate).await;
@@ -381,34 +389,41 @@ impl MeetingPointAlgorithm {
             info!("📊 Candidate {}: avg={:.1}min", 
                 candidate_idx, avg_time_minutes);
 
-            if avg_time_seconds < best_avg_time {
-                best_avg_time = avg_time_seconds;
-                best_candidate = Some(candidate.clone());
-                let mut routes = Vec::new();
-                let mut durations = Vec::new();
-                
-                for (route_result, (id, _)) in route_results.iter().zip(locations.iter()) {
-                    if let Ok((duration, _distance, steps)) = route_result {
-                        routes.push(Route {
-                            geometry: LineString::new(vec![]), // TODO: Add actual geometry
-                            steps: steps.clone(),
-                        });
-                        durations.push(duration.as_secs() as u32);
-                    }
+            let mut routes = Vec::new();
+            let mut durations = Vec::new();
+            
+            for (route_result, (_id, _)) in route_results.iter().zip(locations.iter()) {
+                if let Ok((duration, _distance, steps)) = route_result {
+                    routes.push(Route {
+                        geometry: LineString::new(vec![]), // TODO: Add actual geometry
+                        steps: steps.clone(),
+                    });
+                    durations.push(duration.as_secs() as u32);
                 }
-                
-                best_routes = routes;
-                best_durations = durations;
             }
+            
+            candidate_results.push((candidate.clone(), routes, durations, avg_time_seconds));
         }
 
-        match best_candidate {
-            Some(candidate) => {
-                info!("🏆 Selected candidate with average travel time: {:.1}min", best_avg_time / 60.0);
-                Ok((candidate, best_routes, best_durations))
-            },
-            None => Err(anyhow::anyhow!("No valid candidates found after evaluation"))
+        if candidate_results.is_empty() {
+            return Err(anyhow::anyhow!("No valid candidates found after evaluation"));
         }
+
+        // Sort by average travel time (best first)
+        candidate_results.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Take up to 3 best candidates
+        let top_candidates: Vec<_> = candidate_results.into_iter().take(3).collect();
+        
+        let locations: Vec<Location> = top_candidates.iter().map(|(loc, _, _, _)| loc.clone()).collect();
+        let routes: Vec<Vec<Route>> = top_candidates.iter().map(|(_, routes, _, _)| routes.clone()).collect();
+        let durations: Vec<Vec<u32>> = top_candidates.iter().map(|(_, _, durations, _)| durations.clone()).collect();
+
+        info!("🏆 Selected {} candidates with average travel times: {}", 
+              locations.len(),
+              top_candidates.iter().map(|(_, _, _, avg)| format!("{:.1}min", avg / 60.0)).collect::<Vec<_>>().join(", "));
+
+        Ok((locations, routes, durations))
     }
 
     fn convert_isochrone_results_debug(isochrone_results: &[IsochroneResult], _locations: &[(String, Location)]) -> Vec<DebugIsochrone> {

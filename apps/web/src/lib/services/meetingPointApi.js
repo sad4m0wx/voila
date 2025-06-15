@@ -77,11 +77,19 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 
       const rustResponse = await response.json();
 
+      // Handle the new multiple meeting points structure - use the first one for now
+      const primaryMeetingPoint = rustResponse.meeting_points?.[0];
+      const primaryRoutes = rustResponse.routes?.[0] || [];
+
+      if (!primaryMeetingPoint) {
+        throw new Error('No meeting points returned from API');
+      }
+
       // Transform the Rust API response to match what our frontend expects
       return {
-        name: rustResponse.meeting_point.name,
-        coordinates: rustResponse.meeting_point.coordinates,
-        travelTimes: rustResponse.meeting_point.travel_times.map(tt => ({
+        name: primaryMeetingPoint.name,
+        coordinates: primaryMeetingPoint.coordinates,
+        travelTimes: primaryMeetingPoint.travel_times.map(tt => ({
           id: tt.id,
           address: tt.address,
           duration: tt.duration,
@@ -89,7 +97,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
           estimated: tt.estimated,
           transitSummary: tt.transit_summary
         })),
-        routes: rustResponse.routes.map(route => ({
+        routes: primaryRoutes.map(route => ({
           id: route.id,
           geometry: {
             type: "LineString",
@@ -97,12 +105,15 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
           },
           steps: route.steps,
           // Map to format expected by Google Maps
-          color: getRouteColor(rustResponse.routes.indexOf(route)),
+          color: getRouteColor(primaryRoutes.indexOf(route)),
           weight: 5
         })),
         venues: rustResponse.venues || [],
         // Include debug data for visualization
-        debug: rustResponse.debug_data || null
+        debug: rustResponse.debug_data || null,
+        // Include all meeting points for future use
+        allMeetingPoints: rustResponse.meeting_points || [],
+        allRoutes: rustResponse.routes || []
       };
     } catch (apiError) {
       console.error('Error from Rust API, falling back to SvelteKit endpoint:', apiError);
