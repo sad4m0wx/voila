@@ -253,7 +253,7 @@ impl MeetingPointAlgorithm {
         let mut candidates: Vec<Location> = Vec::new();
         
         // Configuration
-        let grid_spacing_degrees = 0.001; // ~100m at equator
+        let grid_spacing_degrees = 0.002; // ~200m at equator
         let area_threshold_km2 = 0.5; // 1 km²
         let area_threshold_degrees2 = area_threshold_km2 / (111.0 * 111.0); // Convert to degrees²
         
