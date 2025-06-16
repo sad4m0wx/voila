@@ -362,13 +362,13 @@ impl MeetingPointAlgorithm {
         candidates
     }
 
-    //For now, we only consider the minimal average travel time to the candidate
+    // Evaluate candidates considering both average travel time and standard deviation for fairness
     async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Vec<Location>, Vec<Vec<Route>>, Vec<Vec<u32>>)> {
         if candidates.is_empty() {
             return Err(anyhow::anyhow!("No candidates to evaluate"));
         }
 
-        let mut candidate_results: Vec<(Location, Vec<Route>, Vec<u32>, f64)> = Vec::new();
+        let mut candidate_results: Vec<(Location, Vec<Route>, Vec<u32>, f64, f64, f64)> = Vec::new();
 
         for (candidate_idx, candidate) in candidates.iter().enumerate() {
             let route_results = self.route_service.get_transit_routes(locations, candidate).await;
@@ -384,10 +384,14 @@ impl MeetingPointAlgorithm {
             }
             
             let avg_time_seconds = travel_times.iter().sum::<u32>() as f64 / travel_times.len() as f64;
+            let std_dev_seconds = self.calculate_standard_deviation(&travel_times, avg_time_seconds);
+            let composite_score = self.calculate_composite_score(avg_time_seconds, std_dev_seconds);
+            
             let avg_time_minutes = avg_time_seconds / 60.0;
+            let std_dev_minutes = std_dev_seconds / 60.0;
 
-            info!("📊 Candidate {}: avg={:.1}min", 
-                candidate_idx, avg_time_minutes);
+            info!("📊 Candidate {}: avg={:.1}min, std_dev={:.1}min, score={:.2}", 
+                candidate_idx, avg_time_minutes, std_dev_minutes, composite_score);
 
             let mut routes = Vec::new();
             let mut durations = Vec::new();
@@ -402,28 +406,59 @@ impl MeetingPointAlgorithm {
                 }
             }
             
-            candidate_results.push((candidate.clone(), routes, durations, avg_time_seconds));
+            candidate_results.push((candidate.clone(), routes, durations, avg_time_seconds, std_dev_seconds, composite_score));
         }
 
         if candidate_results.is_empty() {
             return Err(anyhow::anyhow!("No valid candidates found after evaluation"));
         }
 
-        // Sort by average travel time (best first)
-        candidate_results.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by composite score (lower is better - combines avg time and fairness)
+        candidate_results.sort_by(|a, b| a.5.partial_cmp(&b.5).unwrap_or(std::cmp::Ordering::Equal));
 
         // Take up to 3 best candidates
         let top_candidates: Vec<_> = candidate_results.into_iter().take(3).collect();
         
-        let locations: Vec<Location> = top_candidates.iter().map(|(loc, _, _, _)| loc.clone()).collect();
-        let routes: Vec<Vec<Route>> = top_candidates.iter().map(|(_, routes, _, _)| routes.clone()).collect();
-        let durations: Vec<Vec<u32>> = top_candidates.iter().map(|(_, _, durations, _)| durations.clone()).collect();
+        let locations: Vec<Location> = top_candidates.iter().map(|(loc, _, _, _, _, _)| loc.clone()).collect();
+        let routes: Vec<Vec<Route>> = top_candidates.iter().map(|(_, routes, _, _, _, _)| routes.clone()).collect();
+        let durations: Vec<Vec<u32>> = top_candidates.iter().map(|(_, _, durations, _, _, _)| durations.clone()).collect();
 
-        info!("🏆 Selected {} candidates with average travel times: {}", 
+        info!("🏆 Selected {} candidates with scores: {}", 
               locations.len(),
-              top_candidates.iter().map(|(_, _, _, avg)| format!("{:.1}min", avg / 60.0)).collect::<Vec<_>>().join(", "));
+              top_candidates.iter().map(|(_, _, _, avg, std_dev, score)| 
+                  format!("avg={:.1}min, std={:.1}min, score={:.2}", avg / 60.0, std_dev / 60.0, score)
+              ).collect::<Vec<_>>().join(" | "));
 
         Ok((locations, routes, durations))
+    }
+
+    fn calculate_standard_deviation(&self, travel_times: &[u32], mean: f64) -> f64 {
+        if travel_times.len() <= 1 {
+            return 0.0;
+        }
+        
+        let variance = travel_times.iter()
+            .map(|&time| {
+                let diff = time as f64 - mean;
+                diff * diff
+            })
+            .sum::<f64>() / travel_times.len() as f64;
+        
+        variance.sqrt()
+    }
+
+    fn calculate_composite_score(&self, avg_time_seconds: f64, std_dev_seconds: f64) -> f64 {
+        // Weights for the composite score
+        const AVG_TIME_WEIGHT: f64 = 0.7;  // 70% weight on average time
+        const STD_DEV_WEIGHT: f64 = 0.3;   // 30% weight on standard deviation (fairness)
+        
+        // Normalize both metrics to minutes for better interpretability
+        let avg_time_minutes = avg_time_seconds / 60.0;
+        let std_dev_minutes = std_dev_seconds / 60.0;
+        
+        // Composite score: lower is better
+        // We want to minimize both average time and standard deviation
+        AVG_TIME_WEIGHT * avg_time_minutes + STD_DEV_WEIGHT * std_dev_minutes
     }
 
     fn convert_isochrone_results_debug(isochrone_results: &[IsochroneResult], _locations: &[(String, Location)]) -> Vec<DebugIsochrone> {
