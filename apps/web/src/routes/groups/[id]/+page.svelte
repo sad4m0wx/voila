@@ -583,6 +583,8 @@
         <div class="space-y-4">
           <MeetingPointResults 
             meetingPoint={optimalPoint}
+            meetingPoints={[optimalPoint].filter(Boolean)}
+            currentMeetingPointIndex={0}
             venues={[]}
             routes={routes}
             showVenues={false}

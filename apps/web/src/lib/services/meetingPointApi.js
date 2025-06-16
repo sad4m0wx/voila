@@ -77,13 +77,17 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 
       const rustResponse = await response.json();
 
-      // Handle the new multiple meeting points structure - use the first one for now
-      const primaryMeetingPoint = rustResponse.meeting_points?.[0];
-      const primaryRoutes = rustResponse.routes?.[0] || [];
+      // Handle the new multiple meeting points structure
+      const meetingPoints = rustResponse.meeting_points || [];
+      const allRoutes = rustResponse.routes || [];
 
-      if (!primaryMeetingPoint) {
+      if (!meetingPoints.length) {
         throw new Error('No meeting points returned from API');
       }
+
+      // Use the first meeting point as the primary one for backward compatibility
+      const primaryMeetingPoint = meetingPoints[0];
+      const primaryRoutes = allRoutes[0] || [];
 
       // Transform the Rust API response to match what our frontend expects
       return {
@@ -111,9 +115,20 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
         venues: rustResponse.venues || [],
         // Include debug data for visualization
         debug: rustResponse.debug_data || null,
-        // Include all meeting points for future use
-        allMeetingPoints: rustResponse.meeting_points || [],
-        allRoutes: rustResponse.routes || []
+        // Include all meeting points and routes
+        allMeetingPoints: meetingPoints,
+        allRoutes: allRoutes.map(routeSet => 
+          routeSet.map(route => ({
+            id: route.id,
+            geometry: {
+              type: "LineString",
+              coordinates: route.geometry.coordinates
+            },
+            steps: route.steps,
+            color: getRouteColor(routeSet.indexOf(route)),
+            weight: 5
+          }))
+        )
       };
     } catch (apiError) {
       console.error('Error from Rust API, falling back to SvelteKit endpoint:', apiError);

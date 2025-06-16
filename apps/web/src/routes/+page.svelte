@@ -12,7 +12,10 @@
   // State
   let addresses = [{ id: 1, value: '', coordinates: null }, { id: 2, value: '', coordinates: null }];
   let meetingPoint = null;
+  let meetingPoints = []; // Array of all meeting points
+  let currentMeetingPointIndex = 0; // Index of currently selected meeting point
   let routes = [];
+  let allRoutes = []; // Array of all route sets
   let venues = [];
   let debugData = null;
   let debugPolygons = [];
@@ -32,6 +35,10 @@
   // Add a state variable to track when to animate to results
   let animateToResults = false;
   
+  // Mobile-specific state
+  let mobileViewHeight = 0;
+  let addressFormHeight = 0;
+  
 
   // Parallax effect for metro animation
   let scrollY = 0;
@@ -45,8 +52,20 @@
       }
     };
 
+    const handleResize = () => {
+      if (typeof window !== 'undefined') {
+        mobileViewHeight = window.innerHeight;
+      }
+    };
+
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial call
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
   });
 
   async function findMeetingPoint() {
@@ -58,6 +77,9 @@
     debugData = null;
     debugPolygons = [];
     animateToResults = false;
+    meetingPoints = [];
+    allRoutes = [];
+    currentMeetingPointIndex = 0;
 
     try {
       // Validate inputs
