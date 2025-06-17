@@ -46,8 +46,9 @@
   }
   
   // Combine routes with travel time info
-  $: routesWithTravelTime = routes.map(route => {
-    const travelTime = travelTimes.find(tt => tt.id === route.id);
+  $: routesWithTravelTime = routes.map((route, index) => {
+    const travelTime = travelTimes[index];
+    console.log(`Route ${index}:`, { route, travelTime });
     return {
       ...route,
       travelTime
