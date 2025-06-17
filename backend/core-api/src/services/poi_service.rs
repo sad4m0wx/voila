@@ -225,22 +225,21 @@ impl PoiService {
         
         // Factor 1: Proximity to transit hubs (40% weight)
         let transit_heat = self.calculate_transit_proximity_heat(location, all_pois);
-        heat += transit_heat * 0.40;
+        heat += transit_heat * 0.45;
         
         // Factor 2: Density of venues nearby (45% weight)
-        let dining_heat = self.calculate_dining_density_heat(location, all_pois);
+        let dining_heat = self.calculate_venue_density_heat(location, all_pois);
         heat += dining_heat * 0.45;
         
         // Factor 3: Overall POI density (15% weight)
         let poi_density_heat = self.calculate_poi_density_heat(location, all_pois);
-        heat += poi_density_heat * 0.15;
+        heat += poi_density_heat * 0.10;
         
         debug!("Transit heat: {}, Dining heat: {}, POI density heat: {}", transit_heat, dining_heat, poi_density_heat);
         heat
     }
 
     fn calculate_transit_proximity_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
-
         let transit_hubs: Vec<&PointOfInterest> = all_pois.iter()
             .filter(|poi| matches!(poi.poi_type, PoiType::TransitHub))
             .collect();
@@ -253,7 +252,7 @@ impl PoiService {
         const MAX_TRANSIT_DISTANCE: f64 = 1000.0; // 1km max useful distance
         
         // Calculate distance-based heat for all transit hubs within range
-        for hub in transit_hubs {
+        for hub in &transit_hubs {
             let distance = location.distance_to(&hub.location);
             
             if distance <= MAX_TRANSIT_DISTANCE {
@@ -265,12 +264,14 @@ impl PoiService {
             }
         }
         
-        // Normalize by dividing by expected maximum (assume 3 high-importance hubs very close)
-        let normalized_heat = total_heat / 3.0;
+        // Dynamic normalization based on actual transit hub count
+        // Assume that having access to 10% of available hubs with high proximity is "perfect"
+        let normalization_factor = (transit_hubs.len() as f64 * 0.1).max(1.0);
+        let normalized_heat = total_heat / normalization_factor;
         normalized_heat.min(1.0) // Cap at 1.0
     }
 
-    fn calculate_dining_density_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
+    fn calculate_venue_density_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
         let dining_pois: Vec<&PointOfInterest> = all_pois.iter()
             .filter(|poi| matches!(poi.poi_type, PoiType::Venue))
             .collect();
@@ -280,10 +281,10 @@ impl PoiService {
         }
         
         let mut total_heat = 0.0;
-        const MAX_VENUE_DISTANCE: f64 = 800.0; // 800m max useful distance for venues
+        const MAX_VENUE_DISTANCE: f64 = 1000.0; // 1km max useful distance for venues
         
         // Calculate distance-based heat for all venues within range
-        for venue in dining_pois {
+        for venue in &dining_pois {
             let distance = location.distance_to(&venue.location);
             
             if distance <= MAX_VENUE_DISTANCE {
@@ -294,8 +295,10 @@ impl PoiService {
             }
         }
         
-        // Normalize by expected maximum (assume 10 high-importance venues very close)
-        let normalized_heat = total_heat / 10.0;
+        // Dynamic normalization based on actual venue count
+        // Assume that having access to 5% of available venues with high proximity is "perfect"
+        let normalization_factor = (dining_pois.len() as f64 * 0.05).max(3.0);
+        let normalized_heat = total_heat / normalization_factor;
         normalized_heat.min(1.0) // Cap at 1.0
     }
 
@@ -320,8 +323,10 @@ impl PoiService {
             .map(|poi| poi.importance)
             .sum();
         
-        // Normalize (assume 5 high-importance POIs within 500m is "perfect")
-        let density_score = weighted_count / 5.0;
+        // Dynamic normalization based on total POI count
+        // Assume that having 2% of all POIs within 500m is "perfect" density
+        let normalization_factor = (all_pois.len() as f64 * 0.02).max(2.0);
+        let density_score = weighted_count / normalization_factor;
         density_score.min(1.0) // Cap at 1.0
     }
 

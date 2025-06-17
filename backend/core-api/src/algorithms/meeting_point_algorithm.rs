@@ -153,8 +153,7 @@ impl MeetingPointAlgorithm {
     ) -> Result<(Vec<IsochroneResult>, Vec<Polygon<f64>>, Vec<Location>)> {
 
         const MIN_INTERSECTION_AREA_KM2: f64 = 0.5;  
-        const MAX_INTERSECTION_AREA_KM2: f64 = 15.0; 
-        const MAX_GENERATED_CANDIDATES: usize = 30;
+        const MAX_INTERSECTION_AREA_KM2: f64 = 15.0;
 
         const MIN_TIME_LIMIT_MINUTES: u32 = 10;
         const MAX_TIME_LIMIT_MINUTES: u32 = 90;
@@ -169,10 +168,7 @@ impl MeetingPointAlgorithm {
                 info!("⚠️  Oscillation detected at {}min, using current result", current_time_limit);
                 
                 let current_result = &tried_results[&current_time_limit];
-                let candidates = self.generate_candidates(&current_result.1).await?
-                    .into_iter()
-                    .take(MAX_GENERATED_CANDIDATES)
-                    .collect::<Vec<_>>();
+                let candidates = self.generate_candidates(&current_result.1).await?;
                 
                 if !candidates.is_empty() {
                     info!("🎯 Using oscillation result with area {:.2} km² and {} candidates", 
@@ -207,10 +203,7 @@ impl MeetingPointAlgorithm {
             
             match self.evaluate_area_fitness(area_km2, MIN_INTERSECTION_AREA_KM2, MAX_INTERSECTION_AREA_KM2) {
                 AreaFitness::JustRight => {
-                    let candidates = self.generate_candidates(&intersections).await?
-                        .into_iter()
-                        .take(MAX_GENERATED_CANDIDATES)
-                        .collect::<Vec<_>>();
+                    let candidates = self.generate_candidates(&intersections).await?;
                     
                     if !candidates.is_empty() {
                         info!("🎯 Found optimal area ({:.2} km²) with {} candidates at {}min", 
@@ -282,8 +275,11 @@ impl MeetingPointAlgorithm {
         if let Some(data) = heatmap_data {
             *self.heatmap_data.lock().unwrap() = Some(data);
         }
+
+        const MAX_GENERATED_CANDIDATES: usize = 30;
+        let final_candidates = self.select_best_candidates(&optimized_candidates, intersections, MAX_GENERATED_CANDIDATES).await?;
         
-        Ok(optimized_candidates)
+        Ok(final_candidates)
     }
 
     fn generate_candidates_grid_for_polygon(&self, polygon: &Polygon<f64>, grid_spacing: f64) -> Vec<Location> {
@@ -317,6 +313,66 @@ impl MeetingPointAlgorithm {
         candidates
     }
 
+    async fn select_best_candidates(&self, candidates: &[Location], intersections: &[Polygon<f64>], max_candidates: usize) -> Result<Vec<Location>> {
+        if candidates.len() <= max_candidates {
+            return Ok(candidates.to_vec());
+        }
+
+        // Get POIs to calculate heat values for ranking
+        let all_pois = match self.poi_service.get_pois_in_polygons(intersections).await {
+            Ok(pois) => pois,
+            Err(_) => {
+                // If POI fetching fails, fall back to spatial distribution
+                return Ok(self.select_candidates_spatially_distributed(candidates, max_candidates));
+            }
+        };
+
+        if all_pois.is_empty() {
+            // No POIs available, use spatial distribution
+            return Ok(self.select_candidates_spatially_distributed(candidates, max_candidates));
+        }
+
+        // Calculate heat values for all candidates
+        let mut candidates_with_heat: Vec<(Location, f64)> = candidates.iter()
+            .map(|candidate| {
+                let heat = self.poi_service.calculate_location_heat(candidate, &all_pois);
+                (candidate.clone(), heat)
+            })
+            .collect();
+
+        // Sort by heat value (highest first)
+        candidates_with_heat.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Take top candidates by heat value
+        let selected_candidates: Vec<Location> = candidates_with_heat
+            .into_iter()
+            .take(max_candidates)
+            .map(|(location, _)| location)
+            .collect();
+
+        info!("🎯 Selected {} best candidates by heat value from {} total", selected_candidates.len(), candidates.len());
+        
+        Ok(selected_candidates)
+    }
+
+    fn select_candidates_spatially_distributed(&self, candidates: &[Location], max_candidates: usize) -> Vec<Location> {
+        if candidates.len() <= max_candidates {
+            return candidates.to_vec();
+        }
+
+        // Simple spatial distribution: take every nth candidate
+        let step = candidates.len() / max_candidates;
+        let selected: Vec<Location> = candidates.iter()
+            .step_by(step.max(1))
+            .take(max_candidates)
+            .cloned()
+            .collect();
+
+        info!("🎯 Selected {} spatially distributed candidates from {} total", selected.len(), candidates.len());
+        
+        selected
+    }
+
     async fn optimize_candidates_with_heatmap(
         &self, 
         grid_candidates: &[Location], 
@@ -342,8 +398,6 @@ impl MeetingPointAlgorithm {
 
         info!("🏢 Using {} POIs for heatmap optimization", all_pois.len());
 
-        let heatmap_data = self.generate_heatmap_debug(intersections, &all_pois).await?;
-
         let mut candidates_with_heat = Vec::new();
         let mut candidates_moved = 0;
         let mut total_movement_distance = 0.0;
@@ -351,10 +405,10 @@ impl MeetingPointAlgorithm {
         
         // Optimization parameters
         const MOVEMENT_INCREMENT: f64 = 0.001; // ~100m movement per iteration
-        const MAX_ITERATIONS: usize = 5;
+        const MAX_ITERATIONS: usize = 3;
         const MIN_HEAT_THRESHOLD: f64 = 0.15;
 
-        for original_candidate in grid_candidates {
+        for (candidate_idx, original_candidate) in grid_candidates.iter().enumerate() {
             let mut current_location = original_candidate.clone();
             let mut best_location = original_candidate.clone();
             let mut best_heat = self.poi_service.calculate_location_heat(&current_location, &all_pois);
@@ -411,7 +465,8 @@ impl MeetingPointAlgorithm {
                 was_kept,
             });
             
-            if movement_distance > 10.0 { // Moved more than 10m
+            // Count any movement > 1m as significant (lowered threshold)
+            if movement_distance > 1.0 { 
                 candidates_moved += 1;
                 total_movement_distance += movement_distance;
             }
@@ -423,13 +478,15 @@ impl MeetingPointAlgorithm {
         }
 
         // Deduplicate candidates within 50m, keeping the best heat value
-        const MIN_DISTANCE_METERS: f64 = 100.0;
+        const MIN_DISTANCE_METERS: f64 = 200.0;
         let deduplicated_candidates = self.poi_service.deduplicate_candidates_by_heat(&candidates_with_heat, MIN_DISTANCE_METERS);
         let optimized_candidates: Vec<Location> = deduplicated_candidates.into_iter().map(|(loc, _)| loc).collect();
 
+        // Generate heatmap data AFTER optimization with real stats
+        let mut heatmap_data = self.generate_heatmap_debug(intersections, &all_pois).await?;
+        
         // Update heatmap data with optimization stats and movements
-        let mut final_heatmap_data = heatmap_data;
-        final_heatmap_data.optimization_stats = DebugOptimizationStats {
+        heatmap_data.optimization_stats = DebugOptimizationStats {
             original_candidates: grid_candidates.len(),
             optimized_candidates: optimized_candidates.len(),
             candidates_moved,
@@ -440,16 +497,17 @@ impl MeetingPointAlgorithm {
             },
             min_heat_threshold: MIN_HEAT_THRESHOLD,
         };
-        final_heatmap_data.candidate_movements = candidate_movements;
+        heatmap_data.candidate_movements = candidate_movements;
 
         info!(
-            "🎯 Heatmap optimization: {} → {} candidates (min heat: {:.2})", 
+            "🎯 Heatmap optimization: {} → {} candidates (min heat: {:.2}), {} moved", 
             grid_candidates.len(), 
             optimized_candidates.len(), 
-            MIN_HEAT_THRESHOLD
+            MIN_HEAT_THRESHOLD,
+            candidates_moved
         );
 
-        Ok((optimized_candidates, Some(final_heatmap_data)))
+        Ok((optimized_candidates, Some(heatmap_data)))
     }
 
     async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Vec<Location>, Vec<Vec<Route>>, Vec<Vec<u32>>)> {
@@ -505,8 +563,36 @@ impl MeetingPointAlgorithm {
         // Sort by composite score (lower is better - combines avg time and fairness)
         candidate_results.sort_by(|a, b| a.5.partial_cmp(&b.5).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Take up to 3 best candidates
-        let top_candidates: Vec<_> = candidate_results.into_iter().take(3).collect();
+        const MAX_CANDIDATES: usize = 3;
+        const MIN_DISTANCE_KM: f64 = 0.8; // Minimum 1km between selected candidates
+        
+        // Select candidates with spatial diversity
+        let mut top_candidates = Vec::new();
+        let mut candidates_skipped = 0;
+        
+        for (candidate_idx, candidate) in candidate_results.into_iter().enumerate() {
+            let candidate_location = &candidate.0;
+            
+            // Check if this candidate is too close to any already selected candidate
+            let too_close = top_candidates.iter().any(|(selected_location, _, _, _, _, _)| {
+                let distance_km = candidate_location.distance_to(selected_location) / 1000.0;
+                distance_km < MIN_DISTANCE_KM
+            });
+            
+            if !too_close {
+                top_candidates.push(candidate);
+                if top_candidates.len() >= MAX_CANDIDATES {
+                    break;
+                }
+            } else {
+                candidates_skipped += 1;
+                info!("⚠️  Skipping candidate {} (too close to selected candidate)", candidate_idx);
+            }
+        }
+        
+        if candidates_skipped > 0 {
+            info!("📍 Spatial filtering: skipped {} candidates (min distance: {}km)", candidates_skipped, MIN_DISTANCE_KM);
+        }
         
         let locations: Vec<Location> = top_candidates.iter().map(|(loc, _, _, _, _, _)| loc.clone()).collect();
         let routes: Vec<Vec<Route>> = top_candidates.iter().map(|(_, routes, _, _, _, _)| routes.clone()).collect();
