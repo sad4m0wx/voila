@@ -3,11 +3,12 @@ use anyhow::Result;
 
 use crate::models::{Location, MeetingPoint, DebugData, DebugCandidate, DebugIsochrone, DebugPolygon, Route, TravelTime};
 use crate::models::geometry::LineString;
-use crate::models::debug::DebugIsochroneData;
+use crate::models::debug::{DebugIsochroneData, DebugHeatmapData, DebugBoundingBox, DebugPOI, DebugOptimizationStats, DebugCandidateMovement};
 
 use crate::models::isochrone::IsochroneResult;
 use crate::services::isochrone_service::IsochroneService;
 use crate::services::route_service::RouteService;
+use crate::services::poi_service::{PoiService, PointOfInterest};
 use log::info;
 
 #[derive(Debug, PartialEq)]
@@ -20,6 +21,8 @@ enum AreaFitness {
 pub struct MeetingPointAlgorithm {
     isochrone_service: IsochroneService,
     route_service: RouteService,
+    poi_service: PoiService,
+    heatmap_data: std::sync::Arc<std::sync::Mutex<Option<DebugHeatmapData>>>,
 }
 
 impl MeetingPointAlgorithm {
@@ -28,6 +31,8 @@ impl MeetingPointAlgorithm {
         Self {
             isochrone_service: IsochroneService::new(),
             route_service: RouteService::new(),
+            poi_service: PoiService::new(),
+            heatmap_data: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -48,7 +53,7 @@ impl MeetingPointAlgorithm {
         
         // Step 3: Get optimal isochrones with adaptive area control
         let (final_isochrones, intersections, candidates) = self
-            .find_optimal_isochrone_candidates(locations, time_limit_minutes)
+            .find_isochrone_candidates(locations, time_limit_minutes)
             .await?;
         
         if intersections.is_empty() || candidates.is_empty() {
@@ -101,6 +106,7 @@ impl MeetingPointAlgorithm {
                 score: None,
             }).collect(),
             isochrone_data: Some(Self::convert_isochrone_data_debug(&final_isochrones)),
+            heatmap_data: self.heatmap_data.lock().unwrap().clone(),
         });
         
         let end_time = std::time::Instant::now();
@@ -140,14 +146,16 @@ impl MeetingPointAlgorithm {
         Ok(capped_time_limit)
     }
 
-    async fn find_optimal_isochrone_candidates(
+    async fn find_isochrone_candidates(
         &self,
         locations: &[(String, Location)],
         initial_time_limit: u32,
     ) -> Result<(Vec<IsochroneResult>, Vec<Polygon<f64>>, Vec<Location>)> {
-        const MIN_INTERSECTION_AREA_KM2: f64 = 0.1;  
-        const MAX_INTERSECTION_AREA_KM2: f64 = 10.0; 
-        const MAX_GENERATED_CANDIDATES: usize = 50;
+
+        const MIN_INTERSECTION_AREA_KM2: f64 = 0.5;  
+        const MAX_INTERSECTION_AREA_KM2: f64 = 15.0; 
+        const MAX_GENERATED_CANDIDATES: usize = 30;
+
         const MIN_TIME_LIMIT_MINUTES: u32 = 10;
         const MAX_TIME_LIMIT_MINUTES: u32 = 90;
         const TIME_LIMIT_INCREMENT_MINUTES: u32 = 5;
@@ -161,7 +169,7 @@ impl MeetingPointAlgorithm {
                 info!("⚠️  Oscillation detected at {}min, using current result", current_time_limit);
                 
                 let current_result = &tried_results[&current_time_limit];
-                let candidates = self.generate_candidates(&current_result.1)
+                let candidates = self.generate_candidates(&current_result.1).await?
                     .into_iter()
                     .take(MAX_GENERATED_CANDIDATES)
                     .collect::<Vec<_>>();
@@ -199,7 +207,7 @@ impl MeetingPointAlgorithm {
             
             match self.evaluate_area_fitness(area_km2, MIN_INTERSECTION_AREA_KM2, MAX_INTERSECTION_AREA_KM2) {
                 AreaFitness::JustRight => {
-                    let candidates = self.generate_candidates(&intersections)
+                    let candidates = self.generate_candidates(&intersections).await?
                         .into_iter()
                         .take(MAX_GENERATED_CANDIDATES)
                         .collect::<Vec<_>>();
@@ -244,59 +252,41 @@ impl MeetingPointAlgorithm {
             .sum::<f64>() * 111.0 * 111.0
     }
 
-
-    fn generate_candidates(&self, intersections: &[Polygon<f64>]) -> Vec<Location> {
+    async fn generate_candidates(&self, intersections: &[Polygon<f64>]) -> Result<Vec<Location>> {
         if intersections.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let mut candidates: Vec<Location> = Vec::new();
+        let grid_spacing_degrees = 0.001; // ~100m at equator
         
-        // Configuration
-        let grid_spacing_degrees = 0.002; // ~200m at equator
-        let area_threshold_km2 = 0.5; // 1 km²
-        let area_threshold_degrees2 = area_threshold_km2 / (111.0 * 111.0); // Convert to degrees²
-        
-        // Separate polygons by size
-        let mut large_polygons = Vec::new();
-        let mut small_polygons = Vec::new();
+        info!("🔍 Generating candidates for {} intersection polygons", intersections.len());
         
         for polygon in intersections {
-            let area = polygon.unsigned_area();
-            if area >= area_threshold_degrees2 {
-                large_polygons.push(polygon);
-            } else {
-                small_polygons.push(polygon);
-            }
+            let polygon_candidates = self.generate_candidates_grid_for_polygon(polygon, grid_spacing_degrees);
+            candidates.extend(polygon_candidates);
         }
         
-        info!("🔍 Generating candidates: {} large polygons, {} small polygons", 
-              large_polygons.len(), small_polygons.len());
+        info!("🎯 Generated {} raw candidates", candidates.len());
         
-        for polygon in large_polygons {
-            let polygon_candidates = self.generate_candidates_large_polygon(polygon, grid_spacing_degrees);
-            candidates.extend(polygon_candidates.clone());
-            info!("📍 Generated {} candidates for large polygon", polygon_candidates.len());
+        // Apply heatmap optimization to move candidates toward POI hotspots
+        let (optimized_candidates, heatmap_data) = self
+            .optimize_candidates_with_heatmap(&candidates, intersections)
+            .await
+            .unwrap_or_else(|_| {
+                info!("⚠️ Heatmap optimization failed, using original candidates");
+                (candidates.clone(), None)
+            });
+        
+        // Store heatmap data for debug output
+        if let Some(data) = heatmap_data {
+            *self.heatmap_data.lock().unwrap() = Some(data);
         }
         
-        if !small_polygons.is_empty() {
-            let collective_candidates = self.generate_candidates_small_polygons(&small_polygons, grid_spacing_degrees);
-            candidates.extend(collective_candidates.clone());
-            info!("📍 Generated {} candidates for {} small polygons", collective_candidates.len(), small_polygons.len());
-        }
-        
-        // Always include centroids as candidates (they're often good)
-        for polygon in intersections {
-            if let Some(centroid) = polygon.centroid() {
-                candidates.push(Location::new(centroid.y(), centroid.x()));
-            }
-        }
-        
-        info!("🎯 Total candidates generated: {}", candidates.len());
-        candidates
+        Ok(optimized_candidates)
     }
 
-    fn generate_candidates_large_polygon(&self, polygon: &Polygon<f64>, grid_spacing: f64) -> Vec<Location> {
+    fn generate_candidates_grid_for_polygon(&self, polygon: &Polygon<f64>, grid_spacing: f64) -> Vec<Location> {
         let mut candidates = Vec::new();
         
         if let Some(bounding_rect) = polygon.bounding_rect() {
@@ -318,51 +308,150 @@ impl MeetingPointAlgorithm {
                 y += grid_spacing;
             }
         }
-        
+
+        // Always include centroids as candidates (they're often good)
+        if let Some(centroid) = polygon.centroid() {
+            candidates.push(Location::new(centroid.y(), centroid.x()));
+        }
+    
         candidates
     }
 
-    fn generate_candidates_small_polygons(&self, polygons: &[&Polygon<f64>], grid_spacing: f64) -> Vec<Location> {
-        let mut candidates = Vec::new();
-        
-        // Calculate bounding box that encompasses all small polygons
-        let mut min_x = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        
-        for polygon in polygons {
-            if let Some(bounding_rect) = polygon.bounding_rect() {
-                min_x = min_x.min(bounding_rect.min().x);
-                max_x = max_x.max(bounding_rect.max().x);
-                min_y = min_y.min(bounding_rect.min().y);
-                max_y = max_y.max(bounding_rect.max().y);
-            }
+    async fn optimize_candidates_with_heatmap(
+        &self, 
+        grid_candidates: &[Location], 
+        intersections: &[Polygon<f64>], 
+    ) -> Result<(Vec<Location>, Option<DebugHeatmapData>)> {
+
+        if grid_candidates.is_empty() || intersections.is_empty() {
+            return Ok((grid_candidates.to_vec(), None));
         }
+
+        let all_pois = match self.poi_service.get_pois_in_polygons(intersections).await {
+            Ok(pois) => pois,
+            Err(e) => {
+                info!("⚠️ Failed to fetch POIs: {}, skipping heatmap optimization", e);
+                return Ok((grid_candidates.to_vec(), None));
+            }
+        };
         
-        // Generate grid over the collective bounding box
-        let mut y = min_y;
-        while y <= max_y {
-            let mut x = min_x;
-            while x <= max_x {
-                let point = Point::new(x, y);
-                
-                // Check if point is contained in any of the small polygons
-                for polygon in polygons {
-                    if polygon.contains(&point) {
-                        candidates.push(Location::new(y, x));
-                        break; // No need to check other polygons for this point
+        if all_pois.is_empty() {
+            info!("🏢 No POIs found, skipping heatmap optimization");
+            return Ok((grid_candidates.to_vec(), None));
+        }
+
+        info!("🏢 Using {} POIs for heatmap optimization", all_pois.len());
+
+        let heatmap_data = self.generate_heatmap_debug(intersections, &all_pois).await?;
+
+        let mut candidates_with_heat = Vec::new();
+        let mut candidates_moved = 0;
+        let mut total_movement_distance = 0.0;
+        let mut candidate_movements = Vec::new();
+        
+        // Optimization parameters
+        const MOVEMENT_INCREMENT: f64 = 0.001; // ~100m movement per iteration
+        const MAX_ITERATIONS: usize = 5;
+        const MIN_HEAT_THRESHOLD: f64 = 0.15;
+
+        for original_candidate in grid_candidates {
+            let mut current_location = original_candidate.clone();
+            let mut best_location = original_candidate.clone();
+            let mut best_heat = self.poi_service.calculate_location_heat(&current_location, &all_pois);
+
+            // Gradient ascent toward local maxima
+            for _iteration in 0..MAX_ITERATIONS {
+                let mut improved = false;
+
+                // Try moving in 8 directions
+                for direction in 0..8 {
+                    let angle = (direction as f64) * std::f64::consts::PI / 4.0; // 45-degree increments
+                    let lat_offset = MOVEMENT_INCREMENT * angle.sin();
+                    let lon_offset = MOVEMENT_INCREMENT * angle.cos();
+
+                    let test_location = Location::new(
+                        current_location.latitude + lat_offset,
+                        current_location.longitude + lon_offset,
+                    );
+
+                    // Check if still within intersection polygons
+                    let test_point = Point::new(test_location.longitude, test_location.latitude);
+                    if !intersections.iter().any(|polygon| polygon.contains(&test_point)) {
+                        continue;
+                    }
+
+                    let test_heat = self.poi_service.calculate_location_heat(&test_location, &all_pois);
+                    
+                    if test_heat > best_heat {
+                        best_heat = test_heat;
+                        best_location = test_location;
+                        improved = true;
                     }
                 }
-                x += grid_spacing;
+
+                if improved {
+                    current_location = best_location.clone();
+                } else {
+                    break; // Local maximum found
+                }
             }
-            y += grid_spacing;
+
+            // Track movement statistics
+            let movement_distance = original_candidate.distance_to(&best_location);
+            let original_heat = self.poi_service.calculate_location_heat(original_candidate, &all_pois);
+            let heat_improvement = best_heat - original_heat;
+            let was_kept = best_heat >= MIN_HEAT_THRESHOLD;
+            
+            // Record movement for visualization
+            candidate_movements.push(DebugCandidateMovement {
+                original_position: (original_candidate.longitude, original_candidate.latitude),
+                final_position: (best_location.longitude, best_location.latitude),
+                movement_distance,
+                heat_improvement,
+                was_kept,
+            });
+            
+            if movement_distance > 10.0 { // Moved more than 10m
+                candidates_moved += 1;
+                total_movement_distance += movement_distance;
+            }
+
+            // Only keep candidates with sufficient heat
+            if was_kept {
+                candidates_with_heat.push((best_location, best_heat));
+            }
         }
-        
-        candidates
+
+        // Deduplicate candidates within 50m, keeping the best heat value
+        const MIN_DISTANCE_METERS: f64 = 100.0;
+        let deduplicated_candidates = self.poi_service.deduplicate_candidates_by_heat(&candidates_with_heat, MIN_DISTANCE_METERS);
+        let optimized_candidates: Vec<Location> = deduplicated_candidates.into_iter().map(|(loc, _)| loc).collect();
+
+        // Update heatmap data with optimization stats and movements
+        let mut final_heatmap_data = heatmap_data;
+        final_heatmap_data.optimization_stats = DebugOptimizationStats {
+            original_candidates: grid_candidates.len(),
+            optimized_candidates: optimized_candidates.len(),
+            candidates_moved,
+            average_movement_distance: if candidates_moved > 0 { 
+                total_movement_distance / candidates_moved as f64 
+            } else { 
+                0.0 
+            },
+            min_heat_threshold: MIN_HEAT_THRESHOLD,
+        };
+        final_heatmap_data.candidate_movements = candidate_movements;
+
+        info!(
+            "🎯 Heatmap optimization: {} → {} candidates (min heat: {:.2})", 
+            grid_candidates.len(), 
+            optimized_candidates.len(), 
+            MIN_HEAT_THRESHOLD
+        );
+
+        Ok((optimized_candidates, Some(final_heatmap_data)))
     }
 
-    // Evaluate candidates considering both average travel time and standard deviation for fairness
     async fn evaluate_candidates(&self, candidates: &[Location], locations: &[(String, Location)]) -> Result<(Vec<Location>, Vec<Vec<Route>>, Vec<Vec<u32>>)> {
         if candidates.is_empty() {
             return Err(anyhow::anyhow!("No candidates to evaluate"));
@@ -423,11 +512,15 @@ impl MeetingPointAlgorithm {
         let routes: Vec<Vec<Route>> = top_candidates.iter().map(|(_, routes, _, _, _, _)| routes.clone()).collect();
         let durations: Vec<Vec<u32>> = top_candidates.iter().map(|(_, _, durations, _, _, _)| durations.clone()).collect();
 
-        info!("🏆 Selected {} candidates with scores: {}", 
-              locations.len(),
-              top_candidates.iter().map(|(_, _, _, avg, std_dev, score)| 
-                  format!("avg={:.1}min, std={:.1}min, score={:.2}", avg / 60.0, std_dev / 60.0, score)
-              ).collect::<Vec<_>>().join(" | "));
+        let score_summary = top_candidates
+            .iter()
+            .map(|(_, _, _, avg, std_dev, score)| 
+                format!("avg={:.1}min, std={:.1}min, score={:.2}", avg / 60.0, std_dev / 60.0, score)
+            )
+            .collect::<Vec<_>>()
+            .join(" | ");
+        
+        info!("🏆 Selected {} candidates with scores: {}", locations.len(), score_summary);
 
         Ok((locations, routes, durations))
     }
@@ -448,16 +541,13 @@ impl MeetingPointAlgorithm {
     }
 
     fn calculate_composite_score(&self, avg_time_seconds: f64, std_dev_seconds: f64) -> f64 {
-        // Weights for the composite score
+
         const AVG_TIME_WEIGHT: f64 = 0.7;  // 70% weight on average time
         const STD_DEV_WEIGHT: f64 = 0.3;   // 30% weight on standard deviation (fairness)
         
-        // Normalize both metrics to minutes for better interpretability
         let avg_time_minutes = avg_time_seconds / 60.0;
         let std_dev_minutes = std_dev_seconds / 60.0;
         
-        // Composite score: lower is better
-        // We want to minimize both average time and standard deviation
         AVG_TIME_WEIGHT * avg_time_minutes + STD_DEV_WEIGHT * std_dev_minutes
     }
 
@@ -526,4 +616,103 @@ impl MeetingPointAlgorithm {
             coordinates,
         }
     }
+
+    async fn generate_heatmap_debug(
+        &self,
+        intersections: &[Polygon<f64>],
+        all_pois: &[PointOfInterest],
+    ) -> Result<DebugHeatmapData> {
+        // Calculate bounding box for all intersections
+        let mut min_lat = f64::INFINITY;
+        let mut max_lat = f64::NEG_INFINITY;
+        let mut min_lon = f64::INFINITY;
+        let mut max_lon = f64::NEG_INFINITY;
+
+        for polygon in intersections {
+            if let Some(bbox) = polygon.bounding_rect() {
+                min_lat = min_lat.min(bbox.min().y);
+                max_lat = max_lat.max(bbox.max().y);
+                min_lon = min_lon.min(bbox.min().x);
+                max_lon = max_lon.max(bbox.max().x);
+            }
+        }
+
+        // Add padding to bounding box
+        let lat_padding = (max_lat - min_lat) * 0.1;
+        let lon_padding = (max_lon - min_lon) * 0.1;
+        min_lat -= lat_padding;
+        max_lat += lat_padding;
+        min_lon -= lon_padding;
+        max_lon += lon_padding;
+
+        let bounding_box = DebugBoundingBox {
+            north: max_lat,
+            south: min_lat,
+            east: max_lon,
+            west: min_lon,
+        };
+
+        // Generate heatmap grid
+        const GRID_SIZE: usize = 50;
+        let lat_step = (max_lat - min_lat) / GRID_SIZE as f64;
+        let lon_step = (max_lon - min_lon) / GRID_SIZE as f64;
+
+        let mut heat_values = vec![vec![0.0f64; GRID_SIZE]; GRID_SIZE];
+        let mut max_heat = 0.0f64;
+
+        // Calculate heat for each grid cell
+        for i in 0..GRID_SIZE {
+            for j in 0..GRID_SIZE {
+                let lat = min_lat + (i as f64 + 0.5) * lat_step;
+                let lon = min_lon + (j as f64 + 0.5) * lon_step;
+                let location = Location::new(lat, lon);
+
+                // Check if location is within any intersection polygon
+                let point = Point::new(lon, lat);
+                let is_within_intersection = intersections.iter().any(|polygon| polygon.contains(&point));
+
+                if is_within_intersection {
+                    let heat = self.poi_service.calculate_location_heat(&location, all_pois);
+                    heat_values[i][j] = heat;
+                    max_heat = max_heat.max(heat);
+                }
+            }
+        }
+
+        // Normalize heat values to 0-1 range
+        if max_heat > 0.0 {
+            for i in 0..GRID_SIZE {
+                for j in 0..GRID_SIZE {
+                    heat_values[i][j] /= max_heat;
+                }
+            }
+        }
+
+        // Convert POIs to debug format
+        let poi_locations: Vec<DebugPOI> = all_pois.iter().enumerate().map(|(i, poi)| {
+            DebugPOI {
+                id: format!("poi_{}", i),
+                name: poi.name.clone(),
+                coordinates: (poi.location.longitude, poi.location.latitude),
+                poi_type: format!("{:?}", poi.poi_type),
+                importance: poi.importance,
+            }
+        }).collect();
+
+        Ok(DebugHeatmapData {
+            bounding_box,
+            grid_size: GRID_SIZE,
+            heat_values,
+            poi_locations,
+            optimization_stats: DebugOptimizationStats {
+                original_candidates: 0,
+                optimized_candidates: 0,
+                candidates_moved: 0,
+                average_movement_distance: 0.0,
+                min_heat_threshold: 0.0,
+            }, // Will be updated later
+            candidate_movements: Vec::new(), // Will be updated later
+        })
+    }
+
 }

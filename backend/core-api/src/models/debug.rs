@@ -9,6 +9,8 @@ pub struct DebugData {
     pub final_candidates: Vec<DebugCandidate>,
     // Isochrone data for visualization
     pub isochrone_data: Option<Vec<DebugIsochroneData>>,
+    // Heatmap data for visualization
+    pub heatmap_data: Option<DebugHeatmapData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,4 +48,50 @@ pub struct DebugIsochroneData {
     pub polygon_vertices: usize,
     pub algorithm_used: String,
     pub computation_time_ms: u64,
-} 
+}
+
+/// Heatmap data for POI-based visualization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugHeatmapData {
+    pub bounding_box: DebugBoundingBox,
+    pub grid_size: usize,
+    pub heat_values: Vec<Vec<f64>>, // 2D grid of heat values (0.0 to 1.0)
+    pub poi_locations: Vec<DebugPOI>,
+    pub optimization_stats: DebugOptimizationStats,
+    pub candidate_movements: Vec<DebugCandidateMovement>, // Movement vectors
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugBoundingBox {
+    pub north: f64,
+    pub south: f64,
+    pub east: f64,
+    pub west: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugPOI {
+    pub id: String,
+    pub name: String,
+    pub coordinates: (f64, f64), // [longitude, latitude]
+    pub poi_type: String,
+    pub importance: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugOptimizationStats {
+    pub original_candidates: usize,
+    pub optimized_candidates: usize,
+    pub candidates_moved: usize,
+    pub average_movement_distance: f64, // in meters
+    pub min_heat_threshold: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugCandidateMovement {
+    pub original_position: (f64, f64), // [longitude, latitude]
+    pub final_position: (f64, f64),    // [longitude, latitude]
+    pub movement_distance: f64,        // in meters
+    pub heat_improvement: f64,         // heat score improvement
+    pub was_kept: bool,                // whether candidate passed threshold
+}

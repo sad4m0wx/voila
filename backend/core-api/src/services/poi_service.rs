@@ -21,7 +21,7 @@ pub struct PointOfInterest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PoiType {
     TransitHub,      // Metro stations, bus terminals, train stations
-    Restaurant,      // Restaurants, cafes, bars
+    Venue,      // Restaurants, cafes, bars
     Shopping,        // Malls, markets, shops
     Entertainment,   // Cinemas, theaters, parks
     PublicSpace,     // Squares, plazas, landmarks
@@ -31,10 +31,10 @@ pub enum PoiType {
 impl PoiType {
     pub fn importance_weight(&self) -> f64 {
         match self {
-            PoiType::TransitHub => 1.0,      // Highest priority - excellent for meetings
-            PoiType::PublicSpace => 0.9,     // Public squares, landmarks
-            PoiType::Restaurant => 0.8,      // Good meeting spots
-            PoiType::Shopping => 0.7,        // Malls, markets
+            PoiType::TransitHub => 0.8,      // Highest priority - excellent for meetings
+            PoiType::Venue => 0.8,      // Good meeting spots
+            PoiType::PublicSpace => 0.6,     // Public squares, landmarks
+            PoiType::Shopping => 0.6,        // Malls, markets
             PoiType::Entertainment => 0.6,   // Parks, cinemas
             PoiType::Other(_) => 0.5,        // Default weight
         }
@@ -60,25 +60,21 @@ impl PoiService {
         Self { client, overpass_url }
     }
 
-    /// Get POIs within intersection polygons, prioritizing transit hubs and meeting-friendly locations
     pub async fn get_pois_in_polygons(&self, polygons: &[Polygon<f64>]) -> Result<Vec<PointOfInterest>> {
         if polygons.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Calculate bounding box for all polygons
         let bbox = self.calculate_bounding_box(polygons);
         
-        // Fetch POIs from Overpass API
         let mut all_pois = Vec::new();
         
-        // Fetch different types of POIs in parallel
         let transit_pois = self.fetch_transit_hubs(&bbox).await?;
-        let restaurant_pois = self.fetch_restaurants(&bbox).await?;
+        let venue_pois = self.fetch_venues(&bbox).await?;
         let public_space_pois = self.fetch_public_spaces(&bbox).await?;
         
         all_pois.extend(transit_pois);
-        all_pois.extend(restaurant_pois);
+        all_pois.extend(venue_pois);
         all_pois.extend(public_space_pois);
         
         // Filter POIs to only include those within intersection polygons
@@ -117,7 +113,7 @@ impl PoiService {
         self.execute_overpass_query(&query, PoiType::TransitHub).await
     }
 
-    async fn fetch_restaurants(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
+    async fn fetch_venues(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
         let query = format!(
             r#"
             [out:json][timeout:25];
@@ -135,7 +131,7 @@ impl PoiService {
             bbox.south, bbox.west, bbox.north, bbox.east,
         );
 
-        self.execute_overpass_query(&query, PoiType::Restaurant).await
+        self.execute_overpass_query(&query, PoiType::Venue).await
     }
 
     async fn fetch_public_spaces(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
@@ -206,7 +202,7 @@ impl PoiService {
             .cloned()
             .unwrap_or_else(|| format!("Unnamed {}", match poi_type {
                 PoiType::TransitHub => "Transit Hub",
-                PoiType::Restaurant => "Restaurant",
+                PoiType::Venue => "Venue",
                 PoiType::PublicSpace => "Public Space",
                 _ => "Location",
             }));
@@ -223,15 +219,115 @@ impl PoiService {
             tags: element.tags.keys().cloned().collect(),
         })
     }
+    
+    pub fn calculate_location_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
+        let mut heat = 0.0;
+        
+        // Factor 1: Proximity to transit hubs (40% weight)
+        let transit_heat = self.calculate_transit_proximity_heat(location, all_pois);
+        heat += transit_heat * 0.40;
+        
+        // Factor 2: Density of venues nearby (45% weight)
+        let dining_heat = self.calculate_dining_density_heat(location, all_pois);
+        heat += dining_heat * 0.45;
+        
+        // Factor 3: Overall POI density (15% weight)
+        let poi_density_heat = self.calculate_poi_density_heat(location, all_pois);
+        heat += poi_density_heat * 0.15;
+        
+        debug!("Transit heat: {}, Dining heat: {}, POI density heat: {}", transit_heat, dining_heat, poi_density_heat);
+        heat
+    }
+
+    fn calculate_transit_proximity_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
+
+        let transit_hubs: Vec<&PointOfInterest> = all_pois.iter()
+            .filter(|poi| matches!(poi.poi_type, PoiType::TransitHub))
+            .collect();
+        
+        if transit_hubs.is_empty() {
+            return 0.0;
+        }
+        
+        let mut total_heat = 0.0;
+        const MAX_TRANSIT_DISTANCE: f64 = 1000.0; // 1km max useful distance
+        
+        // Calculate distance-based heat for all transit hubs within range
+        for hub in transit_hubs {
+            let distance = location.distance_to(&hub.location);
+            
+            if distance <= MAX_TRANSIT_DISTANCE {
+                let normalized_distance = distance / MAX_TRANSIT_DISTANCE;
+                let proximity_score = (-2.0 * normalized_distance).exp(); // e^(-2*d/max_d)
+                
+                let weighted_score = proximity_score * hub.importance;
+                total_heat += weighted_score;
+            }
+        }
+        
+        // Normalize by dividing by expected maximum (assume 3 high-importance hubs very close)
+        let normalized_heat = total_heat / 3.0;
+        normalized_heat.min(1.0) // Cap at 1.0
+    }
+
+    fn calculate_dining_density_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
+        let dining_pois: Vec<&PointOfInterest> = all_pois.iter()
+            .filter(|poi| matches!(poi.poi_type, PoiType::Venue))
+            .collect();
+        
+        if dining_pois.is_empty() {
+            return 0.0;
+        }
+        
+        let mut total_heat = 0.0;
+        const MAX_VENUE_DISTANCE: f64 = 800.0; // 800m max useful distance for venues
+        
+        // Calculate distance-based heat for all venues within range
+        for venue in dining_pois {
+            let distance = location.distance_to(&venue.location);
+            
+            if distance <= MAX_VENUE_DISTANCE {
+                let normalized_distance = distance / MAX_VENUE_DISTANCE;
+                let proximity_score = (-1.5 * normalized_distance).exp(); // Slightly less steep than transit
+                let weighted_score = proximity_score * venue.importance;
+                total_heat += weighted_score;
+            }
+        }
+        
+        // Normalize by expected maximum (assume 10 high-importance venues very close)
+        let normalized_heat = total_heat / 10.0;
+        normalized_heat.min(1.0) // Cap at 1.0
+    }
+
+    fn calculate_poi_density_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
+        if all_pois.is_empty() {
+            return 0.0;
+        }
+        
+        // Calculate overall POI density within 500m
+        const DENSITY_RADIUS: f64 = 500.0;
+        
+        let nearby_pois: Vec<&PointOfInterest> = all_pois.iter()
+            .filter(|poi| location.distance_to(&poi.location) <= DENSITY_RADIUS)
+            .collect();
+        
+        if nearby_pois.is_empty() {
+            return 0.0;
+        }
+        
+        // Weight POIs by their importance and calculate density
+        let weighted_count: f64 = nearby_pois.iter()
+            .map(|poi| poi.importance)
+            .sum();
+        
+        // Normalize (assume 5 high-importance POIs within 500m is "perfect")
+        let density_score = weighted_count / 5.0;
+        density_score.min(1.0) // Cap at 1.0
+    }
 
     fn calculate_poi_importance(&self, tags: &std::collections::HashMap<String, String>, poi_type: &PoiType) -> f64 {
         let mut importance = poi_type.importance_weight();
-        
-        // Boost importance based on specific tags
-        if tags.contains_key("name") {
-            importance += 0.1; // Named places are more important
-        }
-        
+                
         if let Some(railway) = tags.get("railway") {
             match railway.as_str() {
                 "station" => importance += 0.2,
@@ -273,6 +369,50 @@ impl PoiService {
             east: max_lon,
             west: min_lon,
         }
+    }
+
+    pub fn deduplicate_candidates_by_heat(&self, candidates: &[(Location, f64)], min_distance_meters: f64) -> Vec<(Location, f64)> {
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        let mut deduplicated = Vec::new();
+        let mut used_indices = std::collections::HashSet::new();
+
+        for (i, (candidate, heat)) in candidates.iter().enumerate() {
+            if used_indices.contains(&i) {
+                continue;
+            }
+
+            let mut best_candidate = candidate.clone();
+            let mut best_heat = *heat;
+            let mut best_index = i;
+
+            // Find all candidates within min_distance and pick the best one
+            for (j, (other_candidate, other_heat)) in candidates.iter().enumerate().skip(i + 1) {
+                if used_indices.contains(&j) {
+                    continue;
+                }
+
+                let distance = candidate.distance_to(other_candidate);
+                if distance <= min_distance_meters {
+                    if *other_heat > best_heat {
+                        best_candidate = other_candidate.clone();
+                        best_heat = *other_heat;
+                        best_index = j;
+                    }
+                    used_indices.insert(j);
+                }
+            }
+
+            used_indices.insert(best_index);
+            deduplicated.push((best_candidate, best_heat));
+        }
+
+        info!("🎯 Deduplicated {} → {} candidates (min distance: {}m)", 
+              candidates.len(), deduplicated.len(), min_distance_meters);
+        
+        deduplicated
     }
 }
 
