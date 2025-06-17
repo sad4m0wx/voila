@@ -3,7 +3,7 @@
   import MapProvider from '$components/maps/MapProvider.svelte';
   import MapContainer from '$components/maps/MapContainer.svelte';
   import { findOptimalMeetingPoint } from "$services/meetingPointApi";
-  import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
+  import { defaultMapCenter, defaultMapZoom, isDebugMode } from "$lib/config.js";
   import AddressForm from "$components/meeting/AddressForm.svelte";
   import MeetingPointResults from "$components/meeting/MeetingPointResults.svelte";
   import VenueOptions from "$components/venues/VenueOptions.svelte";
@@ -23,6 +23,8 @@
   let error = null;
   let mapBounds = null;
   let showResults = false;
+  let showHeatmap = false;
+  let showMovementVectors = false;
 
   // Venue options
   let showVenues = true;
@@ -94,14 +96,26 @@
         showVenues: showVenues
       });
 
-      // Update state with result
-      meetingPoint = {
+      // Handle multiple meeting points
+      meetingPoints = result.allMeetingPoints || [{
         name: result.name,
         coordinates: result.coordinates,
-        travelTimes: result.travelTimes
-      };
+        travel_times: result.travelTimes.map(tt => ({
+          id: tt.id,
+          address: tt.address,
+          duration: tt.duration,
+          distance: tt.distance,
+          estimated: tt.estimated,
+          transit_summary: tt.transitSummary
+        }))
+      }];
 
-      routes = result.routes || [];
+      allRoutes = result.allRoutes || [result.routes || []];
+
+      // Set current meeting point (first one by default)
+      currentMeetingPointIndex = 0;
+      updateCurrentMeetingPoint();
+
       venues = result.venues || [];
       debugData = result.debug || null;
 
@@ -122,6 +136,30 @@
       error = err.message || "Failed to calculate meeting point. Please try again.";
       isCalculating = false;
     }
+  }
+
+  function updateCurrentMeetingPoint() {
+    if (meetingPoints.length > 0 && currentMeetingPointIndex < meetingPoints.length) {
+      const currentPoint = meetingPoints[currentMeetingPointIndex];
+      meetingPoint = {
+        name: currentPoint.name,
+        coordinates: currentPoint.coordinates,
+        travelTimes: currentPoint.travel_times.map(tt => ({
+          id: tt.id,
+          address: tt.address,
+          duration: tt.duration,
+          distance: tt.distance,
+          estimated: tt.estimated,
+          transitSummary: tt.transit_summary
+        }))
+      };
+      routes = allRoutes[currentMeetingPointIndex] || [];
+    }
+  }
+
+  function handleMeetingPointChange(event) {
+    currentMeetingPointIndex = event.detail.index;
+    updateCurrentMeetingPoint();
   }
 
   function handleMapBounds(event) {
@@ -186,6 +224,8 @@
       });
     }
 
+    // Note: POI markers removed - we only show the heatmap and movement vectors
+
     return markers;
   }
 
@@ -221,6 +261,28 @@
       });
     }
 
+    // Add region boundaries for debugging
+    if (debugData.regions) {
+      debugData.regions.forEach((region, i) => {
+        // Create a rectangular polygon from region bounds
+        const [minX, minY, maxX, maxY] = region.bounds;
+        const regionCoordinates = [[
+          [minX, minY],
+          [maxX, minY],
+          [maxX, maxY],
+          [minX, maxY],
+          [minX, minY] // Close the polygon
+        ]];
+        
+        polygons.push({
+          type: 'region',
+          coordinates: regionCoordinates,
+          name: `${region.id} (${region.candidates_count} candidates)`,
+          regionData: region
+        });
+      });
+    }
+
     return polygons;
   }
 
@@ -232,6 +294,9 @@
   function startNewSearch() {
     // Reset all state to start a new search, but not input addresses
     meetingPoint = null;
+    meetingPoints = [];
+    allRoutes = [];
+    currentMeetingPointIndex = 0;
     routes = [];
     venues = [];
     debugData = null;
@@ -270,7 +335,7 @@
       {/if}
 
       <!-- Main Content Area -->
-      <div class="flex-1 {isMobile ? 'px-4 pb-20' : 'container mx-auto px-4 py-4 max-w-[1600px]'} {isMobile ? 'overflow-y-auto' : 'h-0 flex-1 overflow-hidden'}">
+      <div class="flex-1 {isMobile ? 'px-4 pb-4 overflow-y-auto' : 'container mx-auto px-4 py-4 max-w-[1600px]'} {isMobile ? '' : 'h-0 flex-1 overflow-hidden'}">
         <MapProvider>
           <div slot="loading" class="text-center {isMobile ? 'py-16' : 'py-20'}">
             <div class="loader loader-lg mx-auto mb-4 text-blue-600"></div>
@@ -304,104 +369,124 @@
             </div>
           </div>
 
-          <!-- Unified Layout - Mobile and Desktop -->
-          <div class="h-full {isMobile ? 'flex flex-col space-y-3' : 'grid grid-cols-12 gap-4'}">
-            
-            <!-- Left Sidebar / Mobile Top Section -->
-            <div class="{isMobile ? (showResults && meetingPoint ? 'flex-1 overflow-y-auto min-h-0' : 'flex-shrink-0') : 'col-span-5 flex flex-col h-full min-h-0'}">
-              
-              <!-- Glassmorphic Container -->
-              <div
-                class="{isMobile 
-                  ? (showResults && meetingPoint 
-                      ? 'bg-white/70 backdrop-blur-sm rounded-xl shadow-lg border border-white/30 p-3' 
-                      : 'bg-white/70 backdrop-blur-xl rounded-2xl border border-white/30 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] p-4') 
-                  : 'flex flex-col h-full bg-white/70 backdrop-blur-xl rounded-2xl border border-white/30 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] overflow-hidden'}"
-              >
-                
-                {#if !isMobile || !showResults || !meetingPoint}
-                  <!-- Enhanced Header Section (Desktop always, Mobile when no results) -->
-                  <div class="flex-shrink-0 {isMobile ? 'mb-4' : 'p-4'} relative">
-                    <!-- Decorative Elements (Desktop only) -->
-                    {#if !isMobile}
-                      <div
-                        class="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-400/15 to-purple-400/15 rounded-full blur-2xl -translate-y-4 translate-x-4"
-                      ></div>
-                      <div
-                        class="absolute -top-2 -left-2 w-12 h-12 bg-gradient-to-br from-pink-400/15 to-orange-400/15 rounded-full blur-xl"
-                      ></div>
-                    {/if}
-
-                    <div class="relative">
-                      <div class="flex items-center {isMobile ? 'mb-2' : 'mb-3'}">
-                        <div class="relative">
-                          <div
-                            class="w-{isMobile ? '8' : '10'} h-{isMobile ? '8' : '10'} bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform rotate-3"
-                          >
-                            <span class="text-{isMobile ? 'base' : 'lg'}">📍</span>
-                          </div>
-                          <div
-                            class="absolute -top-0.5 -right-0.5 w-{isMobile ? '3' : '4'} h-{isMobile ? '3' : '4'} bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center shadow-md"
-                          >
-                            <span class="text-xs">✨</span>
+                     <!-- Mobile Layout -->
+           {#if isMobile}
+             <div class="flex flex-col space-y-4 h-full">
+              <!-- Address Form / Loading / Results Section -->
+              <div class="flex-shrink-0 {showResults && meetingPoint ? 'max-h-[50vh]' : ''}">
+                <div class="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/30 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] p-4">
+                  
+                  {#if isCalculating}
+                    <!-- Mobile Loading State -->
+                    <div class="text-center py-8 animate-fade-in">
+                      <div class="relative mb-6">
+                        <!-- Animated loading rings -->
+                        <div class="w-16 h-16 mx-auto relative">
+                          <div class="absolute inset-0 border-4 border-blue-200 rounded-full"></div>
+                          <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+                          <div class="absolute inset-2 border-2 border-purple-300 rounded-full border-b-transparent animate-spin animate-reverse" style="animation-duration: 1.5s;"></div>
+                        </div>
+                        <!-- Floating dots animation -->
+                        <div class="absolute -top-2 left-1/2 transform -translate-x-1/2">
+                          <div class="flex space-x-1">
+                            <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0s;"></div>
+                            <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.1s;"></div>
+                            <div class="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style="animation-delay: 0.2s;"></div>
                           </div>
                         </div>
-                        <div class="ml-{isMobile ? '3' : '4'}">
-                          <h1
-                            class="text-{isMobile ? 'lg' : 'xl'} font-bold bg-gradient-to-r from-slate-800 via-blue-700 to-purple-700 bg-clip-text text-transparent leading-tight"
-                          >
-                            Voilà!
-                          </h1>
-                          <p class="text-slate-600 font-medium text-{isMobile ? 'xs' : 'sm'}">
-                            Find the perfect meeting spot
-                          </p>
+                      </div>
+                      
+                      <h3 class="text-lg font-bold text-slate-800 mb-2">Finding your perfect spot...</h3>
+                      <p class="text-slate-600 text-sm mb-4">Analyzing {addresses.length} locations</p>
+                      
+                      <!-- Progress indicators -->
+                      <div class="space-y-2">
+                        <div class="flex items-center justify-center space-x-2 text-xs text-slate-500">
+                          <div class="flex items-center">
+                            <div class="w-2 h-2 bg-green-400 rounded-full mr-1 animate-pulse"></div>
+                            Calculating routes
+                          </div>
+                        </div>
+                        <div class="flex items-center justify-center space-x-2 text-xs text-slate-500">
+                          <div class="flex items-center">
+                            <div class="w-2 h-2 bg-blue-400 rounded-full mr-1 animate-pulse" style="animation-delay: 0.5s;"></div>
+                            Finding venues
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-
-                  <!-- Divider with Gradient (Desktop only) -->
-                  {#if !isMobile}
-                    <div
-                      class="flex-shrink-0 h-px bg-gradient-to-r from-transparent via-slate-300/50 to-transparent mx-4"
-                    ></div>
-                  {/if}
-                {/if}
-
-                <!-- Address Form Section -->
-                {#if meetingPoint && showResults}
-                  <!-- Condensed Address Form when results are shown -->
-                  <div class="flex-shrink-0 {isMobile ? 'mb-2' : 'p-4 py-2'}">
-                    <div class="card card-gradient p-2 animate-fade-in">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                          <span class="text-sm font-medium text-secondary-700 mr-2">
-                            {addresses.length} addresses
-                          </span>
-                          <div class="flex items-center space-x-1">
-                            {#each addresses.slice(0, 3) as address, i}
-                              <div class="w-2 h-2 rounded-full bg-primary-400"></div>
-                            {/each}
-                            {#if addresses.length > 3}
-                              <span class="text-xs text-secondary-500">+{addresses.length - 3}</span>
-                            {/if}
+                  {:else if meetingPoint && showResults}
+                    <!-- Condensed Address Form when results are shown -->
+                    <div class="mb-4">
+                      <div class="card card-gradient p-3 animate-fade-in">
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center">
+                            <span class="text-sm font-medium text-secondary-700 mr-2">
+                              {addresses.length} addresses
+                            </span>
+                            <div class="flex items-center space-x-1">
+                              {#each addresses.slice(0, 3) as address, i}
+                                <div class="w-2 h-2 rounded-full bg-primary-400"></div>
+                              {/each}
+                              {#if addresses.length > 3}
+                                <span class="text-xs text-secondary-500">+{addresses.length - 3}</span>
+                              {/if}
+                            </div>
                           </div>
+                          <button 
+                            class="btn btn-outline btn-sm text-xs px-3 py-1"
+                            on:click={startNewSearch}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M3 3l18 18M21 3l-18 18"/>
+                            </svg>
+                            New Search
+                          </button>
                         </div>
-                        <button 
-                          class="btn btn-outline btn-sm text-xs px-3 py-1"
-                          on:click={startNewSearch}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M3 3l18 18M21 3l-18 18"/>
-                          </svg>
-                          New Search
-                        </button>
                       </div>
                     </div>
-                  </div>
-                {:else}
-                  <!-- Full Address Form when no results -->
-                  <div class="flex-shrink-0 {isMobile ? '' : 'p-4 py-3'}">
+                    
+                    <!-- Mobile Results -->
+                    <div class="overflow-y-auto scrollbar-thin" style="max-height: calc(50vh - 6rem);">
+                      <MeetingPointResults
+                        {meetingPoint}
+                        {meetingPoints}
+                        {currentMeetingPointIndex}
+                        {venues}
+                        {routes}
+                        {isCalculating}
+                        {isMobile}
+                        on:venue-selected={(e) => console.log("Venue selected:", e.detail)}
+                        on:toggle-results={toggleResults}
+                        on:meeting-point-change={handleMeetingPointChange}
+                      />
+                    </div>
+                  {:else}
+                    <!-- Enhanced Header Section -->
+                    <div class="mb-4 relative">
+                      <div class="relative">
+                        <div class="flex items-center mb-3">
+                          <div class="relative">
+                            <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform rotate-3">
+                              <span class="text-base">📍</span>
+                            </div>
+                            <div class="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center shadow-md">
+                              <span class="text-xs">✨</span>
+                            </div>
+                          </div>
+                          <div class="ml-3">
+                            <h1 class="text-lg font-bold bg-gradient-to-r from-slate-800 via-blue-700 to-purple-700 bg-clip-text text-transparent leading-tight">
+                              Voilà!
+                            </h1>
+                            <p class="text-slate-600 font-medium text-xs">
+                              Find the perfect meeting spot
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Full Address Form -->
                     <AddressForm
                       bind:addresses
                       {isCalculating}
@@ -412,50 +497,201 @@
                       on:error={(e) => (error = e.detail.message)}
                       on:create-group={handleCreateGroup}
                     />
-                  </div>
-                {/if}
+                  {/if}
+                </div>
+              </div>
 
-                <!-- Results Section (Desktop or Mobile when results) -->
-                {#if !isMobile || (showResults && meetingPoint)}
-                  <div
-                    class="flex-1 overflow-y-auto {isMobile ? 'p-3' : 'p-4 pt-2'} scrollbar-thin min-h-0"
-                  >
-                    {#if meetingPoint}
-                      <!-- Results Header (Desktop only) -->
-                      {#if !isMobile}
-                        <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/50">
-                          <div class="flex items-center">
-                            <span class="text-lg mr-2">🎯</span>
-                            <h3 class="text-lg font-bold text-secondary-800">Meeting Results</h3>
+                             <!-- Map Section - Fixed height for mobile -->
+               <div class="h-80 flex-shrink-0">
+                <div class="h-full relative">
+                  <div class="h-full rounded-xl overflow-hidden shadow-lg bg-gradient-to-br from-blue-100/80 to-purple-100/80 backdrop-blur-sm border-2 border-blue-200/50">
+                    <MapContainer
+                      center={meetingPoint
+                        ? meetingPoint.coordinates
+                        : defaultMapCenter}
+                      zoom={meetingPoint ? undefined : defaultMapZoom}
+                      markers={mapMarkers}
+                      {routes}
+                      polygons={debugPolygons}
+                      {meetingZoneRadius}
+                      {animateToResults}
+                      zoomToFitMarkers={false}
+                      height="100%"
+                      heatmapData={isDebugMode ? debugData?.heatmap_data : null}
+                      showHeatmap={isDebugMode ? showHeatmap : false}
+                      showMovementVectors={isDebugMode ? showMovementVectors : false}
+                      on:bounds={handleMapBounds}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <!-- Desktop Layout (unchanged) -->
+            <div class="h-full grid grid-cols-12 gap-4">
+              
+              <!-- Left Sidebar -->
+              <div class="col-span-5 flex flex-col h-full min-h-0">
+                
+                <!-- Glassmorphic Container -->
+                <div class="flex flex-col h-full bg-white/70 backdrop-blur-xl rounded-2xl border border-white/30 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] overflow-hidden">
+                  
+                  <!-- Enhanced Header Section -->
+                  <div class="flex-shrink-0 p-4 relative">
+                    <!-- Decorative Elements -->
+                    <div class="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-400/15 to-purple-400/15 rounded-full blur-2xl -translate-y-4 translate-x-4"></div>
+                    <div class="absolute -top-2 -left-2 w-12 h-12 bg-gradient-to-br from-pink-400/15 to-orange-400/15 rounded-full blur-xl"></div>
+
+                    <div class="relative">
+                      <div class="flex items-center mb-3">
+                        <div class="relative">
+                          <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform rotate-3">
+                            <span class="text-lg">📍</span>
                           </div>
+                          <div class="absolute -top-0.5 -right-0.5 w-4 h-4 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center shadow-md">
+                            <span class="text-xs">✨</span>
+                          </div>
+                        </div>
+                        <div class="ml-4">
+                          <h1 class="text-xl font-bold bg-gradient-to-r from-slate-800 via-blue-700 to-purple-700 bg-clip-text text-transparent leading-tight">
+                            Voilà!
+                          </h1>
+                          <p class="text-slate-600 font-medium text-sm">
+                            Find the perfect meeting spot
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Divider with Gradient -->
+                  <div class="flex-shrink-0 h-px bg-gradient-to-r from-transparent via-slate-300/50 to-transparent mx-4"></div>
+
+                  <!-- Address Form Section -->
+                  {#if meetingPoint && showResults}
+                    <!-- Condensed Address Form when results are shown -->
+                    <div class="flex-shrink-0 p-4 py-2">
+                      <div class="card card-gradient p-2 animate-fade-in">
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center">
+                            <span class="text-sm font-medium text-secondary-700 mr-2">
+                              {addresses.length} addresses
+                            </span>
+                            <div class="flex items-center space-x-1">
+                              {#each addresses.slice(0, 3) as address, i}
+                                <div class="w-2 h-2 rounded-full bg-primary-400"></div>
+                              {/each}
+                              {#if addresses.length > 3}
+                                <span class="text-xs text-secondary-500">+{addresses.length - 3}</span>
+                              {/if}
+                            </div>
+                          </div>
+                          <button 
+                            class="btn btn-outline btn-sm text-xs px-3 py-1"
+                            on:click={startNewSearch}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M3 3l18 18M21 3l-18 18"/>
+                            </svg>
+                            New Search
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  {:else}
+                    <!-- Full Address Form when no results -->
+                    <div class="flex-shrink-0 p-4 py-3">
+                      <AddressForm
+                        bind:addresses
+                        {isCalculating}
+                        {mapBounds}
+                        {error}
+                        on:addresses-changed={(e) => (addresses = e.detail.addresses)}
+                        on:find-meeting-point={findMeetingPoint}
+                        on:error={(e) => (error = e.detail.message)}
+                        on:create-group={handleCreateGroup}
+                      />
+                    </div>
+                  {/if}
+
+                  <!-- Results Section -->
+                  <div class="flex-1 overflow-y-auto p-4 pt-2 scrollbar-thin min-h-0">
+                    {#if meetingPoint}
+                      <!-- Results Header -->
+                      <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/50">
+                        <div class="flex items-center">
+                          <span class="text-lg mr-2">🎯</span>
+                          <h3 class="text-lg font-bold text-secondary-800">Meeting Results</h3>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                          {#if isDebugMode && debugData?.heatmap_data}
+                            <button
+                              class="btn btn-sm {showHeatmap ? 'btn-primary' : 'btn-outline'} text-xs px-2 py-1"
+                              on:click={() => showHeatmap = !showHeatmap}
+                              title="Toggle POI heatmap - Shows transit hubs, restaurants, and public spaces"
+                            >
+                              🔥 Heatmap
+                            </button>
+                            <button
+                              class="btn btn-sm {showMovementVectors ? 'btn-primary' : 'btn-outline'} text-xs px-2 py-1"
+                              on:click={() => showMovementVectors = !showMovementVectors}
+                              title="Show candidate movement vectors - How grid points moved toward POI hotspots"
+                            >
+                              ➡️ Vectors
+                            </button>
+                          {/if}
                           <div class="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-2 py-1 rounded-full text-xs font-medium">
                             Found
                           </div>
                         </div>
-                      {/if}
+                      </div>
                       
                       <MeetingPointResults
                         {meetingPoint}
+                        {meetingPoints}
+                        {currentMeetingPointIndex}
                         {venues}
                         {routes}
                         {isCalculating}
                         {isMobile}
                         on:venue-selected={(e) => console.log("Venue selected:", e.detail)}
                         on:toggle-results={toggleResults}
+                        on:meeting-point-change={handleMeetingPointChange}
                       />
-                    {:else if !isMobile && !isCalculating}
-                      <!-- Enhanced Empty State (Desktop only) -->
-                      <div
-                        class="flex flex-col items-center justify-center h-full"
-                      >
+                      
+                      <!-- Heatmap Info -->
+                      {#if isDebugMode && (showHeatmap || showMovementVectors) && debugData?.heatmap_data}
+                        <div class="mt-4 p-3 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg">
+                          <div class="flex items-center mb-2">
+                            <span class="text-sm mr-2">{showHeatmap ? '🔥' : '➡️'}</span>
+                            <h4 class="text-sm font-bold text-orange-800">
+                              {showHeatmap && showMovementVectors ? 'Heatmap & Vectors Active' : 
+                               showHeatmap ? 'POI Heatmap Active' : 'Movement Vectors Active'}
+                            </h4>
+                          </div>
+                          <div class="text-xs text-orange-700 space-y-1">
+                            <p>• {debugData.heatmap_data.poi_locations.length} POIs found</p>
+                            <p>• {debugData.heatmap_data.optimization_stats.optimized_candidates} optimized candidates</p>
+                            <p>• {debugData.heatmap_data.optimization_stats.candidates_moved} candidates moved toward hotspots</p>
+                            {#if debugData.heatmap_data.optimization_stats.average_movement_distance > 0}
+                              <p>• Avg movement: {debugData.heatmap_data.optimization_stats.average_movement_distance.toFixed(0)}m</p>
+                            {/if}
+                            {#if showMovementVectors}
+                              <p>• <span class="text-green-600">Green arrows:</span> High heat improvement</p>
+                              <p>• <span class="text-orange-600">Orange arrows:</span> Moderate improvement</p>
+                              <p>• <span class="text-blue-600">Blue arrows:</span> Small improvement</p>
+                              <p>• <span class="text-gray-500">Gray arrows:</span> Rejected candidates</p>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+                    {:else if !isCalculating}
+                      <!-- Enhanced Empty State -->
+                      <div class="flex flex-col items-center justify-center h-full">
                         <div class="relative">
                           <!-- Animated Background Elements -->
-                          <div
-                            class="absolute inset-0 bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-xl scale-150 animate-pulse"
-                          ></div>
-                          <div
-                            class="relative bg-gradient-to-br from-green-50 to-blue-50 rounded-xl p-4 text-center border border-green-200/50 shadow-lg backdrop-blur-sm"
-                          >
+                          <div class="absolute inset-0 bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-xl scale-150 animate-pulse"></div>
+                          <div class="relative bg-gradient-to-br from-green-50 to-blue-50 rounded-xl p-4 text-center border border-green-200/50 shadow-lg backdrop-blur-sm">
                             <div class="relative mb-3">
                               <svg
                                 class="w-12 h-12 mx-auto text-green-500/70 animate-float"
@@ -468,42 +704,30 @@
                                   clip-rule="evenodd"
                                 />
                               </svg>
-                              <div
-                                class="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-br from-yellow-300 to-orange-400 rounded-full flex items-center justify-center shadow-md animate-bounce-subtle"
-                              >
+                              <div class="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-br from-yellow-300 to-orange-400 rounded-full flex items-center justify-center shadow-md animate-bounce-subtle">
                                 <span class="text-xs">✨</span>
                               </div>
                             </div>
                             <h3 class="text-base font-bold text-green-700 mb-2">
                               Ready to find your spot?
                             </h3>
-                            <p
-                              class="text-green-600 text-xs mb-2 leading-relaxed"
-                            >
+                            <p class="text-green-600 text-xs mb-2 leading-relaxed">
                               Enter addresses above and we'll find the perfect
                               meeting point.
                             </p>
-                            <div
-                              class="flex items-center justify-center space-x-2 text-xs text-green-500 pb-2"
-                            >
+                            <div class="flex items-center justify-center space-x-2 text-xs text-green-500 pb-2">
                               <div class="flex items-center">
-                                <div
-                                  class="w-1 h-1 bg-green-400 rounded-full mr-1"
-                                ></div>
+                                <div class="w-1 h-1 bg-green-400 rounded-full mr-1"></div>
                                 Real-time routing
                               </div>
                               <div class="flex items-center">
-                                <div
-                                  class="w-1 h-1 bg-blue-400 rounded-full mr-1"
-                                ></div>
+                                <div class="w-1 h-1 bg-blue-400 rounded-full mr-1"></div>
                                 Venue suggestions
                               </div>
                             </div>
                             <!-- Stats or Visual Elements -->
                             <div class="grid grid-cols-3 gap-2 text-center">
-                              <div
-                                class="bg-white/60 backdrop-blur-sm rounded-lg p-2 border border-white/40"
-                              >
+                              <div class="bg-white/60 backdrop-blur-sm rounded-lg p-2 border border-white/40">
                                 <div class="text-sm font-bold text-blue-600">
                                   🚀
                                 </div>
@@ -511,9 +735,7 @@
                                   Fast
                                 </div>
                               </div>
-                              <div
-                                class="bg-white/60 backdrop-blur-sm rounded-lg p-2 border border-white/40"
-                              >
+                              <div class="bg-white/60 backdrop-blur-sm rounded-lg p-2 border border-white/40">
                                 <div class="text-sm font-bold text-green-600">
                                   🎯
                                 </div>
@@ -521,9 +743,7 @@
                                   Precise
                                 </div>
                               </div>
-                              <div
-                                class="bg-white/60 backdrop-blur-sm rounded-lg p-2 border border-white/40"
-                              >
+                              <div class="bg-white/60 backdrop-blur-sm rounded-lg p-2 border border-white/40">
                                 <div class="text-sm font-bold text-purple-600">
                                   ✨
                                 </div>
@@ -537,37 +757,36 @@
                       </div>
                     {/if}
                   </div>
-                {/if}
+                </div>
               </div>
-            </div>
 
-            <!-- Map Section -->
-            <div class="{isMobile ? (showResults && meetingPoint ? 'h-64 flex-shrink-0' : 'flex-1 min-h-0') : 'col-span-7 h-full'}">
-              <div class="h-full relative">
-                <!-- Map Container with Enhanced Styling -->
-                <div
-                  class="h-full {isMobile 
-                    ? 'rounded-xl overflow-hidden shadow-lg bg-gradient-to-br from-blue-100/80 to-purple-100/80 backdrop-blur-sm border-2 border-blue-200/50' 
-                    : 'rounded-2xl overflow-hidden shadow-[0_20px_50px_0_rgba(8,47,73,0.11)] border border-white/20 bg-gradient-to-br from-blue-50/30 via-white/50 to-purple-50/30 backdrop-blur-sm'}"
-                >
-                  <MapContainer
-                    center={meetingPoint
-                      ? meetingPoint.coordinates
-                      : defaultMapCenter}
-                    zoom={meetingPoint ? undefined : defaultMapZoom}
-                    markers={mapMarkers}
-                    {routes}
-                    polygons={debugPolygons}
-                    {meetingZoneRadius}
-                    {animateToResults}
-                    zoomToFitMarkers={false}
-                    height="100%"
-                    on:bounds={handleMapBounds}
-                  />
+              <!-- Map Section -->
+              <div class="col-span-7 h-full">
+                <div class="h-full relative">
+                  <!-- Map Container with Enhanced Styling -->
+                  <div class="h-full rounded-2xl overflow-hidden shadow-[0_20px_50px_0_rgba(8,47,73,0.11)] border border-white/20 bg-gradient-to-br from-blue-50/30 via-white/50 to-purple-50/30 backdrop-blur-sm">
+                    <MapContainer
+                      center={meetingPoint
+                        ? meetingPoint.coordinates
+                        : defaultMapCenter}
+                      zoom={meetingPoint ? undefined : defaultMapZoom}
+                      markers={mapMarkers}
+                      {routes}
+                      polygons={debugPolygons}
+                      {meetingZoneRadius}
+                      {animateToResults}
+                      zoomToFitMarkers={false}
+                      height="100%"
+                      heatmapData={isDebugMode ? debugData?.heatmap_data : null}
+                      showHeatmap={isDebugMode ? showHeatmap : false}
+                      showMovementVectors={isDebugMode ? showMovementVectors : false}
+                      on:bounds={handleMapBounds}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          {/if}
         </MapProvider>
       </div>
     </div>
@@ -613,12 +832,31 @@
     }
   }
 
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .animate-bounce-subtle {
     animation: bounce-subtle 3s ease-in-out infinite;
   }
 
   .animate-float {
     animation: float 4s ease-in-out infinite;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .animate-reverse {
+    animation-direction: reverse;
   }
 
   /* Enhanced Scrollbar */

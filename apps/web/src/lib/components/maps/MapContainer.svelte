@@ -1,6 +1,7 @@
 <script>
     import { onMount, onDestroy, createEventDispatcher } from 'svelte';
     import { googleMapsService } from '$services/map';
+    import HeatmapOverlay from './HeatmapOverlay.svelte';
     
     // Props
     export let center = [2.3522, 48.8566]; // Default: Paris
@@ -14,6 +15,9 @@
     export let width = '100%';
     export let animateToResults = false; // Flag to trigger animation to results
     export let zoomToFitMarkers = false; // Flag to control auto-zooming to all markers
+    export let heatmapData = null; // Heatmap data for POI visualization
+    export let showHeatmap = false; // Toggle heatmap visibility
+    export let showMovementVectors = false; // Toggle movement vectors
     
     // Internal state
     let mapContainer;
@@ -22,6 +26,7 @@
     let mapRoutes = [];
     let mapPolygons = [];
     let meetingZoneCircle = null;
+    let movementVectors = []; // Movement vector polylines
     let isLoaded = false;
     let error = null;
     let allMarkersBounds = null;
@@ -107,11 +112,12 @@
     });
     
     onDestroy(() => {
-      // Clean up markers, routes, polygons, and circle
+      // Clean up markers, routes, polygons, circle, and movement vectors
       clearMarkers();
       clearRoutes();
       clearPolygons();
       clearMeetingZoneCircle();
+      clearMovementVectors();
     });
     
     // Watch for marker changes
@@ -132,6 +138,13 @@
     $: if (map && polygons && isLoaded) {
       clearPolygons();
       addPolygons();
+    }
+    
+    // Watch for movement vector changes
+    $: if (map && isLoaded && heatmapData && showMovementVectors) {
+      addMovementVectors();
+    } else if (map && isLoaded && !showMovementVectors) {
+      clearMovementVectors();
     }
     
     // Watch for animation flag
@@ -296,6 +309,36 @@
         <path d="M10 16 Q14 18 18 16" stroke="#10B981" stroke-width="2" fill="none" stroke-linecap="round"/>
       </svg>`;
     }
+
+    function createPoiSvg(poiType = 'Other') {
+      // Different colors for different POI types
+      let color = '#6B7280'; // Default gray
+      let emoji = '📍';
+      
+      if (poiType.includes('TransitHub')) {
+        color = '#DC2626'; // Red for transit
+        emoji = '🚇';
+      } else if (poiType.includes('Restaurant')) {
+        color = '#F59E0B'; // Orange for restaurants
+        emoji = '🍽️';
+      } else if (poiType.includes('PublicSpace')) {
+        color = '#059669'; // Green for public spaces
+        emoji = '🏛️';
+      }
+      
+      return `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="drop-shadow-poi">
+            <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="rgba(0,0,0,0.3)"/>
+          </filter>
+        </defs>
+        <!-- Small circle -->
+        <circle cx="10" cy="10" r="8" fill="${color}" 
+                filter="url(#drop-shadow-poi)" stroke="white" stroke-width="1"/>
+        <!-- Emoji -->
+        <text x="10" y="14" font-size="10" text-anchor="middle">${emoji}</text>
+      </svg>`;
+    }
     
     function addMarkers() {
       if (!map || !markers || !window.google) return;
@@ -337,6 +380,10 @@
             svg = createVenueSvg();
             width = 28 * scale;
             height = 28 * scale;
+          } else if (marker.type === 'poi') {
+            svg = createPoiSvg(marker.poiType);
+            width = 20 * scale;
+            height = 20 * scale;
           } else {
             // Default: location marker
             const number = marker.number || 1;
@@ -551,7 +598,7 @@
     }
     
     function addPolygons() {
-      return; // TODO: enable?
+      // TODO: enable?
       if (!map || !polygons || !window.google) return;
       
       mapPolygons = polygons.map(polygon => {
@@ -587,6 +634,11 @@
           fillColor = '#10B981'; // Green for intersections
           strokeColor = '#059669';
           fillOpacity = 1; // More visible for intersections
+        } else if (polygon.type === 'region') {
+          fillColor = '#F59E0B'; // Orange for regions
+          strokeColor = '#D97706';
+          fillOpacity = 0.1; // Very transparent for regions
+          strokeOpacity = 0.6;
         }
         
         const googlePolygon = new window.google.maps.Polygon({
@@ -598,7 +650,7 @@
           fillOpacity: fillOpacity,
           map: map,
           clickable: false,
-          zIndex: polygon.type === 'intersection' ? 2 : 1 // Intersections on top
+          zIndex: polygon.type === 'intersection' ? 3 : polygon.type === 'region' ? 2 : 1 // Intersections on top, then regions, then isochrones
         });
         
         return googlePolygon;
@@ -609,6 +661,79 @@
       if (mapPolygons.length) {
         mapPolygons.forEach(polygon => polygon && polygon.setMap(null));
         mapPolygons = [];
+      }
+    }
+    
+    function addMovementVectors() {
+      if (!map || !heatmapData?.candidate_movements || !window.google) return;
+      
+      // Clear existing vectors
+      clearMovementVectors();
+      
+      movementVectors = heatmapData.candidate_movements.map(movement => {
+        const startPos = { lat: movement.original_position[1], lng: movement.original_position[0] };
+        const endPos = { lat: movement.final_position[1], lng: movement.final_position[0] };
+        
+        // Different colors based on whether candidate was kept and heat improvement
+        let strokeColor = '#6B7280'; // Gray for rejected
+        let strokeOpacity = 0.4;
+        let strokeWeight = 1;
+        
+        if (movement.was_kept) {
+          if (movement.heat_improvement > 0.1) {
+            strokeColor = '#10B981'; // Green for good improvement
+            strokeOpacity = 0.8;
+            strokeWeight = 2;
+          } else if (movement.heat_improvement > 0.05) {
+            strokeColor = '#F59E0B'; // Orange for moderate improvement
+            strokeOpacity = 0.6;
+            strokeWeight = 2;
+          } else {
+            strokeColor = '#3B82F6'; // Blue for small improvement
+            strokeOpacity = 0.5;
+            strokeWeight = 1;
+          }
+        }
+        
+        // Create arrow polyline
+        const vector = new window.google.maps.Polyline({
+          path: [startPos, endPos],
+          geodesic: false,
+          strokeColor: strokeColor,
+          strokeOpacity: strokeOpacity,
+          strokeWeight: strokeWeight,
+          map: map,
+          clickable: false,
+          zIndex: 10
+        });
+        
+        // Add arrowhead at the end
+        const arrowSymbol = {
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 3,
+          strokeColor: strokeColor,
+          strokeOpacity: strokeOpacity,
+          fillColor: strokeColor,
+          fillOpacity: strokeOpacity,
+        };
+        
+        vector.setOptions({
+          icons: [{
+            icon: arrowSymbol,
+            offset: '100%'
+          }]
+        });
+        
+        return vector;
+      }).filter(vector => vector !== null);
+      
+             console.log(`📍 Added ${movementVectors.length} movement vectors to map`);
+    }
+    
+    function clearMovementVectors() {
+      if (movementVectors.length) {
+        movementVectors.forEach(vector => vector && vector.setMap(null));
+        movementVectors = [];
       }
     }
   </script>
@@ -629,6 +754,16 @@
       </div>
     {/if}
   </div>
+  
+  <!-- Heatmap Overlay Component -->
+  {#if isLoaded && map}
+    <HeatmapOverlay 
+      {map} 
+      {heatmapData} 
+      visible={showHeatmap} 
+      opacity={0.6} 
+    />
+  {/if}
   
   <style>
     .map-error {
