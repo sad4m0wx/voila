@@ -261,9 +261,17 @@ impl MeetingPointAlgorithm {
         
         info!("🎯 Generated {} raw candidates", candidates.len());
         
+        let all_pois = match self.poi_service.get_pois_in_polygons(intersections).await {
+            Ok(pois) => pois,
+            Err(_) => {
+                info!("⚠️ Failed to fetch POIs, skipping heatmap optimization");
+                return Ok(self.select_candidates_spatially_distributed(&candidates, 30));
+            }
+        };
+        
         // Apply heatmap optimization to move candidates toward POI hotspots
         let (optimized_candidates, heatmap_data) = self
-            .optimize_candidates_with_heatmap(&candidates, intersections)
+            .optimize_candidates_with_heatmap(&candidates, intersections, &all_pois)
             .await
             .unwrap_or_else(|_| {
                 info!("⚠️ Heatmap optimization failed, using original candidates");
@@ -276,7 +284,7 @@ impl MeetingPointAlgorithm {
         }
 
         const MAX_GENERATED_CANDIDATES: usize = 30;
-        let final_candidates = self.select_best_candidates(&optimized_candidates, intersections, MAX_GENERATED_CANDIDATES).await?;
+        let final_candidates = self.select_best_candidates(&optimized_candidates, MAX_GENERATED_CANDIDATES, &all_pois).await?;
         
         Ok(final_candidates)
     }
@@ -312,29 +320,15 @@ impl MeetingPointAlgorithm {
         candidates
     }
 
-    async fn select_best_candidates(&self, candidates: &[Location], intersections: &[Polygon<f64>], max_candidates: usize) -> Result<Vec<Location>> {
+    async fn select_best_candidates(&self, candidates: &[Location], max_candidates: usize, all_pois: &[PointOfInterest]) -> Result<Vec<Location>> {
         if candidates.len() <= max_candidates {
             return Ok(candidates.to_vec());
-        }
-
-        // Get POIs to calculate heat values for ranking
-        let all_pois = match self.poi_service.get_pois_in_polygons(intersections).await {
-            Ok(pois) => pois,
-            Err(_) => {
-                // If POI fetching fails, fall back to spatial distribution
-                return Ok(self.select_candidates_spatially_distributed(candidates, max_candidates));
-            }
-        };
-
-        if all_pois.is_empty() {
-            // No POIs available, use spatial distribution
-            return Ok(self.select_candidates_spatially_distributed(candidates, max_candidates));
         }
 
         // Calculate heat values for all candidates
         let mut candidates_with_heat: Vec<(Location, f64)> = candidates.iter()
             .map(|candidate| {
-                let heat = self.poi_service.calculate_location_heat(candidate, &all_pois);
+                let heat = self.poi_service.calculate_location_heat(candidate, all_pois);
                 (candidate.clone(), heat)
             })
             .collect();
@@ -376,22 +370,10 @@ impl MeetingPointAlgorithm {
         &self, 
         grid_candidates: &[Location], 
         intersections: &[Polygon<f64>], 
+        all_pois: &[PointOfInterest],
     ) -> Result<(Vec<Location>, Option<DebugHeatmapData>)> {
 
         if grid_candidates.is_empty() || intersections.is_empty() {
-            return Ok((grid_candidates.to_vec(), None));
-        }
-
-        let all_pois = match self.poi_service.get_pois_in_polygons(intersections).await {
-            Ok(pois) => pois,
-            Err(e) => {
-                info!("⚠️ Failed to fetch POIs: {}, skipping heatmap optimization", e);
-                return Ok((grid_candidates.to_vec(), None));
-            }
-        };
-        
-        if all_pois.is_empty() {
-            info!("🏢 No POIs found, skipping heatmap optimization");
             return Ok((grid_candidates.to_vec(), None));
         }
 
@@ -410,7 +392,7 @@ impl MeetingPointAlgorithm {
         for (candidate_idx, original_candidate) in grid_candidates.iter().enumerate() {
             let mut current_location = original_candidate.clone();
             let mut best_location = original_candidate.clone();
-            let mut best_heat = self.poi_service.calculate_location_heat(&current_location, &all_pois);
+            let mut best_heat = self.poi_service.calculate_location_heat(&current_location, all_pois);
 
             // Gradient ascent toward local maxima
             for _iteration in 0..MAX_ITERATIONS {
@@ -433,7 +415,7 @@ impl MeetingPointAlgorithm {
                         continue;
                     }
 
-                    let test_heat = self.poi_service.calculate_location_heat(&test_location, &all_pois);
+                    let test_heat = self.poi_service.calculate_location_heat(&test_location, all_pois);
                     
                     if test_heat > best_heat {
                         best_heat = test_heat;
@@ -451,7 +433,7 @@ impl MeetingPointAlgorithm {
 
             // Track movement statistics
             let movement_distance = original_candidate.distance_to(&best_location);
-            let original_heat = self.poi_service.calculate_location_heat(original_candidate, &all_pois);
+            let original_heat = self.poi_service.calculate_location_heat(original_candidate, all_pois);
             let heat_improvement = best_heat - original_heat;
             let was_kept = best_heat >= MIN_HEAT_THRESHOLD;
             
@@ -482,7 +464,7 @@ impl MeetingPointAlgorithm {
         let optimized_candidates: Vec<Location> = deduplicated_candidates.into_iter().map(|(loc, _)| loc).collect();
 
         // Generate heatmap data AFTER optimization with real stats
-        let mut heatmap_data = self.generate_heatmap_debug(intersections, &all_pois).await?;
+        let mut heatmap_data = self.generate_heatmap_debug(intersections, all_pois).await?;
         
         // Update heatmap data with optimization stats and movements
         heatmap_data.optimization_stats = DebugOptimizationStats {
