@@ -2,8 +2,8 @@ use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::time::Duration;
-use log::{error, info, debug};
+use std::time::{Duration, Instant};
+use log::{info, debug};
 use geo::{Point, Contains, Polygon};
 
 use crate::models::Location;
@@ -65,6 +65,8 @@ impl PoiService {
             return Ok(Vec::new());
         }
 
+        let start_time = Instant::now();
+
         let bbox = self.calculate_bounding_box(polygons);
         
         let mut all_pois = Vec::new();
@@ -86,7 +88,8 @@ impl PoiService {
             })
             .collect();
         
-        info!("🏢 Found {} POIs within intersection polygons", filtered_pois.len());
+        let elapsed_time = start_time.elapsed();
+        info!("🏢 Found {} POIs within intersection polygons in {:?}", filtered_pois.len(), elapsed_time);
         Ok(filtered_pois)
     }
 
@@ -159,7 +162,8 @@ impl PoiService {
 
     async fn execute_overpass_query(&self, query: &str, poi_type: PoiType) -> Result<Vec<PointOfInterest>> {
         debug!("Executing Overpass query for {:?}", poi_type);
-        
+        let start_time = Instant::now();
+
         let response = self.client
             .post(&self.overpass_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -178,7 +182,9 @@ impl PoiService {
             .filter_map(|element| self.convert_overpass_element_to_poi(element, &poi_type))
             .collect();
 
-        debug!("Converted {} elements to POIs for {:?}", pois.len(), poi_type);
+            
+        let elapsed_time = start_time.elapsed();
+        info!("Converted {} elements to POIs for {:?} in {:?}", pois.len(), poi_type, elapsed_time);
         Ok(pois)
     }
 

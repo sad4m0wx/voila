@@ -1,5 +1,4 @@
 use reqwest::Client;
-use uuid::Uuid;
 use futures::future::join_all;
 use std::time::Duration;
 use std::env;
