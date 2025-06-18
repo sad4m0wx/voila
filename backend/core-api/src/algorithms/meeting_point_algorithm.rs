@@ -152,7 +152,7 @@ impl MeetingPointAlgorithm {
     ) -> Result<(Vec<IsochroneResult>, Vec<Polygon<f64>>, Vec<Location>)> {
 
         const MIN_INTERSECTION_AREA_KM2: f64 = 0.5;  
-        const MAX_INTERSECTION_AREA_KM2: f64 = 15.0;
+        const MAX_INTERSECTION_AREA_KM2: f64 = 20.0;
 
         const MIN_TIME_LIMIT_MINUTES: u32 = 10;
         const MAX_TIME_LIMIT_MINUTES: u32 = 90;
@@ -737,8 +737,8 @@ impl MeetingPointAlgorithm {
             west: min_lon,
         };
 
-        // Generate heatmap grid
-        const GRID_SIZE: usize = 50;
+        // Generate heatmap grid with higher resolution for finer granularity
+        const GRID_SIZE: usize = 100; // Increased from 50 for better resolution
         let lat_step = (max_lat - min_lat) / GRID_SIZE as f64;
         let lon_step = (max_lon - min_lon) / GRID_SIZE as f64;
 

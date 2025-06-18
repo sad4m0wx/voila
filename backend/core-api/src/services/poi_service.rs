@@ -223,20 +223,45 @@ impl PoiService {
     pub fn calculate_location_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
         let mut heat = 0.0;
         
-        // Factor 1: Proximity to transit hubs (40% weight)
+        // Factor 1: Proximity to transit hubs (35% weight)
         let transit_heat = self.calculate_transit_proximity_heat(location, all_pois);
-        heat += transit_heat * 0.45;
+        heat += transit_heat * 0.35;
         
         // Factor 2: Density of venues nearby (45% weight)
         let dining_heat = self.calculate_venue_density_heat(location, all_pois);
         heat += dining_heat * 0.45;
         
-        // Factor 3: Overall POI density (15% weight)
+        // Factor 3: Overall POI density (20% weight)
         let poi_density_heat = self.calculate_poi_density_heat(location, all_pois);
-        heat += poi_density_heat * 0.10;
+        heat += poi_density_heat * 0.20;
         
-        debug!("Transit heat: {}, Dining heat: {}, POI density heat: {}", transit_heat, dining_heat, poi_density_heat);
+        // Apply non-linear scaling to improve granularity and reduce high-scoring areas
+        heat = self.apply_sigmoid_scaling(heat);
+        
+        info!("Transit heat: {:.3}, Dining heat: {:.3}, POI density heat: {:.3}, Raw combined: {:.3}, Final heat: {:.3}", 
+               transit_heat, dining_heat, poi_density_heat, 
+               transit_heat * 0.35 + dining_heat * 0.45 + poi_density_heat * 0.20, heat);
         heat
+    }
+    
+    fn apply_sigmoid_scaling(&self, raw_heat: f64) -> f64 {
+        // Use a sigmoid-like function to compress high values and spread mid-range values
+        const SCALING_FACTOR: f64 = 2.5;
+        const SHIFT: f64 = 0.4;
+        
+        let shifted = raw_heat - SHIFT;
+        let scaled = shifted * SCALING_FACTOR;
+        
+        // Apply sigmoid function: 1 / (1 + e^(-x))
+        let sigmoid = 1.0 / (1.0 + (-scaled).exp());
+        
+        let final_heat = if raw_heat < 0.1 {
+            raw_heat * 2.0
+        } else {
+            (sigmoid - 0.5) * 1.8 + 0.1
+        };
+        
+        final_heat.max(0.0).min(1.0)
     }
 
     fn calculate_transit_proximity_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
@@ -249,7 +274,8 @@ impl PoiService {
         }
         
         let mut total_heat = 0.0;
-        const MAX_TRANSIT_DISTANCE: f64 = 1000.0; // 1km max useful distance
+        const MAX_TRANSIT_DISTANCE: f64 = 800.0; // Reduced from 1km for more granular scoring
+        const DISTANCE_DECAY_RATE: f64 = 3.0; // Increased for steeper distance penalty
         
         // Calculate distance-based heat for all transit hubs within range
         for hub in &transit_hubs {
@@ -257,16 +283,14 @@ impl PoiService {
             
             if distance <= MAX_TRANSIT_DISTANCE {
                 let normalized_distance = distance / MAX_TRANSIT_DISTANCE;
-                let proximity_score = (-2.0 * normalized_distance).exp(); // e^(-2*d/max_d)
+                let proximity_score = (-DISTANCE_DECAY_RATE * normalized_distance).exp();
                 
                 let weighted_score = proximity_score * hub.importance;
                 total_heat += weighted_score;
             }
         }
         
-        // Dynamic normalization based on actual transit hub count
-        // Assume that having access to 10% of available hubs with high proximity is "perfect"
-        let normalization_factor = (transit_hubs.len() as f64 * 0.1).max(1.0);
+        let normalization_factor = (transit_hubs.len() as f64 * 0.05).max(0.5);
         let normalized_heat = total_heat / normalization_factor;
         normalized_heat.min(1.0) // Cap at 1.0
     }
@@ -281,7 +305,8 @@ impl PoiService {
         }
         
         let mut total_heat = 0.0;
-        const MAX_VENUE_DISTANCE: f64 = 1000.0; // 1km max useful distance for venues
+        const MAX_VENUE_DISTANCE: f64 = 600.0; // Reduced from 1km for more granular scoring
+        const VENUE_DECAY_RATE: f64 = 2.0; // Steeper than before but less than transit
         
         // Calculate distance-based heat for all venues within range
         for venue in &dining_pois {
@@ -289,15 +314,13 @@ impl PoiService {
             
             if distance <= MAX_VENUE_DISTANCE {
                 let normalized_distance = distance / MAX_VENUE_DISTANCE;
-                let proximity_score = (-1.5 * normalized_distance).exp(); // Slightly less steep than transit
+                let proximity_score = (-VENUE_DECAY_RATE * normalized_distance).exp();
                 let weighted_score = proximity_score * venue.importance;
                 total_heat += weighted_score;
             }
         }
         
-        // Dynamic normalization based on actual venue count
-        // Assume that having access to 5% of available venues with high proximity is "perfect"
-        let normalization_factor = (dining_pois.len() as f64 * 0.05).max(3.0);
+        let normalization_factor = (dining_pois.len() as f64 * 0.03).max(2.0);
         let normalized_heat = total_heat / normalization_factor;
         normalized_heat.min(1.0) // Cap at 1.0
     }
@@ -307,25 +330,25 @@ impl PoiService {
             return 0.0;
         }
         
-        // Calculate overall POI density within 500m
-        const DENSITY_RADIUS: f64 = 500.0;
+        const DENSITY_RADIUS: f64 = 300.0;
         
-        let nearby_pois: Vec<&PointOfInterest> = all_pois.iter()
-            .filter(|poi| location.distance_to(&poi.location) <= DENSITY_RADIUS)
-            .collect();
+        let mut weighted_count = 0.0;
         
-        if nearby_pois.is_empty() {
+        // Use distance-weighted scoring instead of simple count
+        for poi in all_pois {
+            let distance = location.distance_to(&poi.location);
+            if distance <= DENSITY_RADIUS {
+                let normalized_distance = distance / DENSITY_RADIUS;
+                let distance_weight = (-1.0 * normalized_distance).exp(); // Gentle decay
+                weighted_count += poi.importance * distance_weight;
+            }
+        }
+        
+        if weighted_count == 0.0 {
             return 0.0;
         }
         
-        // Weight POIs by their importance and calculate density
-        let weighted_count: f64 = nearby_pois.iter()
-            .map(|poi| poi.importance)
-            .sum();
-        
-        // Dynamic normalization based on total POI count
-        // Assume that having 2% of all POIs within 500m is "perfect" density
-        let normalization_factor = (all_pois.len() as f64 * 0.02).max(2.0);
+        let normalization_factor = (all_pois.len() as f64 * 0.01).max(1.5);
         let density_score = weighted_count / normalization_factor;
         density_score.min(1.0) // Cap at 1.0
     }
