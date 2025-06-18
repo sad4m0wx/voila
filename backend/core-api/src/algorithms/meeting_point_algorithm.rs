@@ -138,11 +138,10 @@ impl MeetingPointAlgorithm {
             .unwrap_or(0);
         
         let avg_time_minutes = max_time_seconds / 60;
-        let margin_time = avg_time_minutes as f64 * 1.2;
-        let rounded_time_limit = ((margin_time as u32 + 4) / 5) * 5; // Rounds up to nearest 5
+        let rounded_time_limit = ((avg_time_minutes as u32 + 4) / 5) * 5; // Rounds up to nearest 5
         let capped_time_limit = rounded_time_limit.min(90);
         
-        info!("⏱️  Estimated travel time: {}min, margin: {}min, using time limit: {}min", avg_time_minutes, margin_time, capped_time_limit);
+        info!("⏱️  Estimated travel time: {}min, using time limit: {}min", avg_time_minutes, capped_time_limit);
         Ok(capped_time_limit)
     }
 
