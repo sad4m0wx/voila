@@ -27,7 +27,7 @@ graphhopper:
   
   # GTFS-specific settings optimized for frequency-based routing
   gtfs.max_transfer_distance: 800  
-  gtfs.walk_speed: 5.0
+  gtfs.walk_speed: 4.5
   gtfs.data_import: true
   
   # Frequency-based routing settings
@@ -37,10 +37,10 @@ graphhopper:
   gtfs.ignore_real_time: true  # Ignore schedule variations
   
   # Transit boarding and transfer penalties to increase cost of changes
-  gtfs.boarding_time: 120  # Time penalty for boarding transit (2 minutes)
+  gtfs.boarding_time: 180  # Time penalty for boarding transit (2 minutes)
   gtfs.alighting_time: 60  # Time penalty for alighting transit (1 minute)
-  gtfs.transfer_penalty: 150  # Additional penalty for transfers (2.5 minutes equivalent)
-  gtfs.mode_transfer_penalty: 300  # Extra penalty for changing transit modes (5 minutes equivalent)
+  gtfs.transfer_penalty: 180  # Additional penalty for transfers (2.5 minutes equivalent)
+  gtfs.mode_transfer_penalty: 180  # Extra penalty for changing transit modes (5 minutes equivalent)
   
   # Optimize for frequency-based queries - REDUCED FOR CPU OPTIMIZATION
   graph.do_sort: true
@@ -66,7 +66,7 @@ graphhopper:
   datareader:
     gtfs:
       base-osm-filter: true
-      walk-speed: 5.0
+      walk-speed: 4.5
       use-optimized-transfers: true  
       transfers-min-transfer-time: 180 
       
@@ -75,8 +75,8 @@ graphhopper:
       default-headway: 600 
       
       # Transfer penalties and costs
-      boarding-cost: 120  
-      transfer-cost: 300
+      boarding-cost: 180  
+      transfer-cost: 180
       max-transfer-distance: 800  
       create-walk-connections: true 
       cluster-stops: false 
