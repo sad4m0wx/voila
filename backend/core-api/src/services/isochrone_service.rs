@@ -247,6 +247,7 @@ impl IsochroneService {
     }
 
     fn build_isochrone_request(&self, request: &IsochroneRequest) -> Result<Value> {
+        const DEPARTURE_TIME: &str = "2025-05-01T12:00";
         let time_limit = request.time_limit.unwrap_or(30);
         let profile = request.profile.as_deref().unwrap_or("pedestrian");
         
@@ -271,7 +272,11 @@ impl IsochroneService {
             }],
             "polygons": true,
             "denoise": 0.1,
-            "generalize": 5
+            "generalize": 5,
+            "date_time": {
+                "type": 1, // Depart at
+                "value": DEPARTURE_TIME
+            }
         });
 
         Ok(valhalla_request)
