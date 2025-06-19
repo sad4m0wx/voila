@@ -128,6 +128,8 @@ impl RouteService {
     }
 
     fn build_route_request(&self, from: &Location, to: &Location) -> Result<Value> {
+        const DEPARTURE_TIME: &str = "2025-05-01T12:00";
+
         let route_request = json!({
             "locations": [
                 {
@@ -149,7 +151,7 @@ impl RouteService {
             },
             "date_time": {
                 "type": 1, // Depart at
-                "value": "current"
+                "value": DEPARTURE_TIME
             },
             "shape_match": "edge_walk",
             "filters": {
