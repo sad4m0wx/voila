@@ -514,7 +514,7 @@
                       zoom={meetingPoint ? undefined : defaultMapZoom}
                       markers={mapMarkers}
                       {routes}
-                      polygons={debugPolygons}
+                      polygons={isDebugMode ? debugPolygons : []}
                       {meetingZoneRadius}
                       {animateToResults}
                       zoomToFitMarkers={false}
@@ -774,7 +774,7 @@
                       zoom={meetingPoint ? undefined : defaultMapZoom}
                       markers={mapMarkers}
                       {routes}
-                      polygons={debugPolygons}
+                      polygons={isDebugMode ? debugPolygons : []}
                       {meetingZoneRadius}
                       {animateToResults}
                       zoomToFitMarkers={false}
