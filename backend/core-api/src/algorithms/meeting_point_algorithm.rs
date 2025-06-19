@@ -169,6 +169,11 @@ impl MeetingPointAlgorithm {
         let mut tried_results: std::collections::HashMap<u32, (Vec<IsochroneResult>, Vec<Polygon<f64>>, f64)> = std::collections::HashMap::new();
         
         loop {
+
+            if current_time_limit <= MIN_TIME_LIMIT_MINUTES || current_time_limit >= MAX_TIME_LIMIT_MINUTES {
+                break;
+            }
+
             // Check for oscillation and return current result if detected
             if tried_results.contains_key(&current_time_limit) {
                 info!("⚠️  Oscillation detected at {}min, using current result", current_time_limit);
@@ -220,9 +225,6 @@ impl MeetingPointAlgorithm {
                 }
             }
             
-            if current_time_limit <= MIN_TIME_LIMIT_MINUTES || current_time_limit >= MAX_TIME_LIMIT_MINUTES {
-                break;
-            }
         }
 
         Err(anyhow::anyhow!("Could not find optimal intersection area within time limits {}-{}min", MIN_TIME_LIMIT_MINUTES, MAX_TIME_LIMIT_MINUTES))
