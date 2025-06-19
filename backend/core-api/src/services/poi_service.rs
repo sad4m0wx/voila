@@ -250,25 +250,6 @@ impl PoiService {
         heat
     }
     
-    fn apply_sigmoid_scaling(&self, raw_heat: f64) -> f64 {
-        // Use a sigmoid-like function to compress high values and spread mid-range values
-        const SCALING_FACTOR: f64 = 2.5;
-        const SHIFT: f64 = 0.4;
-        
-        let shifted = raw_heat - SHIFT;
-        let scaled = shifted * SCALING_FACTOR;
-        
-        // Apply sigmoid function: 1 / (1 + e^(-x))
-        let sigmoid = 1.0 / (1.0 + (-scaled).exp());
-        
-        let final_heat = if raw_heat < 0.1 {
-            raw_heat * 2.0
-        } else {
-            (sigmoid - 0.5) * 1.8 + 0.1
-        };
-        
-        final_heat.max(0.0).min(1.0)
-    }
 
     fn calculate_transit_proximity_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
         let transit_hubs: Vec<&PointOfInterest> = all_pois.iter()

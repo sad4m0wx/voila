@@ -390,7 +390,7 @@ impl MeetingPointAlgorithm {
         const MAX_ITERATIONS: usize = 5;
         const MIN_HEAT_THRESHOLD: f64 = 0.15;
 
-        for (candidate_idx, original_candidate) in grid_candidates.iter().enumerate() {
+        for original_candidate in grid_candidates {
             let mut current_location = original_candidate.clone();
             let mut best_location = original_candidate.clone();
             let mut best_heat = self.poi_service.calculate_location_heat(&current_location, all_pois);
