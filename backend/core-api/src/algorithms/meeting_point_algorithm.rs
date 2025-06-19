@@ -151,7 +151,7 @@ impl MeetingPointAlgorithm {
         initial_time_limit: u32,
     ) -> Result<(Vec<IsochroneResult>, Vec<Polygon<f64>>, Vec<Location>)> {
 
-        const MIN_INTERSECTION_AREA_KM2: f64 = 0.5;  
+        const MIN_INTERSECTION_AREA_KM2: f64 = 2.5;  
         const MAX_INTERSECTION_AREA_KM2: f64 = 20.0;
 
         const MIN_TIME_LIMIT_MINUTES: u32 = 10;
