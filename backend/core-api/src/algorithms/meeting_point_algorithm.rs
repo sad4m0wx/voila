@@ -206,8 +206,6 @@ impl MeetingPointAlgorithm {
                     let candidates = self.generate_candidates(&intersections).await?;
                     
                     if !candidates.is_empty() {
-                        info!("🎯 Found optimal area ({:.2} km²) with {} candidates at {}min", 
-                              area_km2, candidates.len(), current_time_limit);
                         return Ok((isochrones, intersections, candidates));
                     }
                 },
@@ -389,7 +387,7 @@ impl MeetingPointAlgorithm {
         
         // Optimization parameters
         const MOVEMENT_INCREMENT: f64 = 0.001; // ~100m movement per iteration
-        const MAX_ITERATIONS: usize = 3;
+        const MAX_ITERATIONS: usize = 5;
         const MIN_HEAT_THRESHOLD: f64 = 0.15;
 
         for (candidate_idx, original_candidate) in grid_candidates.iter().enumerate() {

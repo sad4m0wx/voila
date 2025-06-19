@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::{Value, json};
 use std::env;
 use std::time::Duration;
 use log::{error, info, debug};
@@ -8,10 +9,10 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use once_cell::sync::Lazy;
 use futures::future::join_all;
-
+use polyline::decode_polyline;
 
 use crate::models::Location;
-use crate::models::transit::{TransitStep, GeoJson, TransitDetails, TransitLine};
+use crate::models::transit::{TransitStep, TransitDetails, TransitLine, GeoJson};
 use crate::services::cache_service::{CacheService, CACHE_TTL_SECONDS};
 
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
@@ -19,13 +20,13 @@ static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(30));
 #[derive(Clone)]
 pub struct RouteService {
     client: Client,
-    base_url: String,
+    valhalla_url: String,
 }
 
 impl RouteService {
     pub fn new() -> Self {
-        let base_url = env::var("GRAPHHOPPER_URL")
-            .unwrap_or_else(|_| "http://voila-app.fr:8989".to_string());
+        let valhalla_url = env::var("VALHALLA_URL")
+            .unwrap_or_else(|_| "http://voila-app.fr:8002".to_string());
             
         let client = Client::builder()
             .timeout(Duration::from_secs(120))
@@ -35,7 +36,9 @@ impl RouteService {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, base_url }
+        info!("Valhalla route service initialized with endpoint: {}", valhalla_url);
+
+        Self { client, valhalla_url }
     }
     
     pub async fn get_transit_route(
@@ -45,14 +48,14 @@ impl RouteService {
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
         let cache_service = CacheService::global().await;
         
-        // Check for cached transit route
-        if let Some(cached_result) = cache_service.get_cached_route(from, to, "pt").await {
-            info!("🎯 Transit route cache hit!");
+        // Check for cached transit route with "valhalla" prefix to distinguish from GraphHopper cache
+        if let Some(cached_result) = cache_service.get_cached_route(from, to, "valhalla_pt").await {
+            info!("🎯 Valhalla transit route cache hit!");
             return Ok(cached_result);
         }
         
         let permit = REQUEST_SEMAPHORE.acquire().await.expect("Semaphore closed");
-        let result = self.compute_transit_route(from, to).await;
+        let result = self.compute_valhalla_route(from, to).await;
         drop(permit);
         
         match &result {
@@ -60,17 +63,16 @@ impl RouteService {
                 let _ = cache_service.cache_route(
                     from,
                     to,
-                    "pt",
+                    "valhalla_pt",
                     route_result,
                     Some(CACHE_TTL_SECONDS)
                 ).await;
-                info!("💾 Transit route cached successfully");
             }
             Err(e) => {
-                debug!("Route computation failed, not caching: {}", e);
+                debug!("Valhalla route computation failed, not caching: {}", e);
             }
         }
-
+        
         result
     }
 
@@ -79,207 +81,338 @@ impl RouteService {
         origins: &[(String, Location)],
         destination: &Location,
     ) -> Vec<Result<(Duration, f64, Vec<TransitStep>)>> {
-
+        info!("🚁 Valhalla route service called with {} origins", origins.len());
+        
         let futures: Vec<_> = origins.iter().map(|(_, origin)| {
             self.get_transit_route(&origin, &destination)
         }).collect();
 
-        join_all(futures).await 
+        return join_all(futures).await;
+        
     }
 
-    async fn compute_transit_route(
+    async fn compute_valhalla_route(
         &self,
         from: &Location,
         to: &Location,
     ) -> Result<(Duration, f64, Vec<TransitStep>)> {
-        let departure_time = chrono::Utc::now()
-            .date_naive()
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        info!("🔗 Calling Valhalla route API for {:.6}, {:.6} to {:.6}, {:.6}", 
+              from.latitude, from.longitude, to.latitude, to.longitude);
             
-        let params = [
-            ("point", format!("{},{}", from.latitude, from.longitude)),
-            ("point", format!("{},{}", to.latitude, to.longitude)),
-            ("pt.earliest_departure_time", departure_time),
-            ("profile", "pt".to_string()),
-            ("locale", "en".to_string()),
-            ("details", "street_name".to_string()),
-        ];
-
-        let url = format!("{}/route", self.base_url);
-
+        // Build Valhalla route request
+        let route_request = self.build_route_request(from, to)?;
+        
         let start_time = Instant::now();
         let response = self.client
-            .get(&url)
-            .query(&params)
+            .post(&format!("{}/route", self.valhalla_url))
+            .json(&route_request)
             .send()
-            .await?;
+            .await
+            .map_err(|e| anyhow!("Failed to call Valhalla route API: {}", e))?;
         
         let elapsed_time = start_time.elapsed(); 
-        info!("GraphHopper request took {:?}", elapsed_time);
+        info!("Valhalla route request took {:?}", elapsed_time);
 
-        let response_text = response.text().await?;
+        let status = response.status();
+        let response_text = response.text().await
+            .map_err(|e| anyhow!("Failed to read Valhalla response: {}", e))?;
+
+        if !status.is_success() {
+            error!("❌ Valhalla route API error {}: {}", status, response_text);
+            return Err(anyhow!("Valhalla route API returned error {}: {}", status, response_text));
+        }
+        
+        debug!("📨 Valhalla route response: {}", response_text);
+
         self.parse_route_response(&response_text)
     }
 
-    /// Parse GraphHopper route response
-    fn parse_route_response(&self, response_text: &str) -> Result<(Duration, f64, Vec<TransitStep>)> {
-        match serde_json::from_str::<PtRouteResponse>(&response_text) {
-            Ok(response_data) => {
-                if response_data.paths.is_empty() {
-                    return Err(anyhow!("No route found"));
+    fn build_route_request(&self, from: &Location, to: &Location) -> Result<Value> {
+        let route_request = json!({
+            "locations": [
+                {
+                    "lat": from.latitude,
+                    "lon": from.longitude
+                },
+                {
+                    "lat": to.latitude,
+                    "lon": to.longitude
                 }
-                
-                let path = &response_data.paths[0];
-                let duration = Duration::from_millis(path.time as u64);
-                let distance = path.distance;
-                
-                let steps = self.convert_pt_legs_to_steps(&path.legs)?;
-                
-                Ok((duration, distance, steps))
+            ],
+            "costing": "multimodal",
+            "costing_options": {
+                "multimodal": {
+                    "transit_cost": 1.0,
+                    "walking_speed": 5.1,
+                    "max_walking_distance": 2000
+                }
+            },
+            "date_time": {
+                "type": 1, // Depart at
+                "value": "current"
+            },
+            "shape_match": "edge_walk",
+            "filters": {
+                "attributes": ["edge.length", "edge.time", "edge.id"],
+                "action": "include"
             }
-            Err(e) => {
-                error!("Failed to parse GraphHopper response: {}", e);
-                Err(anyhow!("Failed to parse GraphHopper response: {}", e))
-            }
-        }
+        });
+
+        Ok(route_request)
     }
 
-    /// Convert GraphHopper legs to transit steps
-    fn convert_pt_legs_to_steps(&self, legs: &[PtLeg]) -> Result<Vec<TransitStep>> {
-        let mut steps = Vec::new();
+    fn parse_route_response(&self, response_text: &str) -> Result<(Duration, f64, Vec<TransitStep>)> {
+        let response_data: ValhallaRouteResponse = serde_json::from_str(response_text)
+            .map_err(|e| anyhow!("Failed to parse Valhalla route response: {}", e))?;
+
+        if response_data.trip.legs.is_empty() {
+            return Err(anyhow!("No route legs found"));
+        }
+
+        // Valhalla multimodal returns a single leg with maneuvers
+        let leg = &response_data.trip.legs[0];
+        let total_time = leg.summary.time;
+        let total_distance = leg.summary.length;
         
-        for leg in legs {
-            let step = match leg.leg_type.as_str() {
-                "pt" => {
-                    // Extract route information
-                    let route_id = leg.route_id.clone().unwrap_or_default();
-                    let trip_headsign = leg.trip_headsign.clone().unwrap_or_default();
-                    
-                    // Determine vehicle type from route_id
-                    let vehicle_type = if route_id.contains("M") || trip_headsign.contains("Métro") {
-                        "subway"
-                    } else if route_id.contains("T") {
-                        "tram"
-                    } else if route_id.contains("RER") {
-                        "rail"
-                    } else {
-                        "bus"
-                    };
-                    
-                    // Extract line name
-                    let line_name = route_id.trim_start_matches("PT:").to_string();
-                    
-                    // Build instruction text
-                    let instruction = if let Some(stops) = &leg.stops {
-                        let from_stop = stops.first().map(|s| s.stop_name.as_str()).unwrap_or("Unknown");
-                        let to_stop = stops.last().map(|s| s.stop_name.as_str()).unwrap_or("Unknown");
-                        format!("Take {} {} from {} to {}", vehicle_type, line_name, from_stop, to_stop)
-                    } else {
-                        format!("Take {}", trip_headsign)
-                    };
-                    
-                    TransitStep {
-                        distance: leg.distance,
-                        duration: leg.travel_time.unwrap_or(0) as u32 / 1000, // Convert ms to seconds
-                        mode: "transit".to_string(),
-                        instructions: Some(instruction),
-                        transit_details: Some(TransitDetails {
-                            line: TransitLine {
-                                name: trip_headsign,
-                                short_name: Some(line_name),
-                                color: "#1a73e8".to_string(), // Default color
-                                vehicle_type: vehicle_type.to_string(),
-                            },
-                            departure_stop: leg.stops.as_ref()
-                                .and_then(|s| s.first())
-                                .map(|s| s.stop_name.clone())
-                                .unwrap_or_default(),
-                            arrival_stop: leg.stops.as_ref()
-                                .and_then(|s| s.last())
-                                .map(|s| s.stop_name.clone())
-                                .unwrap_or_default(),
-                            departure_time: Some(leg.departure_time.clone()),
-                            arrival_time: Some(leg.arrival_time.clone()),
-                            num_stops: leg.stops.as_ref().map(|s| s.len() as u32).unwrap_or(0),
-                        }),
-                        geometry: Some(leg.geometry.clone())
+        // Decode the entire route geometry
+        let all_coordinates = self.decode_shape_to_geojson(&leg.shape)
+            .unwrap_or_else(|e| {
+                debug!("Failed to decode shape geometry: {}", e);
+                Vec::new()
+            });
+        
+        let mut steps = Vec::new();
+        let mut current_walking_distance = 0.0;
+        let mut current_walking_time = 0.0;
+        let mut current_walking_instructions = Vec::new();
+        let mut current_walking_start_index: Option<usize> = None;
+
+        for maneuver in &leg.maneuvers {
+            match maneuver.travel_mode.as_str() {
+                "transit" => {
+                    // First, add any accumulated walking steps as a single walking segment
+                    if current_walking_time > 0.0 {
+                        let walking_geometry = if let Some(start_idx) = current_walking_start_index {
+                            // Use the previous maneuver's end index as the end of walking segment
+                            if let Some(prev_maneuver) = leg.maneuvers.iter().rev()
+                                .find(|m| m.travel_mode == "pedestrian") {
+                                self.extract_geometry_segment(&all_coordinates, start_idx, prev_maneuver.end_shape_index)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        steps.push(TransitStep {
+                            distance: current_walking_distance,
+                            duration: current_walking_time as u32,
+                            mode: "walking".to_string(),
+                            instructions: Some(format!("Walk for {:.0} meters", current_walking_distance * 1000.0)),
+                            transit_details: None,
+                            geometry: walking_geometry,
+                        });
+                        
+                        current_walking_distance = 0.0;
+                        current_walking_time = 0.0;
+                        current_walking_instructions.clear();
+                        current_walking_start_index = None;
+                    }
+
+                    // Add transit step
+                    if let Some(transit_info) = &maneuver.transit_info {
+                        let line_name = transit_info.short_name.clone();
+                        let vehicle_type = match maneuver.travel_type.as_deref() {
+                            Some("metro") => "subway",
+                            Some("tram") => "tram", 
+                            Some("rail") => "rail",
+                            Some("bus") => "bus",
+                            _ => "transit"
+                        };
+
+                        let departure_stop = transit_info.transit_stops.first()
+                            .map(|s| s.name.clone())
+                            .unwrap_or_default();
+                        let arrival_stop = transit_info.transit_stops.last()
+                            .map(|s| s.name.clone())
+                            .unwrap_or_default();
+
+                        let instruction = format!("Take {} {} from {} to {}", 
+                            vehicle_type, line_name, departure_stop, arrival_stop);
+
+                        let transit_geometry = self.extract_geometry_segment(
+                            &all_coordinates,
+                            maneuver.begin_shape_index,
+                            maneuver.end_shape_index
+                        );
+
+                        steps.push(TransitStep {
+                            distance: maneuver.length,
+                            duration: maneuver.time as u32,
+                            mode: "transit".to_string(),
+                            instructions: Some(instruction),
+                            geometry: transit_geometry,
+                            transit_details: Some(TransitDetails {
+                                line: TransitLine {
+                                    name: transit_info.long_name.clone(),
+                                    short_name: Some(line_name),
+                                    color: format!("#{:06x}", transit_info.color),
+                                    vehicle_type: vehicle_type.to_string(),
+                                },
+                                departure_stop,
+                                arrival_stop,
+                                departure_time: transit_info.transit_stops.first()
+                                    .and_then(|s| s.departure_date_time.clone()),
+                                arrival_time: transit_info.transit_stops.last()
+                                    .and_then(|s| s.arrival_date_time.clone()),
+                                num_stops: transit_info.transit_stops.len() as u32,
+                            }),
+                        });
                     }
                 },
-                "walk" => {
-                    let instruction = leg.instructions.as_ref()
-                        .and_then(|instructions| instructions.first())
-                        .map(|inst| inst.text.clone())
-                        .unwrap_or_else(|| format!("Walk for {:.1} meters", leg.distance));
-                    
-                    TransitStep {
-                        distance: leg.distance,
-                        duration: leg.instructions.as_ref()
-                            .and_then(|instructions| instructions.iter().map(|i| i.time).sum::<i64>().checked_div(1000))
-                            .unwrap_or(0) as u32, // Convert ms to seconds
-                        mode: "walking".to_string(),
-                        instructions: Some(instruction),
-                        transit_details: None,
-                        geometry: Some(leg.geometry.clone())
+                "pedestrian" => {
+                    // Track the start of walking segments for geometry extraction
+                    if current_walking_start_index.is_none() {
+                        current_walking_start_index = Some(maneuver.begin_shape_index);
                     }
+                    
+                    // Accumulate walking maneuvers
+                    current_walking_distance += maneuver.length;
+                    current_walking_time += maneuver.time;
+                    current_walking_instructions.push(maneuver.instruction.clone());
                 },
                 _ => {
-                    TransitStep {
-                        distance: leg.distance,
-                        duration: 0,
-                        mode: leg.leg_type.clone(),
-                        instructions: Some(format!("{} for {:.1} meters", leg.leg_type, leg.distance)),
+                    // Handle other modes
+                    let other_geometry = self.extract_geometry_segment(
+                        &all_coordinates,
+                        maneuver.begin_shape_index,
+                        maneuver.end_shape_index
+                    );
+
+                    steps.push(TransitStep {
+                        distance: maneuver.length,
+                        duration: maneuver.time as u32,
+                        mode: maneuver.travel_mode.clone(),
+                        instructions: Some(maneuver.instruction.clone()),
                         transit_details: None,
-                        geometry: Some(leg.geometry.clone()),
-                    }
+                        geometry: other_geometry,
+                    });
                 }
-            };
-            
-            steps.push(step);
+            }
         }
+
+        // Add any remaining walking steps
+        if current_walking_time > 0.0 {
+            let final_walking_geometry = if let Some(start_idx) = current_walking_start_index {
+                // Use the last maneuver's end index as the end of final walking segment
+                if let Some(last_maneuver) = leg.maneuvers.iter().rev()
+                    .find(|m| m.travel_mode == "pedestrian") {
+                    self.extract_geometry_segment(&all_coordinates, start_idx, last_maneuver.end_shape_index)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            steps.push(TransitStep {
+                distance: current_walking_distance,
+                duration: current_walking_time as u32,
+                mode: "walking".to_string(),
+                instructions: Some(format!("Walk for {:.0} meters", current_walking_distance * 1000.0)),
+                transit_details: None,
+                geometry: final_walking_geometry,
+            });
+        }
+
+        let duration = Duration::from_secs(total_time as u64);
         
-        Ok(steps)
+        Ok((duration, total_distance, steps))
+    }
+
+    fn decode_shape_to_geojson(&self, encoded_shape: &str) -> Result<Vec<Vec<f64>>> {
+        let coordinates = decode_polyline(encoded_shape, 6)
+            .map_err(|e| anyhow!("Failed to decode polyline: {}", e))?
+            .into_iter()
+            .map(|coord| vec![coord.x, coord.y]) // [longitude, latitude] for GeoJSON
+            .collect();
+        
+        Ok(coordinates)
+    }
+
+    fn extract_geometry_segment(
+        &self,
+        all_coordinates: &[Vec<f64>],
+        begin_index: usize,
+        end_index: usize,
+    ) -> Option<GeoJson> {
+        if begin_index >= all_coordinates.len() || end_index >= all_coordinates.len() || begin_index > end_index {
+            return None;
+        }
+
+        let segment_coords = all_coordinates[begin_index..=end_index].to_vec();
+        
+        if segment_coords.len() < 2 {
+            return None;
+        }
+
+        Some(GeoJson {
+            geo_type: "LineString".to_string(),
+            coordinates: segment_coords,
+        })
     }
 }
 
-
+// Valhalla response structures
 #[derive(Debug, Deserialize)]
-struct PtRouteResponse {
-    paths: Vec<PtPath>,
+struct ValhallaRouteResponse {
+    trip: ValhallaTrip,
 }
 
 #[derive(Debug, Deserialize)]
-struct PtPath {
-    distance: f64,
-    time: i64,
-    legs: Vec<PtLeg>,
+struct ValhallaTrip {
+    legs: Vec<ValhallaLeg>,
 }
 
 #[derive(Debug, Deserialize)]
-struct PtLeg {
+struct ValhallaLeg {
+    maneuvers: Vec<ValhallaManeuver>,
+    summary: ValhallaSummary,
+    shape: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ValhallaManeuver {
     #[serde(rename = "type")]
-    leg_type: String,
-    geometry: GeoJson,
-    distance: f64,
-    instructions: Option<Vec<Instruction>>,
-    departure_time: String,
-    arrival_time: String,
-    trip_headsign: Option<String>,
-    travel_time: Option<i64>,
-    stops: Option<Vec<PtStop>>,
-    route_id: Option<String>,
+    maneuver_type: u8,
+    instruction: String,
+    time: f64,
+    length: f64,
+    travel_mode: String,
+    travel_type: Option<String>,
+    transit_info: Option<ValhallaTransitInfo>,
+    begin_shape_index: usize,
+    end_shape_index: usize,
 }
 
 #[derive(Debug, Deserialize)]
-struct Instruction {
-    text: String,
-    time: i64,
+struct ValhallaSummary {
+    time: f64,
+    length: f64,
 }
 
-#[derive(Debug, Deserialize)]
-struct PtStop {
-    stop_name: String,
+#[derive(Debug, Deserialize, Clone)]
+struct ValhallaTransitInfo {
+    short_name: String,
+    long_name: String,
+    headsign: String,
+    color: u32,
+    transit_stops: Vec<ValhallaTransitStop>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ValhallaTransitStop {
+    name: String,
+    departure_date_time: Option<String>,
+    arrival_date_time: Option<String>,
 }

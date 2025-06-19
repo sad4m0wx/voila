@@ -41,6 +41,7 @@ urlencoding = "2.1"
 # Performance and async utilities
 dashmap = "5.5"             # Concurrent HashMap
 md5 = "0.7"                 # For cache key hashing
+polyline = "0.9"            # For decoding encoded polylines
 
 # Optional Redis support (can be disabled)
 [features]
