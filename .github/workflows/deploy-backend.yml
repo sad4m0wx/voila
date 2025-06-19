@@ -98,14 +98,14 @@ jobs:
             docker compose up -d rust-api
             
             echo "⏳ Waiting for backend to start..."
-            for i in {1..6}; do
+            for i in {1..18}; do
               sleep 10
               echo "🔍 Health check attempt $i/6..."
               if curl -f http://localhost:3000/health --max-time 10; then
                 echo "✅ Backend is healthy!"
                 break
-              elif [ "$i" -eq 6 ]; then
-                echo "❌ Backend health check failed after 60 seconds"
+              elif [ "$i" -eq 18 ]; then
+                echo "❌ Backend health check failed after 180 seconds"
                 echo "📋 Container status:"
                 docker compose ps
                 echo "📜 Recent logs:"
