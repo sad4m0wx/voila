@@ -24,8 +24,16 @@ async fn main() -> std::io::Result<()> {
         
     info!("Starting Voilà! API server on {}:{}", host, port);
     
-    let _ = services::cache_service::CacheService::global().await;
+    let cache_service = services::cache_service::CacheService::global().await;
     info!("Global cache service initialized");
+    
+    // Initialize Paris heatmap at startup
+    match cache_service.ensure_paris_heatmap().await {
+        Ok(_) => info!("✅ Paris heatmap initialized successfully"),
+        Err(e) => {
+            log::warn!("⚠️ Failed to initialize Paris heatmap: {}. Heat scores will be disabled.", e);
+        }
+    }
     
     HttpServer::new(|| {
         

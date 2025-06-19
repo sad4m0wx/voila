@@ -48,7 +48,7 @@ async fn meeting_point_handler(
     
     let algorithm = MeetingPointAlgorithm::new();
     
-    match algorithm.find_meeting_point(&locations).await {
+    match algorithm.await.find_meeting_point(&locations).await {
         Ok((meeting_points, routes, debug_data)) => {
             let processing_time_ms = start_time.elapsed().as_millis();
             info!("💾 Caching meeting point result for {} addresses in {}ms", locations.len(), processing_time_ms);

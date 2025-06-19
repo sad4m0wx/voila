@@ -1,15 +1,17 @@
-use crate::models::{Location, MeetingPointResponse};
+use crate::models::{Location, MeetingPointResponse, CityHeatmap};
 use crate::models::isochrone::IsochroneResult;
 use crate::models::transit::TransitStep;
 use redis::{Client, RedisResult};
 use serde::{Serialize, Deserialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::OnceCell;
 use log::{info, warn, error, debug};
 use anyhow::{Result, anyhow};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
+use crate::services::poi_service::PoiService;
+
 
 pub const CACHE_TTL_SECONDS: u32 = 30 * 24 * 3600;
 
@@ -18,6 +20,7 @@ static CACHE_SERVICE: OnceCell<Arc<CacheService>> = OnceCell::const_new();
 #[derive(Clone)]
 pub struct CacheService {
     redis: Client,
+    cached_heatmap: Arc<Mutex<Option<CityHeatmap>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -64,7 +67,7 @@ impl CacheService {
         let _: String = redis::cmd("PING").query_async(&mut conn).await?;
         
         info!("Cache service initialized successfully");
-        Ok(Self { redis: client })
+        Ok(Self { redis: client, cached_heatmap: Arc::new(Mutex::new(None)) })
     }
 
     pub async fn is_available(&self) -> bool {
@@ -80,7 +83,7 @@ impl CacheService {
     fn create_null_cache() -> Self {
         warn!("Creating null cache - all cache operations will be no-ops");
         let client = Client::open("redis://localhost:6379").unwrap();
-        Self { redis: client }
+        Self { redis: client, cached_heatmap: Arc::new(Mutex::new(None)) }
     }
 
     // =============================================================================
@@ -532,4 +535,68 @@ impl CacheService {
             info.lines().take(3).collect::<Vec<_>>().join(", ")
         ))
     }
+
+    /// Cache the heatmap to Redis for persistence
+    pub async fn cache_heatmap(&self, heatmap: &CityHeatmap) -> Result<()> {
+        if !self.is_available().await {
+            return Err(anyhow!("Cache not available"));
+        }
+        
+        let cache_key = format!("heatmap:paris:v1");
+        let serialized = serde_json::to_vec(heatmap)?;
+        
+        // Cache for 30 days (heatmaps don't change often)
+        const HEATMAP_TTL_SECONDS: u32 = 30 * 24 * 3600;
+
+        let mut conn = self.redis.get_multiplexed_async_connection().await?;
+        let _: () = redis::cmd("SETEX")
+            .arg(&cache_key)
+            .arg(HEATMAP_TTL_SECONDS)
+            .arg(serialized)
+            .query_async(&mut conn).await?;
+        
+        Ok(())
+    }
+
+    /// Load heatmap from Redis cache
+    pub async fn get_cached_heatmap(&self) -> Option<CityHeatmap> {
+        let cache_key = format!("heatmap:paris:v1");
+        let mut conn = self.redis.get_multiplexed_async_connection().await.ok()?;
+        if let Ok(data) = redis::cmd("GET").arg(&cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
+            if let Ok(heatmap) = serde_json::from_slice::<CityHeatmap>(&data) {
+                info!("🗺️ Loaded Paris heatmap from cache ({} POIs)", heatmap.poi_count);
+                return Some(heatmap);
+            }
+        }
+        
+        None
+    }
+
+    /// Initialize Paris heatmap (call this once at startup or via admin endpoint)
+    pub async fn ensure_paris_heatmap(&self) -> Result<()> {
+        // Check if already loaded in memory
+        if self.cached_heatmap.lock().unwrap().is_some() {
+            info!("🗺️ Paris heatmap already loaded in memory");
+            return Ok(());
+        }
+        
+        // Try loading from cache
+        if let Some(heatmap) = self.get_cached_heatmap().await {
+            *self.cached_heatmap.lock().unwrap() = Some(heatmap);
+            info!("🗺️ Paris heatmap loaded from cache");
+            return Ok(());
+        }
+        
+        // Generate new heatmap
+        info!("🗺️ No cached heatmap found, generating new Paris heatmap...");
+        let poi_service = PoiService::new().await;
+        let heatmap = poi_service.generate_paris_heatmap().await?;
+        self.cache_heatmap(&heatmap).await?;
+        *self.cached_heatmap.lock().unwrap() = Some(heatmap);
+        
+        Ok(())
+    }
+
+
+
 }

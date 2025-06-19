@@ -5,8 +5,12 @@ use std::env;
 use std::time::{Duration, Instant};
 use log::{info, debug};
 use geo::{Point, Contains, Polygon};
+use std::sync::Arc;
+use chrono;
+use crate::services::cache_service::CacheService;
+use std::sync::Mutex;
 
-use crate::models::Location;
+use crate::models::{Location, CityHeatmap, HeatmapBoundingBox};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointOfInterest {
@@ -45,10 +49,12 @@ impl PoiType {
 pub struct PoiService {
     client: Client,
     overpass_url: String,
+    cache_service: Arc<CacheService>,
+    heatmap: Arc<Mutex<Option<CityHeatmap>>>,
 }
 
 impl PoiService {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let overpass_url = env::var("OVERPASS_URL")
             .unwrap_or_else(|_| "https://overpass-api.de/api/interpreter".to_string());
             
@@ -57,7 +63,10 @@ impl PoiService {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, overpass_url }
+        let cache_service = CacheService::global().await;
+        let heatmap = cache_service.get_cached_heatmap().await;
+
+        Self { client, overpass_url, cache_service, heatmap: Arc::new(Mutex::new(heatmap)) }
     }
 
     pub async fn get_pois_in_polygons(&self, polygons: &[Polygon<f64>]) -> Result<Vec<PointOfInterest>> {
@@ -428,6 +437,157 @@ impl PoiService {
               candidates.len(), deduplicated.len(), min_distance_meters);
         
         deduplicated
+    }
+
+    /// Generate a citywide heatmap for Paris and cache it
+    pub async fn generate_paris_heatmap(&self) -> Result<CityHeatmap> {
+        info!("🗺️ Generating Paris citywide heatmap...");
+        
+        // Paris bounding box (approximate)
+        let paris_bbox = HeatmapBoundingBox {
+            north: 48.9021,  // Northern Paris suburbs
+            south: 48.8155,  // Southern Paris
+            east: 2.4699,    // Eastern Paris
+            west: 2.2241,    // Western Paris
+        };
+        
+        const GRID_SIZE: usize = 200; // 200x200 grid for fine-grained heat
+        let lat_range = paris_bbox.north - paris_bbox.south;
+        let lon_range = paris_bbox.east - paris_bbox.west;
+        let cell_size_degrees = lat_range.max(lon_range) / GRID_SIZE as f64;
+        
+        info!("📐 Grid size: {}x{}, Cell size: {:.6} degrees (~{}m)", 
+              GRID_SIZE, GRID_SIZE, cell_size_degrees, (cell_size_degrees * 111000.0) as u32);
+
+        // Fetch all POIs for Paris
+        let _paris_polygon = Polygon::new(
+            geo::LineString::from(vec![
+                (paris_bbox.west, paris_bbox.south),
+                (paris_bbox.east, paris_bbox.south),
+                (paris_bbox.east, paris_bbox.north),
+                (paris_bbox.west, paris_bbox.north),
+                (paris_bbox.west, paris_bbox.south),
+            ]),
+            vec![],
+        );
+        
+        let start_time = Instant::now();
+        let bbox = BoundingBox {
+            north: paris_bbox.north,
+            south: paris_bbox.south,
+            east: paris_bbox.east,
+            west: paris_bbox.west,
+        };
+        
+        info!("🔍 Fetching POIs for Paris...");
+        let mut all_pois = Vec::new();
+        
+        // Fetch all POI types in parallel
+        let (transit_pois, venue_pois, public_space_pois) = tokio::join!(
+            self.fetch_transit_hubs(&bbox),
+            self.fetch_venues(&bbox),
+            self.fetch_public_spaces(&bbox)
+        );
+        
+        all_pois.extend(transit_pois?);
+        all_pois.extend(venue_pois?);
+        all_pois.extend(public_space_pois?);
+        
+        let poi_fetch_time = start_time.elapsed();
+        info!("🏢 Fetched {} POIs for Paris in {:?}", all_pois.len(), poi_fetch_time);
+        
+        // Generate heat grid
+        info!("🔥 Computing heat grid...");
+        let grid_start = Instant::now();
+        let mut heat_grid = vec![vec![0.0f64; GRID_SIZE]; GRID_SIZE];
+        let mut max_heat = 0.0f64;
+        
+        for i in 0..GRID_SIZE {
+            for j in 0..GRID_SIZE {
+                let lat = paris_bbox.south + (i as f64) * (lat_range / GRID_SIZE as f64);
+                let lon = paris_bbox.west + (j as f64) * (lon_range / GRID_SIZE as f64);
+                let location = Location::new(lat, lon);
+                
+                let heat = self.calculate_location_heat(&location, &all_pois);
+                heat_grid[i][j] = heat;
+                max_heat = max_heat.max(heat);
+            }
+            
+            if i % 20 == 0 {
+                info!("🔥 Heat grid progress: {:.1}%", (i as f64 / GRID_SIZE as f64) * 100.0);
+            }
+        }
+        
+        // Normalize heat values to 0-1 range
+        if max_heat > 0.0 {
+            for i in 0..GRID_SIZE {
+                for j in 0..GRID_SIZE {
+                    heat_grid[i][j] /= max_heat;
+                }
+            }
+        }
+        
+        let grid_time = grid_start.elapsed();
+        info!("🔥 Heat grid computed in {:?}", grid_time);
+        
+        let heatmap = CityHeatmap {
+            city_name: "Paris".to_string(),
+            bounding_box: paris_bbox,
+            grid_size: GRID_SIZE,
+            cell_size_degrees,
+            heat_grid,
+            creation_timestamp: chrono::Utc::now().timestamp(),
+            poi_count: all_pois.len(),
+        };
+        
+        // Cache the heatmap
+        self.cache_service.cache_heatmap(&heatmap).await?;
+        
+        let total_time = start_time.elapsed();
+        info!("🗺️ Paris heatmap generated successfully in {:?} with {} POIs", total_time, all_pois.len());
+        
+        Ok(heatmap)
+    }
+
+    pub async fn get_heat_from_cached_heatmap(&self, location: &Location) -> Option<f64> {
+        if let Some(heatmap) = self.heatmap.lock().unwrap().as_ref() {
+            return Some(self.calculate_heat_from_grid(location, &heatmap));
+        }
+        None
+    }
+
+    fn calculate_heat_from_grid(&self, location: &Location, heatmap: &CityHeatmap) -> f64 {
+        let bbox = &heatmap.bounding_box;
+        
+        if location.latitude < bbox.south || location.latitude > bbox.north ||
+           location.longitude < bbox.west || location.longitude > bbox.east {
+            return 0.0; // Outside Paris bounds
+        }
+        
+        let lat_range = bbox.north - bbox.south;
+        let lon_range = bbox.east - bbox.west;
+        
+        let grid_lat = ((location.latitude - bbox.south) / lat_range) * heatmap.grid_size as f64;
+        let grid_lon = ((location.longitude - bbox.west) / lon_range) * heatmap.grid_size as f64;
+        
+        let lat_floor = grid_lat.floor() as usize;
+        let lon_floor = grid_lon.floor() as usize;
+        let lat_ceil = (lat_floor + 1).min(heatmap.grid_size - 1);
+        let lon_ceil = (lon_floor + 1).min(heatmap.grid_size - 1);
+        
+        let lat_frac = grid_lat - lat_floor as f64;
+        let lon_frac = grid_lon - lon_floor as f64;
+        
+        let heat_tl = heatmap.heat_grid[lat_floor][lon_floor]; // top-left
+        let heat_tr = heatmap.heat_grid[lat_floor][lon_ceil];  // top-right
+        let heat_bl = heatmap.heat_grid[lat_ceil][lon_floor];  // bottom-left
+        let heat_br = heatmap.heat_grid[lat_ceil][lon_ceil];   // bottom-right
+        
+        let heat_top = heat_tl * (1.0 - lon_frac) + heat_tr * lon_frac;
+        let heat_bottom = heat_bl * (1.0 - lon_frac) + heat_br * lon_frac;
+        let final_heat = heat_top * (1.0 - lat_frac) + heat_bottom * lat_frac;
+        
+        final_heat.clamp(0.0, 1.0)
     }
 }
 
