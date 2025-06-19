@@ -180,9 +180,17 @@ impl IsochroneService {
             }
         }
 
-        let isochrones: Vec<IsochroneResult> = final_results.into_iter()
+        let mut isochrones: Vec<IsochroneResult> = final_results.into_iter()
             .filter_map(|r| r)
             .collect();
+
+        // Sort isochrones by location coordinates for deterministic ordering
+        isochrones.sort_by(|a, b| {
+            a.location.latitude.partial_cmp(&b.location.latitude)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.location.longitude.partial_cmp(&b.location.longitude)
+                    .unwrap_or(std::cmp::Ordering::Equal))
+        });
 
         let success_count = isochrones.len();
         info!("🏁 Final Valhalla result: {} out of {} isochrones succeeded", success_count, locations.len());
@@ -373,16 +381,25 @@ impl IsochroneService {
             return vec![isochrones[0].polygon.clone()];
         }
         
+        // Sort isochrones by location coordinates for deterministic processing
+        let mut sorted_isochrones = isochrones.to_vec();
+        sorted_isochrones.sort_by(|a, b| {
+            a.location.latitude.partial_cmp(&b.location.latitude)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.location.longitude.partial_cmp(&b.location.longitude)
+                    .unwrap_or(std::cmp::Ordering::Equal))
+        });
+        
         let mut intersections = Vec::new();
         
-        // Find all pairwise intersections
-        for i in 0..isochrones.len() {
-            for j in i + 1..isochrones.len() {
-                let intersection_result = isochrones[i].polygon.intersection(&isochrones[j].polygon);
+        // Find all pairwise intersections with deterministic ordering
+        for i in 0..sorted_isochrones.len() {
+            for j in i + 1..sorted_isochrones.len() {
+                let intersection_result = sorted_isochrones[i].polygon.intersection(&sorted_isochrones[j].polygon);
                 
                 for polygon in intersection_result {
                     let intersection_area_deg2 = polygon.unsigned_area();
-                    let min_area = 0.00005; // ~0.5m² in degrees, very permissive
+                    let min_area = 0.00001; // Increased threshold for better stability: ~0.1m² in degrees
                     
                     if intersection_area_deg2 >= min_area {
                         intersections.push(polygon);
@@ -391,19 +408,21 @@ impl IsochroneService {
             }
         }
         
-        // If we have more than 2 isochrones, also find the intersection of all
-        if isochrones.len() > 2 {
-            let mut current_intersection = isochrones[0].polygon.clone();
+        // If we have more than 2 isochrones, find the intersection of all (deterministic order)
+        if sorted_isochrones.len() > 2 {
+            let mut current_intersection = sorted_isochrones[0].polygon.clone();
             
-            for isochrone in isochrones.iter().skip(1) {
+            for isochrone in sorted_isochrones.iter().skip(1) {
                 let intersection_result = current_intersection.intersection(&isochrone.polygon);
                 
                 if intersection_result.is_empty() {
                     break; // No global intersection exists
                 }
                 
+                // Select largest polygon deterministically by area
                 if let Some(largest_polygon) = intersection_result.into_iter()
-                    .max_by(|a, b| a.unsigned_area().partial_cmp(&b.unsigned_area()).unwrap()) {
+                    .max_by(|a, b| a.unsigned_area().partial_cmp(&b.unsigned_area())
+                        .unwrap_or(std::cmp::Ordering::Equal)) {
                     current_intersection = largest_polygon;
                 } else {
                     break; // No valid intersection polygons found
@@ -411,12 +430,14 @@ impl IsochroneService {
             }
             
             let intersection_area_deg2 = current_intersection.unsigned_area();
-            let min_area = 0.00005; // ~0.5m² in degrees, very permissive
+            let min_area = 0.00001; // Consistent threshold
             
             if intersection_area_deg2 >= min_area {
-                // Check if this global intersection is not already included in pairwise intersections
+                // Improved duplicate detection using relative area comparison
                 let is_duplicate = intersections.iter().any(|existing| {
-                    (existing.unsigned_area() - current_intersection.unsigned_area()).abs() < 0.000001
+                    let area_diff = (existing.unsigned_area() - current_intersection.unsigned_area()).abs();
+                    let relative_diff = area_diff / current_intersection.unsigned_area().max(existing.unsigned_area());
+                    relative_diff < 0.001 // 0.1% relative difference threshold
                 });
                 
                 if !is_duplicate {
@@ -424,6 +445,10 @@ impl IsochroneService {
                 }
             }
         }
+        
+        // Sort final intersections by area for consistent ordering
+        intersections.sort_by(|a, b| b.unsigned_area().partial_cmp(&a.unsigned_area())
+            .unwrap_or(std::cmp::Ordering::Equal));
         
         intersections
     }

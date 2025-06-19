@@ -81,7 +81,6 @@ impl RouteService {
         origins: &[(String, Location)],
         destination: &Location,
     ) -> Vec<Result<(Duration, f64, Vec<TransitStep>)>> {
-        info!("🚁 Valhalla route service called with {} origins", origins.len());
         
         let futures: Vec<_> = origins.iter().map(|(_, origin)| {
             self.get_transit_route(&origin, &destination)

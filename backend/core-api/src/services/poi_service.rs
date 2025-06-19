@@ -549,11 +549,18 @@ impl PoiService {
         Ok(heatmap)
     }
 
-    pub async fn get_heat_from_cached_heatmap(&self, location: &Location) -> Option<f64> {
+    pub async fn get_location_heat(&self, location: &Location) -> Option<f64> {
         if let Some(heatmap) = self.heatmap.lock().unwrap().as_ref() {
             return Some(self.calculate_heat_from_grid(location, &heatmap));
+        } else {
+            let all_pois = self.get_pois_in_polygons(&[Polygon::new(
+                geo::LineString::from(vec![
+                    (location.longitude, location.latitude),
+                ]),
+                vec![],
+            )]).await.unwrap();
+            Some(self.calculate_location_heat(location, &all_pois))
         }
-        None
     }
 
     fn calculate_heat_from_grid(&self, location: &Location, heatmap: &CityHeatmap) -> f64 {
