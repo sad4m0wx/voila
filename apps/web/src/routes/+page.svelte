@@ -301,6 +301,8 @@
     venues = [];
     debugData = null;
     debugPolygons = [];
+    showHeatmap = false;
+    showMovementVectors = false;
     error = null;
     isCalculating = false;
     showResults = false;
