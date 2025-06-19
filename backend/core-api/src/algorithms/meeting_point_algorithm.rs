@@ -202,6 +202,7 @@ impl MeetingPointAlgorithm {
             
             match self.evaluate_area_fitness(area_km2, MIN_INTERSECTION_AREA_KM2, MAX_INTERSECTION_AREA_KM2) {
                 AreaFitness::JustRight => {
+                    info!("🎯 Found optimal area ({:.2} km²) with {} intersections at {}min", area_km2, intersections.len(), current_time_limit);
                     let candidates = self.generate_candidates(&intersections).await?;
                     
                     if !candidates.is_empty() {
@@ -245,12 +246,15 @@ impl MeetingPointAlgorithm {
     }
 
     async fn generate_candidates(&self, intersections: &[Polygon<f64>]) -> Result<Vec<Location>> {
+
+        const MAX_CANDIDATES: usize = 50;
+
         if intersections.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut candidates: Vec<Location> = Vec::new();
-        let grid_spacing_degrees = 0.001; // ~100m at equator
+        let grid_spacing_degrees = 0.0015; // ~200m at equator
         
         info!("🔍 Generating candidates for {} intersection polygons", intersections.len());
         
@@ -265,7 +269,7 @@ impl MeetingPointAlgorithm {
             Ok(pois) => pois,
             Err(_) => {
                 info!("⚠️ Failed to fetch POIs, skipping heatmap optimization");
-                return Ok(self.select_candidates_spatially_distributed(&candidates, 30));
+                return Ok(self.select_candidates_spatially_distributed(&candidates, MAX_CANDIDATES));
             }
         };
         
@@ -283,8 +287,7 @@ impl MeetingPointAlgorithm {
             *self.heatmap_data.lock().unwrap() = Some(data);
         }
 
-        const MAX_GENERATED_CANDIDATES: usize = 30;
-        let final_candidates = self.select_best_candidates(&optimized_candidates, MAX_GENERATED_CANDIDATES, &all_pois).await?;
+        let final_candidates = self.select_best_candidates(&optimized_candidates, MAX_CANDIDATES, &all_pois).await?;
         
         Ok(final_candidates)
     }
