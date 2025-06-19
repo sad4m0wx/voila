@@ -229,24 +229,24 @@ impl PoiService {
     pub fn calculate_location_heat(&self, location: &Location, all_pois: &[PointOfInterest]) -> f64 {
         let mut heat = 0.0;
         
-        // Factor 1: Proximity to transit hubs (35% weight)
+        // Factor 1: Proximity to transit hubs (45% weight)
         let transit_heat = self.calculate_transit_proximity_heat(location, all_pois);
-        heat += transit_heat * 0.35;
+        heat += transit_heat * 0.45;
         
         // Factor 2: Density of venues nearby (45% weight)
         let dining_heat = self.calculate_venue_density_heat(location, all_pois);
         heat += dining_heat * 0.45;
         
-        // Factor 3: Overall POI density (20% weight)
+        // Factor 3: Overall POI density (10% weight)
         let poi_density_heat = self.calculate_poi_density_heat(location, all_pois);
-        heat += poi_density_heat * 0.20;
+        heat += poi_density_heat * 0.1;
         
         // Apply non-linear scaling to improve granularity and reduce high-scoring areas
-        heat = self.apply_sigmoid_scaling(heat);
+        //heat = self.apply_sigmoid_scaling(heat);
         
-        info!("Transit heat: {:.3}, Dining heat: {:.3}, POI density heat: {:.3}, Raw combined: {:.3}, Final heat: {:.3}", 
+        debug!("Transit heat: {:.3}, Dining heat: {:.3}, POI density heat: {:.3}, Raw combined: {:.3}, Final heat: {:.3}", 
                transit_heat, dining_heat, poi_density_heat, 
-               transit_heat * 0.35 + dining_heat * 0.45 + poi_density_heat * 0.20, heat);
+               transit_heat * 0.45 + dining_heat * 0.45 + poi_density_heat * 0.1, heat);
         heat
     }
     
@@ -280,7 +280,7 @@ impl PoiService {
         }
         
         let mut total_heat = 0.0;
-        const MAX_TRANSIT_DISTANCE: f64 = 800.0; // Reduced from 1km for more granular scoring
+        const MAX_TRANSIT_DISTANCE: f64 = 200.0; // Reduced from 1km for more granular scoring
         const DISTANCE_DECAY_RATE: f64 = 3.0; // Increased for steeper distance penalty
         
         // Calculate distance-based heat for all transit hubs within range
