@@ -12,12 +12,26 @@
   import { loadFriends, loadFriendRequests } from "$stores/friends";
   import { loadUserGroups, loadGroupInvites } from "$stores/groups";
   import { authStore } from "$stores/auth";
+  
+  // Import platform utilities
+  import { setupKeyboard, setStatusBarDark, getDeviceInfo } from "$lib/utils/platform.js";
 
   let isMobile = false;
   let isRefreshing = false;
 
-  onMount(() => {
+  onMount(async () => {
     isMobile = isMobileDevice();
+    
+    // Initialize platform-specific features
+    const deviceInfo = getDeviceInfo();
+    if (deviceInfo.isNative) {
+      try {
+        await setupKeyboard();
+        await setStatusBarDark();
+      } catch (error) {
+        console.warn('Platform initialization failed:', error);
+      }
+    }
     
     function handleResize() {
       isMobile = isMobileDevice();
@@ -58,10 +72,7 @@
       else if (currentPath === '/') {
 
       }
-      else if (currentPath.startsWith('/user/')) {
-        // User profile pages might need friend data
-        refreshPromises.push(loadFriends());
-      }
+
       // Add more page-specific refresh logic as needed
 
       // Execute the relevant refreshes
@@ -77,6 +88,9 @@
     }
   }
 
+  // Check if current page is an auth page
+  $: isAuthPage = $page.url.pathname.startsWith('/auth/');
+
   setContext("isMobile", isMobile);
 </script>
 
@@ -85,19 +99,18 @@
     {#if isMobile}
       <!-- Mobile Layout with Smart Pull-to-Refresh -->
       <div class="flex flex-col h-screen">
-        <MobileHeader />
         <div class="flex-1 overflow-hidden">
           <PullToRefresh
             refreshing={isRefreshing}
             disabled={!$authStore.user} 
             on:refresh={handleRefresh}
           >
-            <main class="min-h-full pb-20 px-4">
+            <main class="min-h-full pb-20 px-4 pt-4">
               <slot />
             </main>
           </PullToRefresh>
         </div>
-        {#if $authStore.user}
+        {#if $authStore.user && !isAuthPage}
         <MobileNavbar />
         {/if}
       </div>
