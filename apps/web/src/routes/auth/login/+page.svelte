@@ -3,13 +3,18 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import PhoneVerification from "$components/auth/PhoneVerification.svelte";
+  import BackButton from "$components/auth/BackButton.svelte";
+  import ContactsPermissionSetup from "$components/auth/ContactsPermissionSetup.svelte";
   import { checkPhoneNumberExists } from "$stores/auth.js";
+  import { initContactsPermission, isContactsPermissionRequired } from "$lib/services/contactsPermissionService.js";
   
   // State
   let isSubmitting = false;
   let error = '';
   let redirectUrl = "/";
   let loginSuccess = false;
+  let showContactsPermission = false;
+  let phoneVerified = false;
   
   // Get redirect URL from query parameter if present
   onMount(() => {
@@ -40,18 +45,47 @@
       // Since Firebase Auth handled the verification, the user is now authenticated
       // The auth state listener will handle loading the profile and addresses
       
-      loginSuccess = true;
+      phoneVerified = true;
+      isSubmitting = false;
       
-      // Redirect after a short delay
-      setTimeout(() => {
-        goto(redirectUrl, { replaceState: true });
-      }, 1500);
+      // Check if contacts permission is required
+      if (isContactsPermissionRequired()) {
+        // Initialize and check current permission status
+        const hasPermission = await initContactsPermission();
+        if (!hasPermission) {
+          showContactsPermission = true;
+          return;
+        }
+      }
+      
+      // If no contacts permission needed or already granted, proceed to success
+      proceedToSuccess();
 
     } catch (err) {
       console.error('Login error:', err);
       error = 'Failed to sign in. Please try again.';
       isSubmitting = false;
     }
+  }
+
+  function handleContactsPermissionGranted() {
+    showContactsPermission = false;
+    proceedToSuccess();
+  }
+
+  function handleContactsPermissionSkipped() {
+    // Since contacts permission is required, don't allow skipping
+    // This could redirect to a different flow or show an error
+    error = 'Contact access is required to use Voilà';
+  }
+
+  function proceedToSuccess() {
+    loginSuccess = true;
+    
+    // Redirect after a short delay
+    setTimeout(() => {
+      goto(redirectUrl, { replaceState: true });
+    }, 1500);
   }
 </script>
 
@@ -63,10 +97,17 @@
 
 <div class="min-h-screen flex flex-col justify-center px-4 py-6 sm:py-12">
   <div class="max-w-md w-full mx-auto">
+    {#if !loginSuccess}
+      <BackButton href="/" label="Back to Home" />
+    {/if}
+    
     <div class="text-center mb-6 sm:mb-8">
       {#if loginSuccess}
         <h1 class="text-2xl sm:text-3xl font-bold text-green-600 mb-2">Welcome back!</h1>
         <p class="text-neutral-600">You've been signed in successfully</p>
+      {:else if showContactsPermission}
+        <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">One more step</h1>
+        <p class="text-neutral-600">Let's set up your contact permissions</p>
       {:else}
         <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Sign In</h1>
         <p class="text-neutral-600">Enter your phone number to continue</p>
@@ -102,6 +143,16 @@
             <span class="text-sm text-gray-500">Redirecting...</span>
           </div>
         </div>
+      {:else if showContactsPermission}
+        <!-- Contacts Permission Setup -->
+        <ContactsPermissionSetup 
+          skipable={false}
+          on:permission-granted={handleContactsPermissionGranted}
+          on:permission-skipped={handleContactsPermissionSkipped}
+          on:show-settings-instructions={() => {
+            error = 'Please enable contact access in your device settings to continue using Voilà.';
+          }}
+        />
       {:else}
         <!-- Phone Verification -->
         <PhoneVerification 

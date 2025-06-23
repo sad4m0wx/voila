@@ -5,10 +5,12 @@
   import BackButton from "$components/auth/BackButton.svelte";
   import PhoneVerification from "$components/auth/PhoneVerification.svelte";
   import AddressSetup from "$components/auth/AddressSetup.svelte";
+  import ContactsPermissionSetup from "$components/auth/ContactsPermissionSetup.svelte";
   import { createAddress, createUserProfile } from "$stores/auth.js";
+  import { initContactsPermission, isContactsPermissionRequired } from "$lib/services/contactsPermissionService.js";
   
   // State
-  let step = 'phone'; // 'phone', 'profile', 'address', 'complete'
+  let step = 'phone'; // 'phone', 'profile', 'address', 'contacts', 'complete'
   let phoneNumber = '';
   let displayName = '';
   let isSubmitting = false;
@@ -68,18 +70,43 @@
         throw new Error(addressResult.error || 'Failed to save address');
       }
 
-      step = 'complete';
-      
-      // Redirect after a short delay
-      setTimeout(() => {
-        goto(redirectUrl, { replaceState: true });
-      }, 2000);
+      // Check if contacts permission is required
+      if (isContactsPermissionRequired()) {
+        // Initialize and check current permission status
+        const hasPermission = await initContactsPermission();
+        if (!hasPermission) {
+          step = 'contacts';
+          isSubmitting = false;
+          return;
+        }
+      }
+
+      // Complete registration
+      completeRegistration();
 
     } catch (err) {
       console.error('Registration error:', err);
       error = err.message || 'Failed to complete registration. Please try again.';
       isSubmitting = false;
     }
+  }
+
+  function handleContactsPermissionGranted() {
+    completeRegistration();
+  }
+
+  function handleContactsPermissionSkipped() {
+    // Since contacts permission is required, don't allow skipping
+    error = 'Contact access is required to use Voilà';
+  }
+
+  function completeRegistration() {
+    step = 'complete';
+    
+    // Redirect after a short delay
+    setTimeout(() => {
+      goto(redirectUrl, { replaceState: true });
+    }, 2000);
   }
 
   // Go back to previous step
@@ -92,6 +119,9 @@
         break;
       case 'address':
         step = 'profile';
+        break;
+      case 'contacts':
+        step = 'address';
         break;
       default:
         goto('/auth/login');
@@ -125,6 +155,9 @@
       {:else if step === 'address'}
         <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Almost done!</h1>
         <p class="text-neutral-600">Add your first address to start finding meeting spots</p>
+      {:else if step === 'contacts'}
+        <h1 class="text-2xl sm:text-3xl font-bold text-neutral-900 mb-2">Final step</h1>
+        <p class="text-neutral-600">Connect with friends using your contacts</p>
       {:else if step === 'complete'}
         <h1 class="text-2xl sm:text-3xl font-bold text-green-600 mb-2">Welcome to Voilà!</h1>
         <p class="text-neutral-600">Your account has been created successfully</p>
@@ -181,6 +214,17 @@
         <AddressSetup 
           isLoading={isSubmitting}
           on:address-setup={handleAddressSetup}
+        />
+        
+      {:else if step === 'contacts'}
+        <!-- Contacts Permission Step -->
+        <ContactsPermissionSetup 
+          skipable={false}
+          on:permission-granted={handleContactsPermissionGranted}
+          on:permission-skipped={handleContactsPermissionSkipped}
+          on:show-settings-instructions={() => {
+            error = 'Please enable contact access in your device settings to continue.';
+          }}
         />
         
       {:else if step === 'complete'}
