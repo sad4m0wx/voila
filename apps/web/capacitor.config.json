@@ -8,13 +8,40 @@
   "android": {
     "minSdkVersion": 24,
     "maxSdkVersion": 34,
-    "targetSdkVersion": 34
+    "targetSdkVersion": 34,
+    "allowMixedContent": true
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "scrollEnabled": true
   },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 2000,
       "backgroundColor": "#1a73e8",
-      "androidScaleType": "CENTER_CROP"
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "androidSpinnerStyle": "large",
+      "iosSpinnerStyle": "small",
+      "spinnerColor": "#ffffff"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#ffffff"
+    },
+    "Keyboard": {
+      "resize": "body",
+      "style": "DARK",
+      "resizeOnFullScreen": true
+    },
+
+    "Toast": {},
+    "Share": {},
+    "Network": {},
+    "Device": {},
+    "Contacts": {
+      "androidRequestPermissionTitle": "Allow Contact Access",
+      "androidRequestPermissionMessage": "Voilà would like to access your contacts to help you find friends who are already using the app."
     }
   }
 }
