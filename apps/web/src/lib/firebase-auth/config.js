@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { getAuth, initializeAuth, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
@@ -14,13 +14,31 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
 
-// Set persistence to local storage for better mobile support
-if (typeof window !== 'undefined') {
+// Capacitor-specific Firebase Auth initialization
+function whichAuth() {
+  let auth;
+  if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform()) {
+    console.log('Initializing Firebase Auth for Capacitor native platform');
+    auth = initializeAuth(app, {
+      persistence: indexedDBLocalPersistence
+    });
+  } else {
+    console.log('Initializing Firebase Auth for web platform');
+    auth = getAuth(app);
+  }
+  return auth;
+}
+
+export const auth = whichAuth();
+
+// Set persistence - only for web, Capacitor handles its own persistence
+if (typeof window !== 'undefined' && (!window.Capacitor || !window.Capacitor.isNativePlatform())) {
   setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.warn('Failed to set auth persistence:', error);
   });
+} else if (typeof window !== 'undefined' && window.Capacitor) {
+  console.log('Capacitor environment detected - using indexedDB persistence');
 }
 
 export const db = getFirestore(app);

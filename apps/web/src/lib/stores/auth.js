@@ -24,6 +24,8 @@ import {
 import { auth, db } from '$lib/firebase-auth/config';
 
 
+const isCapacitor = typeof window !== 'undefined' && window.Capacitor;
+
 const initialState = {
   user: null,
   profile: null,
@@ -43,12 +45,15 @@ const authStore = writable(initialState);
 let unsubscribe;
 export function initAuth() {
   if (unsubscribe) return unsubscribe;
+  
+  const timeout = isCapacitor ? 5000 : 3000;
   const timeoutId = setTimeout(() => {
+    console.warn('Auth initialization timeout after', timeout, 'ms');
     authStore.update(state => ({
       ...state,
       isLoading: false
     }));
-  }, 3000); // 3 second timeout
+  }, timeout);
   
   unsubscribe = onAuthStateChanged(auth, async (user) => {
     clearTimeout(timeoutId);
@@ -384,8 +389,14 @@ function initRecaptcha() {
   
   if (!recaptchaVerifier) {
     try {
-      recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible',
+      // Detect if we're on mobile
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      console.log('Initializing reCAPTCHA - isMobile:', isMobile, 'isCapacitor:', isCapacitor);
+      
+      // Use visible reCAPTCHA on mobile/Capacitor for better compatibility
+      const recaptchaConfig = {
+        size: (isMobile || isCapacitor) ? 'normal' : 'invisible',
         callback: () => {
           console.log('reCAPTCHA solved');
         },
@@ -400,7 +411,26 @@ function initRecaptcha() {
         'error-callback': (error) => {
           console.error('reCAPTCHA error:', error);
         }
-      });
+      };
+
+      // Use mobile-specific container if available, otherwise use main container
+      const containerId = document.getElementById('recaptcha-container-mobile') ? 'recaptcha-container-mobile' : 'recaptcha-container';
+      
+      // Clear any existing reCAPTCHA content (important for mobile)
+      const container = document.getElementById(containerId);
+      if (container && container.innerHTML) {
+        container.innerHTML = '';
+      }
+      
+      recaptchaVerifier = new RecaptchaVerifier(auth, containerId, recaptchaConfig);
+      
+      // For visible reCAPTCHA, render it immediately
+      if (isMobile || isCapacitor) {
+        recaptchaVerifier.render().then(() => {
+        }).catch((error) => {
+          recaptchaVerifier = null;
+        });
+      }
     } catch (error) {
       console.error('Failed to initialize reCAPTCHA:', error);
       return null;
@@ -493,11 +523,12 @@ export async function sendVerificationCode(phoneNumber) {
   try {
     const recaptcha = initRecaptcha();
     if (!recaptcha) {
-      throw new Error('ReCAPTCHA not initialized. Please check your Firebase configuration.');
+      throw new Error('ReCAPTCHA not initialized. Please refresh the page and try again.');
     }
 
     // Store the confirmation result globally for later verification
     confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptcha);
+      
     
     authStore.update(state => ({
       ...state,

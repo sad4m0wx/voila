@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { 
     sendVerificationCode, 
     verifyCode, 
@@ -9,6 +9,7 @@
     checkPhoneNumberExists,
     phoneVerification
   } from '$stores/auth.js';
+  import { auth } from '$lib/firebase-auth/config.js';
 
   const dispatch = createEventDispatcher();
 
@@ -27,9 +28,23 @@
   let showCountryDropdown = false;
   let resendCooldown = 0;
   let resendTimer = null;
+  let isCapacitorEnvironment = false;
 
   // Get country codes
   const countryCodes = getCountryCodes();
+
+  // Initialize mobile environment detection
+  onMount(() => {
+    isCapacitorEnvironment = !!(window.Capacitor);
+    console.log('PhoneVerification mounted - Capacitor:', isCapacitorEnvironment);
+    
+    // Wait a moment for Firebase to fully initialize in Capacitor
+    if (isCapacitorEnvironment) {
+      setTimeout(() => {
+        console.log('Firebase auth after delay:', !!auth);
+      }, 1000);
+    }
+  });
 
   // Computed values
   $: fullPhoneNumber = selectedCountryCode + phoneNumber.replace(/[^\d]/g, '');
@@ -47,6 +62,7 @@
     const value = event.target.value.replace(/[^\d]/g, '');
     phoneNumber = value;
     error = '';
+    console.log('Phone input changed:', value);
   }
 
   // Handle verification code input
@@ -54,6 +70,29 @@
     const value = event.target.value.replace(/[^\d]/g, '').slice(0, 6);
     verificationCode = value;
     error = '';
+    console.log('Verification code input changed:', value);
+  }
+
+  // Test function to debug mobile issues
+  function testMobileAuth() {
+    console.log('=== MOBILE AUTH DEBUG ===');
+    console.log('User agent:', navigator.userAgent);
+    console.log('Window dimensions:', window.innerWidth, 'x', window.innerHeight);
+    console.log('Phone number:', fullPhoneNumber);
+    console.log('Is phone valid:', isPhoneValid);
+    console.log('reCAPTCHA container exists:', !!document.getElementById('recaptcha-container'));
+    console.log('Mobile reCAPTCHA container exists:', !!document.getElementById('recaptcha-container-mobile'));
+    try {
+      console.log('Firebase auth available:', typeof auth !== 'undefined' && !!auth);
+    } catch (e) {
+      console.log('Firebase auth available: ERROR -', e.message);
+    }
+    console.log('=== END DEBUG ===');
+    
+    // Show alert on mobile for immediate feedback
+    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+      alert('Debug info logged to console. Check developer tools.');
+    }
   }
 
   // Send verification code
@@ -65,6 +104,9 @@
 
     isSubmitting = true;
     error = '';
+    
+    console.log('Send code button clicked');
+    console.log('Phone number to verify:', fullPhoneNumber);
 
     try {
       // Check if phone number exists for registration
@@ -92,8 +134,10 @@
         startResendCooldown();
       } else {
         error = result.error || 'Failed to send verification code';
+        console.error('Send verification code failed:', result.error);
       }
     } catch (err) {
+      console.error('Send verification code exception:', err);
       error = 'Failed to send verification code. Please try again.';
     } finally {
       isSubmitting = false;
@@ -263,6 +307,20 @@
           Send Verification Code
         {/if}
       </button>
+      
+      <!-- Debug button for mobile testing -->
+      {#if /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)}
+        <button
+          type="button"
+          class="btn btn-secondary w-full h-10 mt-2 rounded-lg text-sm"
+          on:click={testMobileAuth}
+        >
+          Debug Mobile Auth
+        </button>
+      {/if}
+      
+      <!-- reCAPTCHA will be rendered here if needed -->
+      <div id="recaptcha-container-mobile" class="mt-4 flex justify-center"></div>
     </div>
 
   {:else if step === 'verify'}
@@ -393,6 +451,15 @@
 
   .btn-primary:hover:not(:disabled) {
     background-color: #2563eb;
+  }
+
+  .btn-secondary {
+    background-color: #6b7280;
+    color: white;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #4b5563;
   }
 
   .input {
