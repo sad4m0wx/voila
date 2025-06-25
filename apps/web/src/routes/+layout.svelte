@@ -2,11 +2,11 @@
   import "../app.css";
   import Navbar from "$components/core/Navbar.svelte";
   import AuthProvider from "$components/auth/AuthProvider.svelte";
-  import MobileNavbar from "$components/core/MobileNavbar.svelte";
+  import ResponsiveNavigation from "$components/core/ResponsiveNavigation.svelte";
   import PullToRefresh from "$components/core/PullToRefresh.svelte";
-  import MobileHeader from "$components/core/MobileHeader.svelte";
   import { onMount, setContext } from "svelte";
   import { page } from "$app/stores";
+  import { goto } from "$app/navigation";
   
   // Import store refresh functions
   import { loadFriends, loadFriendRequests } from "$stores/friends";
@@ -18,6 +18,7 @@
 
   let isMobile = false;
   let isRefreshing = false;
+  let previousAuthState = null;
 
   onMount(async () => {
     isMobile = isMobileDevice();
@@ -49,48 +50,56 @@
     );
   }
 
+  // Auto-redirect logic for login/logout
+  $: {
+    if (!$authStore.isLoading) {
+      const currentPath = $page.url.pathname;
+      const isAuthPage = currentPath.startsWith('/auth/');
+      
+      // Handle logout - redirect to home if user logged out
+      if (previousAuthState && previousAuthState.user && !$authStore.user && !isAuthPage) {
+        goto('/', { replaceState: true });
+      }
+      
+      // Handle login - redirect from auth pages if user is now logged in
+      if (!previousAuthState?.user && $authStore.user && isAuthPage) {
+        const urlParams = new URLSearchParams($page.url.search);
+        const redirect = urlParams.get('redirect');
+        goto(redirect || '/', { replaceState: true });
+      }
+      
+      // Store current auth state for next comparison
+      previousAuthState = $authStore;
+    }
+  }
+
   // Smart refresh based on current page
   async function handleRefresh() {
-    if (isRefreshing || !$authStore.user) return;
+    if (!$authStore.user) return;
     
     isRefreshing = true;
+    const currentPath = $page.url.pathname;
     
     try {
-      const currentPath = $page.url.pathname;
-      const refreshPromises = [];
-
-      // Only refresh data relevant to the current page
-      if (currentPath === '/friends') {
-        refreshPromises.push(loadFriends(), loadFriendRequests());
-      } 
-      else if (currentPath === '/groups' || currentPath.startsWith('/groups/')) {
-        refreshPromises.push(loadUserGroups(), loadGroupInvites());
-      }
-      else if (currentPath === '/profile') {
-        refreshPromises.push(loadFriends(), loadUserGroups());
-      }
-      else if (currentPath === '/') {
-
-      }
-
-      // Add more page-specific refresh logic as needed
-
-      // Execute the relevant refreshes
-      if (refreshPromises.length > 0) {
-        await Promise.all(refreshPromises);
+      if (currentPath === '/friends' || currentPath.startsWith('/friends')) {
+        await Promise.all([loadFriends(), loadFriendRequests()]);
+      } else if (currentPath === '/groups' || currentPath.startsWith('/groups')) {
+        await Promise.all([loadUserGroups(), loadGroupInvites()]);
+      } else {
+        // Default refresh for other pages
+        await Promise.all([loadFriends(), loadUserGroups()]);
       }
     } catch (error) {
       console.error('Refresh failed:', error);
     } finally {
-      setTimeout(() => {
-        isRefreshing = false;
-      }, 500);
+      isRefreshing = false;
     }
   }
 
   // Check if current page is an auth page
   $: isAuthPage = $page.url.pathname.startsWith('/auth/');
-
+  
+  // Set context for mobile detection
   setContext("isMobile", isMobile);
 </script>
 
@@ -110,8 +119,9 @@
             </main>
           </PullToRefresh>
         </div>
+        <!-- Responsive Navigation - only show for authenticated users and not on auth pages -->
         {#if $authStore.user && !isAuthPage}
-        <MobileNavbar />
+          <ResponsiveNavigation />
         {/if}
       </div>
     {:else}
