@@ -67,10 +67,7 @@
       </svg>
       <span class="text-sm">{error}</span>
     </div>
-  {/if}
-  
-  <h2 class="text-lg font-bold mb-3 text-secondary-800">Where is everyone?</h2>
-  
+  {/if}  
   <div class="space-y-2 mb-3">
     {#each addresses as address (address.id)}
       <div class="flex gap-2 animate-slide-up">

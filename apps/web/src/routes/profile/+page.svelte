@@ -1,7 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import MobileNavbar from "$components/core/MobileNavbar.svelte";
+  import ResponsiveNavigation from "$components/core/ResponsiveNavigation.svelte";
   import AuthProvider from "$components/auth/AuthProvider.svelte";
   
   import { loadFriends, friends } from "$stores/friends";
@@ -369,7 +369,7 @@
     </div>
 
     <!-- Mobile Bottom Nav -->
-    <MobileNavbar active="profile" />
+    <ResponsiveNavigation />
   </div>
 {:else}
   <!-- Desktop Layout (to be implemented) -->

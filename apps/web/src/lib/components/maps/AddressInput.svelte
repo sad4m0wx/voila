@@ -147,6 +147,8 @@
         on:focus={handleFocus}
         on:blur={handleBlur}
         class="input pl-11 pr-4 {isFocused ? 'ring-2 ring-primary-500 border-transparent' : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
+        style="font-size: 16px;" 
+        autocomplete="address-line1"
       />
       
       <!-- Clear Button -->

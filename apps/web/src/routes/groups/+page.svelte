@@ -2,9 +2,9 @@
 <script>
   import { onMount, getContext } from 'svelte';
   import { goto } from '$app/navigation';
-  import MobileHeader from '$components/core/MobileHeader.svelte';
+  import ResponsiveHeader from '$components/core/ResponsiveHeader.svelte';
   import GroupCreationModal from '$components/groups/GroupCreationModal.svelte';
-  import NativeLoading from '$components/utils/NativeLoading.svelte';
+  import LoadingIndicator from '$components/utils/LoadingIndicator.svelte';
   import ContactsPermissionSetup from '$components/auth/ContactsPermissionSetup.svelte';
   import { authStore } from '$stores/auth';
   import { 
@@ -35,10 +35,20 @@
   let hasContactsPermission = false;
   
   onMount(async () => {
+    // Redirect to login if not authenticated
+    if (!$authStore.user && !$authStore.isLoading) {
+      goto('/auth/login?redirect=/groups');
+      return;
+    }
+
     if ($authStore.isLoading) {
       const unsubscribe = authStore.subscribe(auth => {
         if (!auth.isLoading) {
           unsubscribe();
+          if (!auth.user) {
+            goto('/auth/login?redirect=/groups');
+            return;
+          }
           loadGroupsData();
         }
       });
@@ -48,28 +58,24 @@
   });
   
   async function loadGroupsData() {
-    if (!$authStore.user) {
-      goto('/auth/login?redirect=/groups');
-      return;
-    }
-
-    // Check contacts permission before loading groups data
-    if (isContactsPermissionRequired()) {
-      const permissionGranted = await initContactsPermission();
-      hasContactsPermission = permissionGranted;
-      
-      if (!permissionGranted) {
-        needsContactsPermission = true;
-        return; // Don't load groups data without permission
-      }
-    } else {
-      hasContactsPermission = true; // Web platform - no permission needed
-    }
-    
     try {
-      await loadUserGroups();
-      await loadGroupInvites();
+      if (await isContactsPermissionRequired()) {
+        await initContactsPermission();
+        hasContactsPermission = $contactsPermission === 'granted';
+        needsContactsPermission = !hasContactsPermission;
+      } else {
+        hasContactsPermission = true;
+        needsContactsPermission = false;
+      }
+      
+      if (hasContactsPermission) {
+        await Promise.all([
+          loadUserGroups(),
+          loadGroupInvites()
+        ]);
+      }
     } catch (err) {
+      console.error('Error loading groups data:', err);
       error = err.message;
     }
   }
@@ -136,7 +142,7 @@
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
-  <MobileHeader title="Groups" />
+  <ResponsiveHeader title="Groups" />
   
   <main class="mobile-section pt-4 pb-24">
     {#if error}
@@ -177,7 +183,7 @@
       </div>
     {:else if $isLoading}
       <div class="mobile-card p-8">
-        <NativeLoading text="Loading groups..." />
+        <LoadingIndicator variant="native" text="Loading groups..." />
       </div>
     {:else if hasContactsPermission}
       <!-- Group Invites Section -->
@@ -311,15 +317,15 @@
   
   <!-- Floating Action Button - Only show when user has contacts permission -->
   {#if hasContactsPermission && !needsContactsPermission}
-    <button
-      on:click={openCreateGroupModal}
-      class="mobile-fab"
-      aria-label="Create new group"
-    >
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-      </svg>
-    </button>
+  <button
+    on:click={openCreateGroupModal}
+    class="mobile-fab"
+    aria-label="Create new group"
+  >
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+  </button>
   {/if}
   
   <!-- Create Group Modal -->

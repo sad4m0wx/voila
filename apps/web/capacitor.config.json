@@ -13,7 +13,9 @@
   },
   "ios": {
     "contentInset": "automatic",
-    "scrollEnabled": true
+    "scrollEnabled": true,
+    "allowsInlineMediaPlayback": true,
+    "scheme": "https"
   },
   "plugins": {
     "SplashScreen": {

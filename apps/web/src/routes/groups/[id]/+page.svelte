@@ -5,13 +5,13 @@
   import { goto } from "$app/navigation";
   import { getFirestore, doc, updateDoc, serverTimestamp } from "firebase/firestore";
   import SlideToConfirm from "$components/utils/SlideToConfirm.svelte";
-  import LoadingSpinner from "$components/utils/LoadingSpinner.svelte";
+  import LoadingIndicator from "$components/utils/LoadingIndicator.svelte";
+  import BottomSheet from "$components/utils/BottomSheet.svelte";
   import MapProvider from '$components/maps/MapProvider.svelte';
   import MapContainer from '$components/maps/MapContainer.svelte';
   import AddressSelection from '$components/groups/AddressSelection.svelte';
   import GroupInvite from '$components/groups/GroupInvite.svelte';
-  import MeetingPointResults from '$components/meeting/MeetingPointResults.svelte';
-  import MeetingPointProgress from '$components/groups/MeetingPointProgress.svelte';
+  import MeetingPointDisplay from '$components/meeting/MeetingPointDisplay.svelte';
   import { defaultMapCenter, defaultMapZoom } from "$lib/config.js";
   import { 
     currentGroup, 
@@ -32,12 +32,15 @@
   import { authStore, addresses } from '$stores/auth';
   import { findOptimalMeetingPoint } from "$lib/services/meetingPointApi";
   
+  
   const { user, profile, isLoading: authLoading } = getContext('auth');
 
   // Core state
   let isAttending = false;
   let selectedAddressId = null;
-  let showInviteSection = false;
+  let showMembersSheet = false;
+  let showInviteSheet = false;
+  let showAddressSheet = false;
   let isInviting = false;
   let isResettingAttendance = false;
   
@@ -45,7 +48,6 @@
   let optimalPoint = null;
   let isCalculating = false;
   let calculationError = null;
-  let lastCalculationTime = null;
   let calculationStep = 'analyzing';
   
   // Map state
@@ -68,14 +70,9 @@
   // Computed values for meeting point requirements
   $: attendingMembers = getAttendingMembers($currentGroupMembers, $attendance, $user, selectedAddressId, $addresses);
   $: attendingCount = Array.from($attendance.values()).filter(a => a.isAttending).length;
-  $: membersWithAddresses = $currentGroupMembers?.filter(m => 
-    m.homeAddress || (m.savedAddresses && m.savedAddresses.length > 0)
-  ).length || 0;
-  $: membersWithSelectedAddresses = $currentGroupMembers?.filter(m => m.selectedAddressId).length || 0;
   $: attendingWithAddresses = attendingMembers.length;
   
   // Auto-recalculate when attending members change
-  // Create a signature to detect actual changes in attending members
   $: attendingMembersSignature = attendingMembers.map(m => 
     `${m.id}:${m.selectedAddress?.formatted || 'no-address'}`
   ).sort().join('|');
@@ -97,7 +94,6 @@
       optimalPoint = null;
       routes = [];
       calculationError = getCalculationErrorMessage();
-      lastCalculationTime = null;
     }
   }
   
@@ -129,24 +125,16 @@
   
   async function initializeGroup() {
     try {
-      // Load group data and subscribe to attendance
       await loadGroup(groupId);
       await loadGroupMembers(groupId);
       await subscribeToAttendance(groupId);
-      
-      // isAttending will be automatically set by reactive statement
-      
-      // Load user's address selection
       await loadUserGroupAddress();
       
-      // Load existing meeting point
       if ($currentGroup?.meetingPoint) {
         optimalPoint = $currentGroup.meetingPoint;
-        lastCalculationTime = $currentGroup.meetingPoint.calculatedAt;
         updateMapForMeetingPoint();
       }
       
-      // Initial calculation
       await calculateMeetingPoint();
     } catch (error) {
       console.error('Error initializing group:', error);
@@ -181,12 +169,10 @@
       if (memberAttendance?.isAttending && member.canUseAddressForMeetingPoint) {
         let memberAddress = null;
         
-        // Get member's selected address
         if (member.selectedAddressId && member.savedAddresses) {
           memberAddress = member.savedAddresses.find(addr => addr.id === member.selectedAddressId);
         }
         
-        // Fall back to home address
         if (!memberAddress && member.homeAddress) {
           memberAddress = member.homeAddress;
         }
@@ -239,8 +225,6 @@
       return;
     }
     
-    // No caching - always recalculate when called
-    
     isCalculating = true;
     calculationError = null;
     calculationStep = 'analyzing';
@@ -260,17 +244,14 @@
       
       optimalPoint = result;
       routes = result.routes || [];
-      lastCalculationTime = new Date();
       
-      // Save to group (sanitize data for Firestore)
       try {
         const sanitizedMeetingPoint = {
           name: result.name,
           coordinates: result.coordinates,
           travelTimes: result.travelTimes,
-          calculatedAt: lastCalculationTime,
+          calculatedAt: new Date(),
           attendingMembersCount: attendingMembers.length
-          // Note: We don't save routes or venues to avoid nested array issues
         };
         
         await saveMeetingPointForGroup(groupId, sanitizedMeetingPoint);
@@ -301,8 +282,6 @@
       return `Need at least 2 attending members with addresses. Currently ${attendingCount} attending, ${attendingWithAddresses} with addresses.`;
     } else if (attendingCount === 0) {
       return "No members are attending yet. Members need to confirm attendance to calculate meeting point.";
-    } else if (membersWithAddresses < 2) {
-      return `Need more members to add their addresses. ${membersWithAddresses} of ${$currentGroupMembers?.length || 0} members have addresses.`;
     } else {
       return "Attending members need to add their addresses to calculate meeting point.";
     }
@@ -348,7 +327,8 @@
     
     try {
       await setMyGroupAddress(groupId, addressId);
-      // Recalculation will happen automatically via reactive statement
+      showAddressSheet = false;
+
     } catch (error) {
       console.error('Error saving address selection:', error);
     }
@@ -366,17 +346,18 @@
     }
     
     const success = await updateMyAttendance(groupId, newStatus, location);
-    // isAttending will be automatically updated by reactive statement
-    // Recalculation will happen automatically via reactive statement
+    if (success) {
+
+    }
   }
   
   async function handleResetAttendance() {
     if (!isAdmin) return;
     
     isResettingAttendance = true;
+
     try {
       await resetAttendance(groupId);
-      // isAttending and meeting point will be automatically updated by reactive statements
     } catch (error) {
       console.error('Error resetting attendance:', error);
     } finally {
@@ -388,16 +369,8 @@
     calculateMeetingPoint();
   }
   
-  async function fixMissingDefaultAddresses() {
-    const success = await fixGroupMemberAddresses(groupId);
-    if (success) {
-      setTimeout(() => calculateMeetingPoint(), 1000);
-    }
-  }
-  
   async function clearSavedMeetingPoint() {
     try {
-      // Clear the meeting point by updating the group document
       const auth = get(authStore);
       if (!auth.user) return;
       
@@ -412,31 +385,31 @@
     }
   }
   
-  function getUserAvatar(member) {
-    if (member.photoURL) {
-      return `<img src="${member.photoURL}" alt="${member.displayName}" class="w-full h-full object-cover" />`;
-    }
-    return `<div class="w-full h-full bg-primary-100 text-primary-700 flex items-center justify-center font-medium text-sm">
-      ${member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
-    </div>`;
-  }
-  
   function isMemberAttending(memberId) {
     const memberAttendance = $attendance.get(memberId);
     return memberAttendance?.isAttending || false;
   }
   
-  function toggleInviteSection() {
-    showInviteSection = !showInviteSection;
+  function showMembers() {
+    showMembersSheet = true;
   }
   
-  // Placeholder functions for invite functionality
+  function showInvite() {
+    showInviteSheet = true;
+  }
+  
+  function showAddressSelection() {
+    showAddressSheet = true;
+  }
+  
   async function handleInviteFriends(event) {
     console.log('Invite friends:', event.detail);
+    showInviteSheet = false;
   }
   
   async function handleInviteByPhone(event) {
     console.log('Invite by phone:', event.detail);
+    showInviteSheet = false;
   }
 </script>
 
@@ -444,335 +417,415 @@
   <title>{$currentGroup?.name || 'Group'} | Voilà!</title>
 </svelte:head>
 
-<main class="min-h-screen bg-gray-50">
-  {#if $isLoading}
-    <div class="flex justify-center items-center h-screen">
-      <LoadingSpinner size="lg" text="Loading group..." />
+{#if $isLoading}
+  <div class="min-h-screen bg-neutral-50 flex items-center justify-center">
+    <LoadingIndicator size="lg" text="Loading group..." />
+  </div>
+{:else if $error}
+  <div class="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+    <div class="mobile-card bg-error-50 text-center max-w-sm w-full">
+      <div class="text-error-600 mb-4">
+        <svg class="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+      </div>
+      <h3 class="text-lg font-semibold text-error-900 mb-2">Error Loading Group</h3>
+      <p class="text-sm text-error-700 mb-4">{$error}</p>
+      <button 
+        on:click={() => window.location.reload()} 
+        class="mobile-button-primary"
+      >
+        Try Again
+      </button>
     </div>
-  {:else if $error}
-    <div class="p-4">
-      <div class="bg-red-50 border-l-4 border-red-400 p-4">
-        <div class="flex">
-          <div class="flex-shrink-0">
-            <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-            </svg>
-          </div>
-          <div class="ml-3">
-            <p class="text-sm text-red-700">{$error}</p>
-          </div>
+  </div>
+{:else if $currentGroup}
+  <!-- Map Section -->
+  <div class="relative h-[50vh] min-h-[300px]">
+    <MapProvider>
+      <div slot="loading" class="h-full flex items-center justify-center">
+        <div class="text-center">
+          <LoadingIndicator size="md" text="Loading map..." />
         </div>
       </div>
-    </div>
-  {:else if $currentGroup}
-    <!-- Header -->
-    <header class="bg-white shadow-sm sticky top-0 z-10">
-      <div class="px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between h-16">
-          <div class="flex items-center">
-            <a href="/groups" class="mr-4 text-gray-400 hover:text-gray-600">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      
+      <div slot="error" let:error class="h-full flex items-center justify-center">
+        <div class="text-center p-4">
+          <svg class="h-12 w-12 mx-auto mb-4 text-error-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <p class="text-sm text-error-600">{error}</p>
+        </div>
+      </div>
+      
+      <MapContainer 
+        center={mapCenter}
+        zoom={mapZoom}
+        markers={mapMarkers}
+        routes={routes}
+        height="100%"
+      />
+      
+      <!-- Floating Header -->
+      <div class="absolute top-0 left-0 right-0 z-10 p-4 pt-[calc(env(safe-area-inset-top)+16px)]">
+        <!-- Unified Header Card -->
+        <div class="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-4">
+          <!-- Top Row: Back Button, Title, Actions -->
+          <div class="flex items-center justify-between mb-3">
+            <button 
+              on:click={() => { goto('/groups'); }}
+              class="mobile-icon-button-small"
+            >
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
               </svg>
-            </a>
-            <h1 class="text-xl font-semibold text-gray-900">{$currentGroup.name}</h1>
+            </button>
+            
+            <h1 class="text-xl font-bold text-neutral-900 flex-1 text-center mx-4">{$currentGroup.name}</h1>
+            
+            <div class="flex items-center space-x-1">
+              <button 
+                on:click={()=>{goto(`/groups/${groupId}/settings`);}}
+                class="mobile-icon-button-small"
+                title="Invite members"
+              >
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+              </button>
+              <button 
+                on:click={() => {  }}
+                class="mobile-icon-button-small"
+                title="Group settings"
+              >
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+            </div>
           </div>
-          <div class="flex items-center space-x-2">
-            <button
-              on:click={toggleInviteSection}
-              class="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-              title="Add members"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-              </svg>
-            </button>
-            <button
-              on:click={() => goto(`/groups/${groupId}/settings`)}
-              class="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
+          
+          <!-- Bottom Row: Member Info and View All Button -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center text-sm text-neutral-600">
+              <span class="mr-4">{$currentGroupMembers?.length || 0} members</span>
+              <span>{attendingCount} attending</span>
+            </div>
+
           </div>
         </div>
       </div>
-    </header>
+      
+      <!-- Calculation Overlay -->
+      {#if isCalculating}
+        <div class="absolute inset-0 bg-black/20 flex items-center justify-center z-20">
+          <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-xs mx-4">
+            <div class="text-center">
+              <LoadingSpinner size="md" />
+              <p class="text-sm font-medium text-neutral-900 mt-3 mb-1">Finding optimal meeting point</p>
+              <p class="text-xs text-neutral-600">
+                {#if calculationStep === 'analyzing'}
+                  Analyzing member locations...
+                {:else if calculationStep === 'geocoding'}
+                  Processing addresses...
+                {:else if calculationStep === 'routing'}
+                  Calculating routes...
+                {:else if calculationStep === 'optimizing'}
+                  Finding best location...
+                {:else}
+                  Almost done...
+                {/if}
+              </p>
+            </div>
+          </div>
+        </div>
+      {/if}
+    </MapProvider>
+  </div>
+  
+  <!-- Attendance Section - Right Under Map -->
+  <div class="bg-white border-b border-neutral-200 p-4">
+    <div class="mb-4">
+      <h3 class="font-semibold text-neutral-900 mb-2">Confirm Your Attendance</h3>
+      <div class="flex items-center text-sm text-neutral-600 mb-3">
+        <div class="flex items-center mr-4">
+          <div class="w-2 h-2 bg-success-500 rounded-full mr-2"></div>
+          <span>{attendingCount} attending</span>
+        </div>
+        <div class="flex items-center">
+          <div class="w-2 h-2 bg-neutral-300 rounded-full mr-2"></div>
+          <span>{($currentGroupMembers?.length || 0) - attendingCount} not attending</span>
+        </div>
+      </div>
+    </div>
     
-    <!-- Add Members Section -->
-    {#if showInviteSection}
-      <div class="bg-white border-b border-gray-200">
-        <div class="px-4 sm:px-6 lg:px-8 py-4">
-          <GroupInvite
-            {isInviting}
-            on:invite-friends={handleInviteFriends}
-            on:invite-by-phone={handleInviteByPhone}
-          />
+    <SlideToConfirm
+      text={isAttending ? "slide to cancel" : "slide to confirm attendance"}
+      confirmText={isAttending ? "cancelled!" : "you're attending!"}
+      disabled={!selectedAddressId}
+      confirmed={isAttending}
+      on:confirm={handleAttendanceConfirm}
+      class="mb-3"
+    />
+    
+    {#if !selectedAddressId}
+      <div class="flex items-center text-sm text-warning-700 bg-warning-50 rounded-lg p-3">
+        <svg class="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <span>Please select your address to confirm attendance</span>
+      </div>
+    {/if}
+  </div>
+
+  <!-- Content Section -->
+  <div class="flex-1 bg-neutral-50">
+    <!-- Meeting Point Results -->
+    {#if optimalPoint}
+      <div class="p-4">
+        <MeetingPointDisplay 
+          meetingPoint={optimalPoint}
+          meetingPoints={[optimalPoint]}
+          currentMeetingPointIndex={0}
+          venues={[]}
+          routes={routes}
+          isCalculating={false}
+          variant="card"
+          on:recalculate={forceRecalculation}
+        />
+      </div>
+    {:else if calculationError}
+      <div class="p-4">
+        <div class="mobile-card bg-warning-50">
+          <div class="flex items-start">
+            <div class="w-10 h-10 bg-warning-100 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+              <svg class="h-6 w-6 text-warning-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-warning-900 mb-1">Waiting for more members</h3>
+              <p class="text-sm text-warning-700">{calculationError}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    {:else if attendingCount === 0}
+      <div class="p-4">
+        <div class="mobile-card bg-info-50 text-center">
+          <div class="w-16 h-16 bg-info-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="h-8 w-8 text-info-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          </div>
+          <h3 class="font-semibold text-info-900 mb-2">Ready to Plan?</h3>
+          <p class="text-sm text-info-700">Once members confirm attendance, we'll find the perfect meeting spot!</p>
         </div>
       </div>
     {/if}
-    
-    
-    
-    <!-- Meeting Point Status -->
-    <div class="px-4 sm:px-6 lg:px-8 pb-4 pt-4">
-      <!-- Requirements Info -->
-      {#if !isCalculating && !optimalPoint && $currentGroupMembers && $currentGroupMembers.length > 0}
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <h3 class="text-sm font-medium text-blue-900 mb-2">Meeting Point Requirements</h3>
-          <div class="space-y-1 text-sm text-blue-700">
-            <div class="flex items-center justify-between">
-              <span>Members attending:</span>
-              <span class="font-medium">{attendingCount} / {$currentGroupMembers.length}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span>Members with addresses:</span>
-              <span class="font-medium">{membersWithAddresses} / {$currentGroupMembers.length}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span>Members with selected addresses:</span>
-              <span class="font-medium {membersWithSelectedAddresses === $currentGroupMembers.length ? 'text-green-600' : 'text-orange-600'}">{membersWithSelectedAddresses} / {$currentGroupMembers.length}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span>Attending with addresses:</span>
-              <span class="font-medium {attendingWithAddresses >= 2 ? 'text-green-600' : 'text-orange-600'}">{attendingWithAddresses} / 2 minimum</span>
-            </div>
-          </div>
-          {#if attendingWithAddresses >= 2}
-            <p class="text-xs text-green-700 mt-2">✅ Ready to calculate meeting point!</p>
-          {:else if membersWithSelectedAddresses < $currentGroupMembers.length}
-            <p class="text-xs text-orange-600 mt-2">⚠️ Some members need to select their address for the group.</p>
-          {:else if attendingCount < 2}
-            <p class="text-xs text-blue-600 mt-2">📋 Need at least 2 members to confirm attendance.</p>
-          {:else}
-            <p class="text-xs text-blue-600 mt-2">Need at least 2 attending members with addresses.</p>
-          {/if}
+
+    <!-- Members List -->
+    <div class="p-4">
+      <div class="mobile-card overflow-hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-neutral-900">Group Members</h3>
+          <span class="text-sm text-neutral-600 flex-shrink-0">{attendingCount} of {$currentGroupMembers?.length || 0} attending</span>
         </div>
-      {/if}
-      
-      <!-- Meeting Point Results -->
-      {#if isCalculating}
-        <MeetingPointProgress 
-          {isCalculating}
-          attendingMembersCount={attendingMembers.length}
-          currentStep={calculationStep}
-        />
-      {:else if calculationError}
-        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div class="flex items-start">
-            <svg class="h-5 w-5 text-yellow-400 mr-3 mt-0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-            </svg>
-            <div class="flex-1">
-              <p class="text-yellow-800 font-medium">Cannot calculate meeting point</p>
-              <p class="text-yellow-700 text-sm">{calculationError}</p>
-              {#if attendingWithAddresses >= 2}
-                <button 
-                  on:click={forceRecalculation}
-                  class="mt-2 text-sm text-yellow-800 hover:text-yellow-900 underline"
-                >
-                  Try again
-                </button>
-              {/if}
-            </div>
-          </div>
-        </div>
-      {:else if optimalPoint}
-        <div class="space-y-4">
-          <MeetingPointResults 
-            meetingPoint={optimalPoint}
-            meetingPoints={[optimalPoint].filter(Boolean)}
-            currentMeetingPointIndex={0}
-            venues={[]}
-            routes={routes}
-            showVenues={false}
-            isCalculating={false}
-            isMobile={false}
-          />
-          
-          <!-- Meeting Point Actions -->
-          <div class="bg-gray-50 rounded-lg p-3">
-            <div class="flex items-center justify-between text-sm">
-              <div class="flex space-x-2">
-                <button
-                  on:click={forceRecalculation}
-                  disabled={isCalculating}
-                  class="text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
-                >
-                  🔄 Recalculate
-                </button>
-                {#if isAdmin}
-                  <button
-                    on:click={fixMissingDefaultAddresses}
-                    class="text-orange-600 hover:text-orange-700 text-xs"
-                  >
-                    🔧 Fix Addresses
-                  </button>
+        
+        <div class="space-y-3">
+          {#each ($currentGroupMembers || []).slice(0, 4) as member (member.id)}
+            <div class="flex items-center justify-between min-w-0">
+              <div class="flex items-center min-w-0 flex-1 mr-3">
+                <div class="mobile-avatar mr-3 flex-shrink-0">
+                  {#if member.photoURL}
+                    <img src={member.photoURL} alt={member.displayName} class="w-full h-full object-cover rounded-full" />
+                  {:else}
+                    <div class="w-full h-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold rounded-full text-sm">
+                      {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
+                    </div>
+                  {/if}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="font-medium text-neutral-900 truncate">
+                    {member.displayName}
+                    {#if member.id === $user?.uid}
+                      <span class="text-sm text-neutral-500 ml-1">(You)</span>
+                    {/if}
+                  </p>
+                  <p class="text-xs text-neutral-600 truncate">
+                    {#if member.canUseAddressForMeetingPoint}
+                      📍 Address set for meeting point
+                    {:else if member.selectedAddressId || member.homeAddress}
+                      📍 Address available
+                    {:else}
+                      No address available
+                    {/if}
+                  </p>
+                </div>
+              </div>
+              
+              <div class="flex-shrink-0">
+                {#if isMemberAttending(member.id)}
+                  <div class="mobile-badge-success">
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                    Attending
+                  </div>
+                {:else}
+                  <div class="mobile-badge-neutral">
+                    Not attending
+                  </div>
                 {/if}
               </div>
             </div>
-          </div>
-        </div>
-      {/if}
-    </div>
-    
-    <!-- Map Section -->
-    <div class="bg-white shadow-sm">
-      <MapProvider>
-        <div slot="loading" class="h-[400px] flex items-center justify-center">
-          <div class="text-center">
-            <div class="loader mx-auto mb-4"></div>
-            <p class="text-neutral-600">Loading map...</p>
-          </div>
-        </div>
-        
-        <div slot="error" let:error class="h-[400px] flex items-center justify-center text-error">
-          <div class="text-center">
-            <p class="text-lg mb-2">{error}</p>
-            <p>Please refresh the page to try again.</p>
-          </div>
-        </div>
-        
-        <div class="h-[400px] relative">
-          <MapContainer 
-            center={mapCenter}
-            zoom={mapZoom}
-            markers={mapMarkers}
-            routes={routes}
-            height="100%"
-          />
+          {/each}
           
-          {#if isCalculating}
-            <div class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center">
-              <LoadingSpinner size="md" text="Calculating optimal meeting point..." />
+          {#if ($currentGroupMembers?.length || 0) > 4}
+            <div class="pt-2 border-t border-neutral-100">
+              <button 
+                on:click={showMembers}
+                class="w-full text-center text-sm text-primary-600 font-medium hover:text-primary-700 py-2 rounded-lg hover:bg-primary-50 transition-colors"
+              >
+                View {($currentGroupMembers?.length || 0) - 4} more members →
+              </button>
             </div>
           {/if}
         </div>
-      </MapProvider>
-    </div>
-
-    <!-- Attendance Slider -->
-    <div class="bg-white shadow-sm p-4">
-      <div class="max-w-md mx-auto">
-        <SlideToConfirm
-          text={isAttending ? "slide to cancel" : "slide to confirm attendance"}
-          confirmText={isAttending ? "cancelled!" : "you're attending!"}
-          disabled={!selectedAddressId}
-          on:confirm={handleAttendanceConfirm}
-        />
-        
-        {#if !selectedAddressId}
-          <p class="text-xs text-red-600 text-center mt-2">
-            Please select your address above to confirm attendance
-          </p>
-        {/if}
       </div>
+    </div>
+    
+    <!-- Quick Action: Address Selection -->
+    <div class="p-4">
+      <button 
+        on:click={showAddressSelection}
+        class="mobile-card-button text-left w-full"
+      >
+        <div class="flex items-center">
+          <div class="w-10 h-10 bg-secondary-100 rounded-full flex items-center justify-center mr-3">
+            <svg class="h-6 w-6 text-secondary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+          <div>
+            <p class="font-medium text-neutral-900">Your Address</p>
+            <p class="text-sm text-neutral-600">
+              {selectedAddressId ? 'Address selected for group' : 'Choose your address for this group'}
+            </p>
+          </div>
+        </div>
+      </button>
     </div>
     
     <!-- Admin Controls -->
     {#if isAdmin}
-      <div class="bg-white shadow-sm border-t border-gray-200 p-4">
-        <div class="max-w-md mx-auto">
+      <div class="p-4">
+        <div class="mobile-card bg-neutral-50">
+          <h3 class="font-semibold text-neutral-900 mb-3">Admin Controls</h3>
           <button
             on:click={handleResetAttendance}
             disabled={isResettingAttendance}
-            class="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+            class="mobile-button-secondary w-full disabled:opacity-50"
           >
             {#if isResettingAttendance}
               <LoadingSpinner size="sm" color="gray" />
               <span class="ml-2">Resetting...</span>
             {:else}
-              🔄 Reset All Attendance (Admin)
+              <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reset All Attendance
             {/if}
           </button>
         </div>
       </div>
     {/if}
     
-    <!-- Address Selection -->
-    <div class="px-4 sm:px-6 lg:px-8 py-4">
-      <AddressSelection
-        currentGroupId={groupId}
-        bind:selectedAddressId
-        on:address-selected={handleAddressSelected}
-      />
-    </div>
+    <!-- Safe area padding -->
+    <div class="pb-[env(safe-area-inset-bottom)]"></div>
+  </div>
+{/if}
 
-    <!-- Members List -->
-    <div class="bg-white shadow-sm mt-2">
-      <div class="px-4 sm:px-6 lg:px-8 py-4">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-medium text-gray-900">Group Members</h2>
-          <div class="text-sm text-gray-500">
-            {attendingWithAddresses} attending
+<!-- Members Bottom Sheet -->
+<BottomSheet bind:isOpen={showMembersSheet} title="Group Members" snapPoints={[0.6, 0.9]}>
+  <div class="p-4 space-y-3">
+    {#each $currentGroupMembers || [] as member (member.id)}
+      <div class="mobile-list-item">
+        <div class="flex items-center flex-1">
+          <div class="mobile-avatar mr-3">
+            {#if member.photoURL}
+              <img src={member.photoURL} alt={member.displayName} class="w-full h-full object-cover rounded-full" />
+            {:else}
+              <div class="w-full h-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold rounded-full">
+                {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
+              </div>
+            {/if}
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center">
+              <p class="font-medium text-neutral-900">
+                {member.displayName}
+                {#if member.id === $user?.uid}
+                  <span class="text-sm text-neutral-500 ml-1">(You)</span>
+                {/if}
+              </p>
+              {#if member.isCreator || member.isAdmin}
+                <span class="ml-2 px-2 py-1 bg-primary-100 text-primary-700 text-xs rounded-full font-medium">
+                  {member.isCreator ? 'Owner' : 'Admin'}
+                </span>
+              {/if}
+            </div>
+            <p class="text-sm text-neutral-600">
+              {#if member.canUseAddressForMeetingPoint}
+                📍 Address set for meeting point
+              {:else if member.selectedAddressId || member.homeAddress}
+                📍 Address available
+              {:else}
+                No address available
+              {/if}
+            </p>
           </div>
         </div>
         
-        <div class="space-y-3">
-          {#each $currentGroupMembers as member (member.id)}
-            <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50">
-              <div class="flex items-center">
-                <div class="w-10 h-10 rounded-full overflow-hidden mr-3">
-                  {@html getUserAvatar(member)}
-                </div>
-                <div>
-                  <p class="text-sm font-medium text-gray-900">
-                    {member.displayName}
-                    {#if member.id === $user?.uid}
-                      <span class="text-xs text-gray-500 ml-1">(You)</span>
-                    {/if}
-                  </p>
-                  {#if member.isCreator}
-                    <p class="text-xs text-primary-600">Owner</p>
-                  {:else if member.isAdmin}
-                    <p class="text-xs text-primary-600">Admin</p>
-                  {/if}
-                  {#if member.canUseAddressForMeetingPoint}
-                    <p class="text-xs text-gray-500">📍 Address available for meeting point</p>
-                  {:else if member.selectedAddressId || member.homeAddress}
-                    <p class="text-xs text-gray-400">📍 Address available (not attending)</p>
-                  {:else}
-                    <p class="text-xs text-gray-400">No address available</p>
-                  {/if}
-                </div>
-              </div>
-              
-              <div class="flex items-center">
-                {#if isMemberAttending(member.id)}
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                    </svg>
-                    Attending
-                  </span>
-                {:else}
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                    Not attending
-                  </span>
-                {/if}
-              </div>
+        <div class="ml-4">
+          {#if isMemberAttending(member.id)}
+            <div class="mobile-badge-success">
+              <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+              Attending
             </div>
-          {/each}
+          {:else}
+            <div class="mobile-badge-neutral">
+              Not attending
+            </div>
+          {/if}
         </div>
       </div>
-    </div>
-  {/if}
-</main>
+    {/each}
+  </div>
+</BottomSheet>
 
-<style>
-  .loader {
-    border: 3px solid rgba(0, 0, 0, 0.1);
-    border-top: 3px solid #3498db;
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    animation: spin 1s linear infinite;
-  }
-  
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-</style>
+<!-- Invite Bottom Sheet -->
+<BottomSheet bind:isOpen={showInviteSheet} title="Invite Members" snapPoints={[0.5, 0.8]}>
+  <div class="p-4">
+    <GroupInvite
+      {isInviting}
+      on:invite-friends={handleInviteFriends}
+      on:invite-by-phone={handleInviteByPhone}
+    />
+  </div>
+</BottomSheet>
+
+<!-- Address Selection Bottom Sheet -->
+<BottomSheet bind:isOpen={showAddressSheet} title="Select Your Address" snapPoints={[0.6, 0.9]}>
+  <div class="p-4">
+    <AddressSelection
+      currentGroupId={groupId}
+      bind:selectedAddressId
+      on:address-selected={handleAddressSelected}
+    />
+  </div>
+</BottomSheet>
