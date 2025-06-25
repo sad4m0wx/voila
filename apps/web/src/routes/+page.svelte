@@ -8,6 +8,8 @@
   import MeetingPointResults from "$components/meeting/MeetingPointResults.svelte";
   import VenueOptions from "$components/venues/VenueOptions.svelte";
   import MetroBackground from "$lib/components/MetroBackground.svelte";
+  import MobileQuickActions from "$components/mobile/MobileQuickActions.svelte";
+  
 
   // State
   let addresses = [{ id: 1, value: '', coordinates: null }, { id: 2, value: '', coordinates: null }];
