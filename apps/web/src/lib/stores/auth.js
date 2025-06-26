@@ -396,7 +396,7 @@ function initRecaptcha() {
       
       // Use visible reCAPTCHA on mobile/Capacitor for better compatibility
       const recaptchaConfig = {
-        size: (isMobile || isCapacitor) ? 'normal' : 'invisible',
+        size: 'invisible', // Use invisible for mobile too - it's more reliable
         callback: () => {
           console.log('reCAPTCHA solved');
         },
@@ -424,13 +424,13 @@ function initRecaptcha() {
       
       recaptchaVerifier = new RecaptchaVerifier(auth, containerId, recaptchaConfig);
       
-      // For visible reCAPTCHA, render it immediately
-      if (isMobile || isCapacitor) {
-        recaptchaVerifier.render().then(() => {
-        }).catch((error) => {
-          recaptchaVerifier = null;
-        });
-      }
+      // Pre-render for all devices to ensure it's ready
+      recaptchaVerifier.render().then(() => {
+        console.log('reCAPTCHA rendered successfully');
+      }).catch((renderError) => {
+        console.warn('reCAPTCHA render failed, will retry during verification:', renderError);
+        // Don't fail here, let it try during verification
+      });
     } catch (error) {
       console.error('Failed to initialize reCAPTCHA:', error);
       return null;
