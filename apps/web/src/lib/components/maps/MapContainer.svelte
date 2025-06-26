@@ -598,7 +598,7 @@
     }
     
     function addPolygons() {
-      // TODO: enable?
+      return;  // TODO: enable?
       if (!map || !polygons || !window.google) return;
       
       mapPolygons = polygons.map(polygon => {

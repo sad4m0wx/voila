@@ -9,8 +9,8 @@ const adapter = adapterStatic({
     entries: ['/']
   },
   // Specify output directory to match Vite config
-  pages: 'dist',
-  assets: 'dist'
+  pages: 'build',
+  assets: 'build'
 });
 
 const config = {

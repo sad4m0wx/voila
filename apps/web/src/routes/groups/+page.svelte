@@ -5,14 +5,7 @@
   import ResponsiveHeader from '$components/core/ResponsiveHeader.svelte';
   import GroupCreationModal from '$components/groups/GroupCreationModal.svelte';
   import LoadingIndicator from '$components/utils/LoadingIndicator.svelte';
-  import ContactsPermissionSetup from '$components/auth/ContactsPermissionSetup.svelte';
   import { authStore } from '$stores/auth';
-  import { 
-    contactsPermission,
-    initContactsPermission,
-    isContactsPermissionRequired,
-    getPermissionStatus
-  } from '$lib/services/contactsPermissionService.js';
   
   import { 
     groups, 
@@ -31,8 +24,6 @@
   let error = null;
   let showCreateGroupModal = false;
   let isCreating = false;
-  let needsContactsPermission = false;
-  let hasContactsPermission = false;
   
   onMount(async () => {
     // Redirect to login if not authenticated
@@ -42,8 +33,10 @@
     }
 
     if ($authStore.isLoading) {
+      let hasRun = false;
       const unsubscribe = authStore.subscribe(auth => {
-        if (!auth.isLoading) {
+        if (!auth.isLoading && !hasRun) {
+          hasRun = true;
           unsubscribe();
           if (!auth.user) {
             goto('/auth/login?redirect=/groups');
@@ -59,21 +52,13 @@
   
   async function loadGroupsData() {
     try {
-      if (await isContactsPermissionRequired()) {
-        await initContactsPermission();
-        hasContactsPermission = $contactsPermission === 'granted';
-        needsContactsPermission = !hasContactsPermission;
-      } else {
-        hasContactsPermission = true;
-        needsContactsPermission = false;
-      }
+      console.log('Loading groups data...');
       
-      if (hasContactsPermission) {
-        await Promise.all([
-          loadUserGroups(),
-          loadGroupInvites()
-        ]);
-      }
+      await Promise.all([
+        loadUserGroups(),
+        loadGroupInvites()
+      ]);
+      console.log('Groups and invites loaded successfully');
     } catch (err) {
       console.error('Error loading groups data:', err);
       error = err.message;
@@ -124,17 +109,6 @@
       error = err.message;
     }
   }
-
-  function handleContactsPermissionGranted() {
-    needsContactsPermission = false;
-    hasContactsPermission = true;
-    loadGroupsData();
-  }
-
-  function handleContactsPermissionSkipped() {
-    // Since contacts permission is required for groups, redirect to login
-    goto('/auth/login?redirect=/groups');
-  }
 </script>
 
 <svelte:head>
@@ -156,36 +130,11 @@
       </div>
     {/if}
 
-    {#if needsContactsPermission}
-      <!-- Contacts Permission Required -->
-      <div class="mobile-card p-1">
-        <div class="text-center py-8">
-          <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-            </svg>
-          </div>
-          
-          <h3 class="text-xl font-bold text-gray-900 mb-4">Contact Access Required</h3>
-          <p class="text-gray-600 mb-6">
-            Groups require contact access to help you find and add friends. Please grant permission to continue.
-          </p>
-          
-          <ContactsPermissionSetup 
-            skipable={false}
-            on:permission-granted={handleContactsPermissionGranted}
-            on:permission-skipped={handleContactsPermissionSkipped}
-            on:show-settings-instructions={() => {
-              error = 'Please enable contact access in your device settings to use groups.';
-            }}
-          />
-        </div>
-      </div>
-    {:else if $isLoading}
+    {#if $isLoading}
       <div class="mobile-card p-8">
         <LoadingIndicator variant="native" text="Loading groups..." />
       </div>
-    {:else if hasContactsPermission}
+    {:else}
       <!-- Group Invites Section -->
       {#if $groupInvites.length > 0}
         <div class="mb-6">
@@ -242,7 +191,7 @@
           <div class="mobile-empty-state">
             <div class="mobile-empty-icon">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 515.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
               </svg>
             </div>
             <h3 class="mobile-empty-title">No groups yet</h3>
@@ -315,8 +264,7 @@
     {/if}
   </main>
   
-  <!-- Floating Action Button - Only show when user has contacts permission -->
-  {#if hasContactsPermission && !needsContactsPermission}
+  <!-- Floating Action Button -->
   <button
     on:click={openCreateGroupModal}
     class="mobile-fab"
@@ -326,7 +274,6 @@
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
     </svg>
   </button>
-  {/if}
   
   <!-- Create Group Modal -->
   <GroupCreationModal 
