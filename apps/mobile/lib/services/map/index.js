@@ -1,0 +1,1 @@
+export { GoogleMapsService, googleMapsService } from './GoogleMapsService'; 
