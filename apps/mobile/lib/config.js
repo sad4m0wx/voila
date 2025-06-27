@@ -10,7 +10,7 @@ export const CORE_API_URL = process.env.EXPO_PUBLIC_CORE_API_URL || 'http://loca
 
 // Google Maps configuration
 export const googleMapsConfig = {
-  apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY || process.env.EXPO_MAPS_BROWSER_KEY || null,
+  apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY || null,
   libraries: ['places', 'geometry']
 };
 
