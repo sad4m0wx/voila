@@ -2,44 +2,42 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: 'absolute',
+        tabBarStyle: {
+          height: Platform.OS === 'ios' ? 60 : 50,
+          paddingBottom: Platform.OS === 'ios' ? 8 : 4,
+          paddingTop: 8,
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          borderTopWidth: 1,
+          borderTopColor: '#e5e7eb',
+          shadowColor: '#000',
+          shadowOffset: {
+            width: 0,
+            height: -2,
           },
-          default: {},
-        }),
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+        tabBarActiveTintColor: '#3b82f6',
+        tabBarInactiveTintColor: '#6b7280',
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          tabBarIcon: () => null, // No icons for simplicity
         }}
       />
     </Tabs>
   );
-}
+} 
