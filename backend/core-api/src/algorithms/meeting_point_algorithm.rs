@@ -325,7 +325,7 @@ impl MeetingPointAlgorithm {
         
         // Optimization parameters
         const MOVEMENT_INCREMENT: f64 = 0.001; // ~100m movement per iteration
-        const MAX_ITERATIONS: usize = 5;
+        const MAX_ITERATIONS: usize = 8;
         const MIN_HEAT_THRESHOLD: f64 = 0.15;
 
         for original_candidate in grid_candidates {
@@ -397,7 +397,7 @@ impl MeetingPointAlgorithm {
         }
 
         // Deduplicate candidates within 200m, keeping the best heat value
-        const MIN_DISTANCE_METERS: f64 = 200.0;
+        const MIN_DISTANCE_METERS: f64 = 50.0;
         let final_candidates = self.deduplicate_candidates(&optimized_candidates, MIN_DISTANCE_METERS).await;
 
         // Generate and store heatmap debug data
@@ -438,7 +438,7 @@ impl MeetingPointAlgorithm {
             }
         }
 
-        //cap to 50
+        //cap to 60
         deduplicated = deduplicated.into_iter().take(50).collect();
 
         deduplicated
@@ -542,21 +542,22 @@ impl MeetingPointAlgorithm {
         variance.sqrt()
     }
 
+    //lower is better
     fn calculate_composite_score(&self, avg_time_seconds: f64, std_dev_seconds: f64, heat_score: f64) -> f64 {
-        // Weights: average time, fairness (std dev), and heat score
-        const AVG_TIME_WEIGHT: f64 = 0.40;   // 40% weight on average time
+        const AVG_TIME_WEIGHT: f64 = 0.25;   // 40% weight on average time
         const STD_DEV_WEIGHT: f64 = 0.40;    // 40% weight on standard deviation (fairness)
-        const HEAT_WEIGHT: f64 = 0.20;       // 20% weight on heat score
+        const HEAT_WEIGHT: f64 = 0.35;       // 20% weight on heat score
         
         let avg_time_minutes = avg_time_seconds / 60.0;
         let std_dev_minutes = std_dev_seconds / 60.0;
         
-        // Heat score penalty: higher heat = lower penalty
-        let normalized_heat_penalty = (1.0 - heat_score) * 10.0; // Convert to 0-10 minute penalty
+        // Heat score bonus: higher heat = lower score (better)
+        let normalized_heat_bonus = heat_score * 10.0; // Convert to 0-5 minute bonus
         
+        // Lower score is better: penalize high average time and high std dev, reward high heat
         AVG_TIME_WEIGHT * avg_time_minutes + 
-        STD_DEV_WEIGHT * std_dev_minutes + 
-        HEAT_WEIGHT * normalized_heat_penalty
+        STD_DEV_WEIGHT * std_dev_minutes - 
+        HEAT_WEIGHT * normalized_heat_bonus
     }
 
     // Debug data conversion functions
