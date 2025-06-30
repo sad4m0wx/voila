@@ -24,6 +24,16 @@
           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
         </svg>
       `,
+    },
+    {
+      name: "Test",
+      path: "/test-contacts",
+      icon: `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 12l2 2 4-4"></path>
+          <circle cx="12" cy="12" r="10"></circle>
+        </svg>
+      `,
     }
   ];
 
@@ -40,7 +50,7 @@
 
 <!-- Mobile Navigation (bottom bar) -->
 <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-neutral-200/50 z-10 safe-area-bottom shadow-lg">
-  <div class="grid grid-cols-2 h-18">
+  <div class="grid grid-cols-3 h-18">
     {#each navItems as item}
       <a
         href={item.path}

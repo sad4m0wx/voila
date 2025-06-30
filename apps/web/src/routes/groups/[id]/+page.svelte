@@ -522,7 +522,7 @@
         <div class="absolute inset-0 bg-black/20 flex items-center justify-center z-20">
           <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-xs mx-4">
             <div class="text-center">
-              <LoadingSpinner size="md" />
+              <LoadingIndicator size="md" />
               <p class="text-sm font-medium text-neutral-900 mt-3 mb-1">Finding optimal meeting point</p>
               <p class="text-xs text-neutral-600">
                 {#if calculationStep === 'analyzing'}
@@ -730,7 +730,7 @@
             class="mobile-button-secondary w-full disabled:opacity-50"
           >
             {#if isResettingAttendance}
-              <LoadingSpinner size="sm" color="gray" />
+              <LoadingIndicator size="sm" color="gray" />
               <span class="ml-2">Resetting...</span>
             {:else}
               <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">

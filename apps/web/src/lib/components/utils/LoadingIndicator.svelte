@@ -25,7 +25,6 @@
 </script>
 
 <div class="flex flex-col items-center justify-center gap-3 p-2">
-  <!-- Spinner Variant (from LoadingSpinner) -->
   {#if variant === 'spinner'}
     <svg 
       class="animate-spin {sizeClasses[size]} {colorClasses[color]}" 

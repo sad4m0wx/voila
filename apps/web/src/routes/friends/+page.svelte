@@ -4,7 +4,6 @@
   import ResponsiveHeader from '$components/core/ResponsiveHeader.svelte';
   import PhoneInput from '$components/core/PhoneInput.svelte';
   import LoadingIndicator from '$components/utils/LoadingIndicator.svelte';
-  import ContactsSync from '$components/core/ContactsSync.svelte';
   import { authStore, formatPhoneNumber } from '$stores/auth';
   
   import { 
@@ -94,16 +93,7 @@
     error = null;
   }
 
-  function handleContactsSynced(event) {
-    const { suggestions, existingFriends, totalContacts, totalMatches } = event.detail;
-    console.log(`Found ${totalMatches} matches out of ${totalContacts} contacts`);
-    console.log(`${suggestions.length} new suggestions, ${existingFriends.length} existing friends`);
-  }
 
-  function handleContactFriendRequest(event) {
-    const { userId } = event.detail;
-    handleSendRequest(userId);
-  }
   
   async function handleSendRequest(userId) {
     try {
@@ -337,14 +327,7 @@
       
     {:else if activeTab === 'find'}
       <!-- Find Friends -->
-      <div>
-        <!-- Contact Sync Section -->
-        <ContactsSync 
-          isVisible={true}
-          on:contacts-synced={handleContactsSynced}
-          on:send-friend-request={handleContactFriendRequest}
-        />
-        
+      <div>        
         <h3 class="mobile-section-title mb-4">Find Friends by Phone</h3>
         
         <div class="mobile-card p-4 mb-4">
