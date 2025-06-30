@@ -413,7 +413,7 @@ const MeetingPointDisplay = ({
           <TouchableOpacity style={styles.groupButton} onPress={onCreateGroup}>
             <View style={styles.groupButtonContent}>
               <FontAwesome5 name="users" size={14} color="white" style={styles.buttonIcon} />
-              <Text style={styles.groupButtonText}>Save as Group</Text>
+              <Text style={styles.groupButtonText}>Create a Group</Text>
             </View>
           </TouchableOpacity>
         )}

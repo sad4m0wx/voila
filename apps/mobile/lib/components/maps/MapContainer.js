@@ -1,333 +1,225 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, Dimensions, Platform } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
-import { defaultMapCenter, defaultMapZoom } from '../../config';
-
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+import { MaterialIcons } from '@expo/vector-icons';
 
 const MapContainer = ({
-  center = defaultMapCenter,
-  zoom = defaultMapZoom,
+  center = [2.3522, 48.8566], // [longitude, latitude]
+  zoom = 12,
   markers = [],
   routes = [],
-  polygons = [], // For future debug features
   meetingZoneRadius = 0,
-  height = 400,
-  width = '100%',
   animateToResults = false,
-  zoomToFitMarkers = false,
-  heatmapData = null, // For future heatmap features
-  showHeatmap = false,
-  showMovementVectors = false,
+  zoomToFitMarkers = true,
+  height = '100%',
   onBoundsChange,
-  onReady,
-  onError
+  style = {}
 }) => {
   const mapRef = useRef(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [userInteracted, setUserInteracted] = useState(false);
 
-  // Debug log for routes
+  // Convert [lng, lat] to {latitude, longitude} format for react-native-maps
+  const centerCoord = {
+    latitude: center[1],
+    longitude: center[0],
+    latitudeDelta: 0.0922,
+    longitudeDelta: 0.0421,
+  };
+
   useEffect(() => {
-    console.log('MapContainer routes received:', routes);
-    if (routes && routes.length > 0) {
-      routes.forEach((route, index) => {
-        console.log(`Route ${index}:`, {
-          id: route.id,
-          hasGeometry: !!route.geometry,
-          hasCoordinates: !!(route.geometry && route.geometry.coordinates),
-          coordinatesLength: route.geometry && route.geometry.coordinates ? route.geometry.coordinates.length : 0,
-          color: route.color
-        });
-      });
-    }
-  }, [routes]);
+    if (animateToResults && markers.length > 0 && mapRef.current) {
+      // Fit map to show all markers
+      setTimeout(() => {
+        const coordinates = markers.map(marker => ({
+          latitude: marker.position[1],
+          longitude: marker.position[0],
+        }));
 
-  // Convert zoom level to latitudeDelta (approximate)
-  const zoomToLatitudeDelta = (zoom) => {
-    return 360 / Math.pow(2, zoom);
-  };
-
-  // Convert coordinates from [lng, lat] to {latitude, longitude}
-  const convertCoordinates = (coords) => {
-    if (!coords || !Array.isArray(coords) || coords.length < 2) {
-      return null;
-    }
-    return {
-      latitude: coords[1],
-      longitude: coords[0]
-    };
-  };
-
-  // Create markers for the map
-  const createMapMarkers = () => {
-    return markers.map((marker, index) => {
-      const coordinate = convertCoordinates(marker.position);
-      if (!coordinate) return null;
-
-      let pinColor = '#6366f1'; // Default indigo
-      let title = marker.title || `Location ${index + 1}`;
-      
-      // Set colors based on marker type
-      if (marker.type === 'meeting-point') {
-        pinColor = '#10b981'; // Green for meeting point
-      } else if (marker.type === 'venue') {
-        pinColor = '#f59e0b'; // Orange for venues
-      } else if (marker.type === 'location') {
-        // Use different colors for different location numbers
-        const colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']; // Indigo, Purple, Cyan, Green, Orange
-        pinColor = colors[(marker.number - 1) % colors.length];
-      }
-
-      return (
-        <Marker
-          key={`marker-${marker.type}-${index}-${marker.position?.join(',')}`}
-          coordinate={coordinate}
-          title={title}
-          description={marker.info ? marker.info.replace(/<[^>]*>/g, '') : undefined}
-          pinColor={pinColor}
-          anchor={{ x: 0.5, y: 1 }}
-        />
-      );
-    }).filter(Boolean);
-  };
-
-  // Create polylines for routes
-  const createRoutePolylines = () => {
-    console.log('Creating polylines for routes:', routes?.length || 0);
-    
-    if (!routes || routes.length === 0) {
-      console.log('No routes to display');
-      return [];
-    }
-
-    return routes.map((route, index) => {
-      console.log(`Processing route ${index}:`, route);
-      
-      if (!route || !route.geometry || !route.geometry.coordinates) {
-        console.log(`Route ${index} missing geometry or coordinates`);
-        return null;
-      }
-
-      const coordinates = route.geometry.coordinates.map(coord => {
-        if (!Array.isArray(coord) || coord.length < 2) {
-          console.log('Invalid coordinate:', coord);
-          return null;
+        if (coordinates.length > 1) {
+          mapRef.current.fitToCoordinates(coordinates, {
+            edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+            animated: true,
+          });
+        } else if (coordinates.length === 1) {
+          mapRef.current.animateToRegion({
+            ...coordinates[0],
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }, 1000);
         }
-        return {
-          latitude: coord[1],
-          longitude: coord[0]
-        };
-      }).filter(Boolean);
+      }, 100);
+    }
+  }, [animateToResults, markers]);
 
-      if (coordinates.length < 2) {
-        console.log(`Route ${index} has insufficient valid coordinates:`, coordinates.length);
-        return null;
-      }
-
-      // Use the exact color from the API, or fallback to our scheme if not provided
-      const strokeColor = route.color || getRouteColor(index);
-      const strokeWidth = route.weight || 4;
-
-      console.log(`Creating polyline for route ${index} with ${coordinates.length} coordinates, using color: ${strokeColor}`);
-
-      return (
-        <Polyline
-          key={`route-${route.id || index}`}
-          coordinates={coordinates}
-          strokeColor={strokeColor}
-          strokeWidth={strokeWidth}
-          lineCap="round"
-          lineJoin="round"
-        />
-      );
-    }).filter(Boolean);
+  const getMarkerColor = (type) => {
+    switch (type) {
+      case 'meeting-point':
+        return '#ef4444'; // Red
+      case 'venue':
+        return '#f59e0b'; // Orange
+      default:
+        return '#6366f1'; // Blue
+    }
   };
 
-  // Fallback color function for routes without API colors
-  const getRouteColor = (index) => {
-    const colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b'];
-    return colors[index % colors.length];
+  const getMarkerIcon = (type) => {
+    switch (type) {
+      case 'meeting-point':
+        return 'flag';
+      case 'venue':
+        return 'restaurant';
+      default:
+        return 'place';
+    }
   };
 
-  // Create meeting zone circle
-  const createMeetingZoneCircle = () => {
-    if (meetingZoneRadius <= 0) return null;
-    
-    const centerCoord = convertCoordinates(center);
-    if (!centerCoord) return null;
+  const renderMarker = (marker, index) => {
+    const coordinate = {
+      latitude: marker.position[1],
+      longitude: marker.position[0],
+    };
 
     return (
-      <Circle
-        key="meeting-zone"
-        center={centerCoord}
-        radius={meetingZoneRadius}
-        fillColor="rgba(99, 102, 241, 0.1)" // Indigo
-        strokeColor="rgba(99, 102, 241, 0.8)" // Indigo
-        strokeWidth={2}
+      <Marker
+        key={`marker-${index}`}
+        coordinate={coordinate}
+        title={marker.title}
+        description={marker.info}
+      >
+        <View style={[styles.customMarker, { backgroundColor: getMarkerColor(marker.type) }]}>
+          <MaterialIcons 
+            name={getMarkerIcon(marker.type)} 
+            size={16} 
+            color="white" 
+          />
+          {marker.number && (
+            <View style={styles.markerNumber}>
+              <Text style={styles.markerNumberText}>{marker.number}</Text>
+            </View>
+          )}
+        </View>
+      </Marker>
+    );
+  };
+
+  const renderRoute = (route, index) => {
+    if (!route.geometry || !route.geometry.coordinates || route.geometry.coordinates.length < 2) {
+      return null;
+    }
+
+    const coordinates = route.geometry.coordinates.map(coord => ({
+      latitude: coord[1],
+      longitude: coord[0],
+    }));
+
+    return (
+      <Polyline
+        key={`route-${index}`}
+        coordinates={coordinates}
+        strokeColor={route.color || '#6366f1'}
+        strokeWidth={route.weight || 4}
+        strokeOpacity={0.8}
       />
     );
   };
 
-  // Fit map to show all markers and routes
-  const fitToMarkersAndRoutes = () => {
-    if (!mapRef.current || !mapReady) return;
-
-    const coordinates = [];
-
-    // Add marker coordinates
-    markers.forEach(marker => {
-      const coord = convertCoordinates(marker.position);
-      if (coord) coordinates.push(coord);
-    });
-
-    // Add route coordinates
-    routes.forEach(route => {
-      if (route && route.geometry && route.geometry.coordinates) {
-        route.geometry.coordinates.forEach(coord => {
-          if (Array.isArray(coord) && coord.length >= 2) {
-            coordinates.push({
-              latitude: coord[1],
-              longitude: coord[0]
-            });
-          }
-        });
-      }
-    });
-
-    if (coordinates.length > 1) {
-      console.log(`Fitting map to ${coordinates.length} coordinates`);
-      mapRef.current.fitToCoordinates(coordinates, {
-        edgePadding: { top: 100, right: 50, bottom: 50, left: 50 },
-        animated: true,
-      });
-    }
-  };
-
-  // Animate to meeting point
-  const animateToMeetingPoint = () => {
-    if (!mapRef.current || !mapReady || !center) return;
-
-    const centerCoord = convertCoordinates(center);
-    if (!centerCoord) return;
-
-    // Calculate appropriate zoom based on meeting zone radius
-    let targetZoom = 15;
-    if (meetingZoneRadius > 1000) targetZoom = 13;
-    else if (meetingZoneRadius > 500) targetZoom = 14;
-    else if (meetingZoneRadius <= 200) targetZoom = 16;
-
-    const region = {
-      ...centerCoord,
-      latitudeDelta: zoomToLatitudeDelta(targetZoom),
-      longitudeDelta: zoomToLatitudeDelta(targetZoom) * (screenWidth / screenHeight),
-    };
-
-    mapRef.current.animateToRegion(region, 1000);
-  };
-
-  // Handle map ready
-  const handleMapReady = () => {
-    setMapReady(true);
-    onReady && onReady({ map: mapRef.current });
-  };
-
-  // Handle region change
-  const handleRegionChangeComplete = (region) => {
+  const onRegionChangeComplete = (region) => {
     if (onBoundsChange) {
       // Calculate bounds from region
-      const { latitude, longitude, latitudeDelta, longitudeDelta } = region;
-      const northEast = [longitude + longitudeDelta / 2, latitude + latitudeDelta / 2];
-      const southWest = [longitude - longitudeDelta / 2, latitude - latitudeDelta / 2];
-      
-      onBoundsChange({
-        bounds: {
-          northeast: northEast,
-          southwest: southWest
-        }
-      });
+      const bounds = {
+        northeast: [
+          region.longitude + region.longitudeDelta / 2,
+          region.latitude + region.latitudeDelta / 2
+        ],
+        southwest: [
+          region.longitude - region.longitudeDelta / 2,
+          region.latitude - region.latitudeDelta / 2
+        ]
+      };
+      onBoundsChange({ bounds });
     }
   };
-
-  // Effects
-  useEffect(() => {
-    if (animateToResults && mapReady && !userInteracted) {
-      setTimeout(() => {
-        fitToMarkersAndRoutes();
-      }, 500); // Delay to ensure all components are rendered
-    }
-  }, [animateToResults, mapReady, markers, routes]);
-
-  useEffect(() => {
-    if (zoomToFitMarkers && mapReady && !animateToResults) {
-      fitToMarkersAndRoutes();
-    }
-  }, [markers, routes, mapReady, zoomToFitMarkers, animateToResults]);
-
-  // Auto-update map when markers or routes change
-  useEffect(() => {
-    if (mapReady && (markers.length > 0 || routes.length > 0)) {
-      // Small delay to ensure all components are rendered
-      const timeoutId = setTimeout(() => {
-        fitToMarkersAndRoutes();
-      }, 300);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [markers, routes, mapReady]);
-
-  // Initial region
-  const initialRegion = {
-    latitude: center[1] || defaultMapCenter[1],
-    longitude: center[0] || defaultMapCenter[0],
-    latitudeDelta: zoomToLatitudeDelta(zoom),
-    longitudeDelta: zoomToLatitudeDelta(zoom) * (screenWidth / screenHeight),
-  };
-
-  const polylines = createRoutePolylines();
-  console.log(`Rendering ${polylines.length} polylines`);
 
   return (
-    <View style={[styles.container, { height, width }]}>
+    <View style={[{ height }, style]}>
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={styles.map}
-        initialRegion={initialRegion}
-        onMapReady={handleMapReady}
-        onRegionChangeComplete={handleRegionChangeComplete}
-        onPanDrag={() => setUserInteracted(true)}
-        onUserLocationChange={() => setUserInteracted(true)}
-        showsUserLocation={false}
-        showsMyLocationButton={false}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={centerCoord}
+        showsUserLocation={true}
         showsCompass={true}
-        showsScale={false}
-        rotateEnabled={true}
-        scrollEnabled={true}
-        zoomEnabled={true}
-        pitchEnabled={false}
-        toolbarEnabled={false}
+        showsScale={true}
+        onRegionChangeComplete={onRegionChangeComplete}
+        mapType="standard"
       >
         {/* Render markers */}
-        {createMapMarkers()}
-        
+        {markers.map((marker, index) => renderMarker(marker, index))}
+
         {/* Render routes */}
-        {polylines}
-        
-        {/* Render meeting zone circle */}
-        {createMeetingZoneCircle()}
+        {routes.map((route, index) => renderRoute(route, index))}
+
+        {/* Render meeting zone radius */}
+        {meetingZoneRadius > 0 && markers.length > 0 && (
+          markers
+            .filter(marker => marker.type === 'meeting-point')
+            .map((marker, index) => (
+              <Circle
+                key={`circle-${index}`}
+                center={{
+                  latitude: marker.position[1],
+                  longitude: marker.position[0],
+                }}
+                radius={meetingZoneRadius}
+                strokeColor="rgba(99, 102, 241, 0.3)"
+                fillColor="rgba(99, 102, 241, 0.1)"
+                strokeWidth={2}
+              />
+            ))
+        )}
       </MapView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   map: {
     flex: 1,
   },
+  customMarker: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  markerNumber: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: 'white',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  markerNumberText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#374151',
+  },
 });
 
-export default MapContainer; 
+export default MapContainer;

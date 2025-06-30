@@ -1,38 +1,94 @@
 import React from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
-
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+import { View, StyleSheet, Animated } from 'react-native';
 
 const MetroBackground = () => {
+  const animatedValue = new Animated.Value(0);
+
+  React.useEffect(() => {
+    const animate = () => {
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 3000,
+          useNativeDriver: true,
+        }),
+      ]).start(() => animate());
+    };
+    animate();
+  }, [animatedValue]);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.1, 0.3, 0.1],
+  });
+
+  const translateY = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -20],
+  });
+
   return (
     <View style={styles.container}>
-      {/* Grid pattern */}
-      <View style={styles.gridPattern}>
-        {/* Horizontal lines */}
-        {Array.from({ length: Math.ceil(screenHeight / 40) }).map((_, i) => (
-          <View key={`h-${i}`} style={[styles.gridLine, styles.horizontalLine, { top: i * 40 }]} />
-        ))}
-        {/* Vertical lines */}
-        {Array.from({ length: Math.ceil(screenWidth / 40) }).map((_, i) => (
-          <View key={`v-${i}`} style={[styles.gridLine, styles.verticalLine, { left: i * 40 }]} />
-        ))}
-      </View>
-
-      {/* Animated metro elements */}
-      <View style={styles.metroElements}>
-        {/* Station nodes */}
-        <View style={[styles.station, { top: '20%', left: '15%' }]} />
-        <View style={[styles.station, { top: '40%', right: '20%' }]} />
-        <View style={[styles.station, { bottom: '30%', left: '25%' }]} />
-        <View style={[styles.station, { top: '60%', right: '15%' }]} />
-        
-        {/* Metro lines */}
-        <View style={[styles.metroLine, styles.metroLine1]} />
-        <View style={[styles.metroLine, styles.metroLine2]} />
-        <View style={[styles.metroLine, styles.metroLine3]} />
-      </View>
-
-      {/* Gradient overlay */}
+      {/* Animated Metro Lines */}
+      <Animated.View 
+        style={[
+          styles.metroLine,
+          styles.line1,
+          {
+            opacity,
+            transform: [{ translateY }]
+          }
+        ]} 
+      />
+      <Animated.View 
+        style={[
+          styles.metroLine,
+          styles.line2,
+          {
+            opacity: opacity.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.15, 0.35],
+            }),
+            transform: [{ 
+              translateY: translateY.interpolate({
+                inputRange: [0, 1],
+                outputRange: [10, -10],
+              })
+            }]
+          }
+        ]} 
+      />
+      <Animated.View 
+        style={[
+          styles.metroLine,
+          styles.line3,
+          {
+            opacity: opacity.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.05, 0.25],
+            }),
+            transform: [{ 
+              translateY: translateY.interpolate({
+                inputRange: [0, 1],
+                outputRange: [20, -30],
+              })
+            }]
+          }
+        ]} 
+      />
+      
+      {/* Metro Stations (Dots) */}
+      <View style={[styles.station, styles.station1]} />
+      <View style={[styles.station, styles.station2]} />
+      <View style={[styles.station, styles.station3]} />
+      <View style={[styles.station, styles.station4]} />
+      
+      {/* Background Gradient Overlay */}
       <View style={styles.gradientOverlay} />
     </View>
   );
@@ -47,67 +103,54 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-  gridPattern: {
+  metroLine: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    height: 2,
+    borderRadius: 1,
   },
-  gridLine: {
-    position: 'absolute',
-    backgroundColor: 'rgba(99, 102, 241, 0.05)',
+  line1: {
+    backgroundColor: '#6366f1',
+    width: '120%',
+    top: '20%',
+    left: '-10%',
+    transform: [{ rotate: '15deg' }],
   },
-  horizontalLine: {
-    left: 0,
-    right: 0,
-    height: 1,
+  line2: {
+    backgroundColor: '#8b5cf6',
+    width: '100%',
+    top: '45%',
+    left: '-5%',
+    transform: [{ rotate: '-12deg' }],
   },
-  verticalLine: {
-    top: 0,
-    bottom: 0,
-    width: 1,
-  },
-  metroElements: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  line3: {
+    backgroundColor: '#06b6d4',
+    width: '80%',
+    top: '70%',
+    left: '10%',
+    transform: [{ rotate: '8deg' }],
   },
   station: {
     position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    borderWidth: 2,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#e2e8f0',
   },
-  metroLine: {
-    position: 'absolute',
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  station1: {
+    top: '18%',
+    left: '15%',
   },
-  metroLine1: {
-    top: '20%',
-    left: '10%',
-    right: '10%',
-    height: 2,
-    transform: [{ rotate: '15deg' }],
-  },
-  metroLine2: {
-    top: '50%',
-    left: '5%',
+  station2: {
+    top: '43%',
     right: '20%',
-    height: 2,
-    transform: [{ rotate: '-10deg' }],
   },
-  metroLine3: {
-    bottom: '30%',
-    left: '20%',
-    right: '5%',
-    height: 2,
-    transform: [{ rotate: '8deg' }],
+  station3: {
+    top: '68%',
+    left: '25%',
+  },
+  station4: {
+    top: '25%',
+    right: '15%',
   },
   gradientOverlay: {
     position: 'absolute',
@@ -115,7 +158,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
   },
 });
 

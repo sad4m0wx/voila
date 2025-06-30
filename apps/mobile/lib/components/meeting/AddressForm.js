@@ -78,6 +78,14 @@ const AddressForm = ({
         <Text style={styles.subtitle}>Add at least 2 addresses to find the perfect meeting spot</Text>
       </View>
       
+      {/* Error Message */}
+      {error && (
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={20} color="#f87171" style={styles.errorIcon} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+      
       {/* Address List */}
       <View style={styles.addressList}>
         {addresses.map((address, index) => (
@@ -171,6 +179,25 @@ const styles = StyleSheet.create({
     color: '#64748b', // Slate
     textAlign: 'center',
     lineHeight: 16,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f87171',
+  },
+  errorIcon: {
+    marginRight: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#dc2626',
+    fontWeight: '500',
   },
   addressList: {
     marginBottom: 16,

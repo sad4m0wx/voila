@@ -101,70 +101,6 @@ export class GoogleMapsService {
     }
   }
 
-  /**
-   * Search for places using the Places API
-   * @param {string} query - Search query
-   * @param {Object} options - Search options
-   * @param {[number, number]} options.location - Center point for search [lng, lat]
-   * @param {number} options.radius - Search radius in meters
-   * @returns {Promise<Array>} Array of place results
-   */
-  async searchPlaces(query, options = {}) {
-    if (!this.apiKey) {
-      throw new Error('Google Maps API key not configured');
-    }
-
-    if (!query || typeof query !== 'string') {
-      throw new Error('Valid search query is required');
-    }
-
-    try {
-      const encodedQuery = encodeURIComponent(query);
-      let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodedQuery}&key=${this.apiKey}`;
-      
-      if (options.location && Array.isArray(options.location) && options.location.length === 2) {
-        url += `&location=${options.location[1]},${options.location[0]}`; // Places API uses lat,lng format
-      }
-      
-      if (options.radius && typeof options.radius === 'number') {
-        url += `&radius=${options.radius}`;
-      }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Places search request failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.status === 'OK' && data.results) {
-        return data.results.map(place => ({
-          placeId: place.place_id,
-          name: place.name,
-          address: place.formatted_address,
-          coordinates: [place.geometry.location.lng, place.geometry.location.lat],
-          rating: place.rating,
-          types: place.types,
-          priceLevel: place.price_level
-        }));
-      } else {
-        throw new Error(`Places search failed: ${data.status} - ${data.error_message || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error searching places:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check if the service is properly configured
-   * @returns {boolean} True if API key is configured
-   */
-  isConfigured() {
-    return !!this.apiKey;
-  }
-
   async getPlacePredictions(input, bounds = null) {
     try {
       if (!this.apiKey) {
@@ -243,6 +179,14 @@ export class GoogleMapsService {
       console.error('Place details error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Check if the service is properly configured
+   * @returns {boolean} True if API key is configured
+   */
+  isConfigured() {
+    return !!this.apiKey;
   }
 }
 

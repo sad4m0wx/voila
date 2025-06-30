@@ -1,43 +1,38 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 export default function TabLayout() {
+  const colorScheme = useColorScheme();
+
   return (
     <Tabs
       screenOptions={{
+        tabBarActiveTintColor: '#6366f1',
+        tabBarInactiveTintColor: '#9ca3af',
         headerShown: false,
         tabBarStyle: {
-          height: Platform.OS === 'ios' ? 60 : 50,
-          paddingBottom: Platform.OS === 'ios' ? 8 : 4,
-          paddingTop: 8,
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: colorScheme === 'dark' ? '#1f2937' : '#ffffff',
           borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          shadowColor: '#000',
-          shadowOffset: {
-            width: 0,
-            height: -2,
-          },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 8,
+          borderTopColor: colorScheme === 'dark' ? '#374151' : '#e5e7eb',
+          ...Platform.select({
+            ios: {
+              position: 'absolute',
+            },
+            default: {},
+          }),
         },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          marginTop: 2,
-        },
-        tabBarActiveTintColor: '#3b82f6',
-        tabBarInactiveTintColor: '#6b7280',
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: () => null, // No icons for simplicity
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="place" size={size} color={color} />
+          ),
         }}
       />
     </Tabs>
   );
-} 
+}

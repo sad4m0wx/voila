@@ -11,13 +11,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
-import { findOptimalMeetingPoint } from '../../lib';
-import AddressForm from '../../lib/components/meeting/AddressForm';
-import MeetingPointDisplay from '../../lib/components/meeting/MeetingPointDisplay';
-import MapContainer from '../../lib/components/maps/MapContainer';
-import MetroBackground from '../../lib/components/core/MetroBackground';
-import { LoadingIndicator } from '../../lib/components/utils';
-import { defaultMapCenter, defaultMapZoom } from '../../lib/config';
+import { 
+  findOptimalMeetingPoint,
+  defaultMapCenter, 
+  defaultMapZoom,
+  AddressForm,
+  MeetingPointDisplay,
+  MapContainer,
+  MetroBackground,
+  LoadingIndicator
+} from '../../lib';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -227,10 +230,12 @@ export default function HomeScreen() {
         {/* Main Content Area */}
         <View style={styles.mainContent}>
           {/* MAP AT TOP - Priority Position */}
-          <View style={[
-            styles.mapArea,
-            { height: mapExpanded ? 320 : showResults ? 200 : 240 }
-          ]}>
+          <View 
+            style={[
+              styles.mapArea,
+              { height: mapExpanded ? 320 : showResults ? 200 : 240 }
+            ]}
+          >
             {/* Map Header with Controls */}
             <View style={styles.headerControls}>
               {/* Floating Logo */}
@@ -284,21 +289,10 @@ export default function HomeScreen() {
             {/* Enhanced Mobile Loading State */}
             {isCalculating && (
               <View style={styles.loadingContainer}>
-                <View style={styles.loadingAnimation}>
-                  {/* Animated loading rings */}
-                  <View style={styles.loadingRings}>
-                    <View style={styles.loadingRingOuter} />
-                    <View style={styles.loadingRingMiddle} />
-                    <View style={styles.loadingRingInner} />
-                  </View>
-                  {/* Floating dots animation */}
-                  <View style={styles.floatingDots}>
-                    <View style={[styles.dot, styles.dot1]} />
-                    <View style={[styles.dot, styles.dot2]} />
-                    <View style={[styles.dot, styles.dot3]} />
-                  </View>
-                </View>
-                <Text style={styles.loadingText}>Finding the perfect meeting spot...</Text>
+                <LoadingIndicator 
+                  size="large" 
+                  text="Finding the perfect meeting spot..." 
+                />
               </View>
             )}
 
@@ -367,20 +361,26 @@ const styles = StyleSheet.create({
   },
   gradientOverlay: {
     position: 'absolute',
-    inset: 0,
-    backgroundColor: '#f1f5f9', // Softer slate background
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f1f5f9',
     opacity: 0.9,
   },
   radialOverlay: {
     position: 'absolute',
-    inset: 0,
-    backgroundColor: 'rgba(139, 92, 246, 0.03)', // Very subtle purple tint
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(139, 92, 246, 0.03)',
   },
   safeArea: {
     flex: 1,
     position: 'relative',
     zIndex: 10,
-    paddingTop: Platform.OS === 'ios' ? 44 : 24, // Consistent top padding
+    paddingTop: Platform.OS === 'ios' ? 44 : 24,
   },
   mainContent: {
     flex: 1,
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
-    shadowColor: '#8b5cf6', // Purple shadow
+    shadowColor: '#8b5cf6',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -400,192 +400,130 @@ const styles = StyleSheet.create({
   },
   headerControls: {
     position: 'absolute',
-    top: 8,
-    left: 8,
-    right: 8,
+    top: 12,
+    left: 12,
+    right: 12,
     zIndex: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   logoContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#8b5cf6',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.1)',
   },
   logoIcon: {
-    marginRight: 6,
+    fontSize: 20,
+    marginRight: 4,
   },
   logoText: {
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#6366f1', // Indigo color like SvelteKit
+    color: '#374151',
   },
   mapControls: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   mapControlButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    borderRadius: 12,
-    width: 36,
-    height: 36,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#8b5cf6',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.1)',
   },
   mapContainer: {
     flex: 1,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: 'rgba(236, 254, 255, 0.6)', // Softer cyan background
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.15)',
+    backgroundColor: '#f3f4f6',
   },
   contentScrollView: {
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 12,
-    paddingBottom: 80, // Space for smaller tab bar
   },
   loadingContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: 'white',
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
+    padding: 24,
+    marginHorizontal: 12,
+    marginVertical: 16,
     alignItems: 'center',
     shadowColor: '#8b5cf6',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
     borderColor: 'rgba(139, 92, 246, 0.1)',
   },
-  loadingAnimation: {
-    position: 'relative',
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  loadingRings: {
-    width: 60,
-    height: 60,
-    position: 'relative',
-  },
-  loadingRingOuter: {
-    position: 'absolute',
-    inset: 0,
-    borderWidth: 3,
-    borderColor: '#e0e7ff', // Light indigo
-    borderRadius: 30,
-  },
-  loadingRingMiddle: {
-    position: 'absolute',
-    inset: 0,
-    borderWidth: 3,
-    borderColor: '#6366f1', // Indigo
-    borderTopColor: 'transparent',
-    borderRadius: 30,
-  },
-  loadingRingInner: {
-    position: 'absolute',
-    inset: 6,
-    borderWidth: 2,
-    borderColor: '#8b5cf6', // Purple
-    borderBottomColor: 'transparent',
-    borderRadius: 24,
-  },
-  floatingDots: {
-    position: 'absolute',
-    top: -6,
-    flexDirection: 'row',
-    gap: 3,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  dot1: {
-    backgroundColor: '#6366f1', // Indigo
-  },
-  dot2: {
-    backgroundColor: '#8b5cf6', // Purple
-  },
-  dot3: {
-    backgroundColor: '#06b6d4', // Cyan
-  },
-  loadingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569', // Slate
-    textAlign: 'center',
-  },
   errorContainer: {
-    backgroundColor: '#fef2f2',
+    backgroundColor: 'white',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginHorizontal: 12,
+    marginVertical: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    borderLeftWidth: 3,
-    borderLeftColor: '#f87171', // Softer red
     shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.1)',
   },
   errorIcon: {
-    marginRight: 10,
+    marginRight: 12,
   },
   errorContent: {
     flex: 1,
   },
   errorTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#dc2626',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   errorMessage: {
-    fontSize: 12,
-    color: '#991b1b',
+    fontSize: 14,
+    color: '#7f1d1d',
     marginBottom: 12,
-    lineHeight: 16,
+    lineHeight: 20,
   },
   errorButton: {
-    backgroundColor: '#f87171', // Softer red
+    backgroundColor: '#fef2f2',
     borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#fecaca',
     alignSelf: 'flex-start',
   },
   errorButtonText: {
-    color: 'white',
+    color: '#dc2626',
     fontSize: 12,
     fontWeight: '600',
   },
   bottomSpacing: {
-    height: 16,
+    height: 80,
   },
-}); 
+});

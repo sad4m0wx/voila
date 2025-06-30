@@ -14,19 +14,12 @@ export const googleMapsConfig = {
   libraries: ['places', 'geometry']
 };
 
-// Supabase configuration (imported from supabase config)
-export const supabaseConfig = {
-  url: process.env.EXPO_PUBLIC_SUPABASE_URL,
-  anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-};
-
 // Environment helper
 export const getEnvironment = () => {
   return {
     isDevelopment: __DEV__,
     isProduction: !__DEV__,
     coreApiUrl: CORE_API_URL,
-    googleMapsApiKey: googleMapsConfig.apiKey,
-    supabaseConfig
+    googleMapsApiKey: googleMapsConfig.apiKey
   };
 }; 
