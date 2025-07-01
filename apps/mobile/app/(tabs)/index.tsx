@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
-import { 
+import {
   findOptimalMeetingPoint,
   defaultMapCenter, 
   defaultMapZoom,
@@ -19,10 +19,25 @@ import {
   MeetingPointDisplay,
   MapContainer,
   MetroBackground,
-  LoadingIndicator
+  LoadingIndicator,
+  SignInButton,
+  ProfileButton,
+  useAuth
 } from '../../lib';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// Auth Button Component
+function AuthButton() {
+  const { user, isFullyOnboarded } = useAuth();
+  
+  if (user && isFullyOnboarded) {
+    return <ProfileButton />;
+  } else {
+    // Show sign in button for non-authenticated users or users in onboarding
+    return <SignInButton />;
+  }
+}
 
 export default function HomeScreen() {
   // State
@@ -74,7 +89,6 @@ export default function HomeScreen() {
         showVenues: showVenues
       });
 
-      console.log('API Result:', result); // Debug log
 
       // Handle multiple meeting points
       const meetingPointsData = result.allMeetingPoints || [{
@@ -99,7 +113,7 @@ export default function HomeScreen() {
       setMeetingPoint({
         name: currentPoint.name,
         coordinates: currentPoint.coordinates,
-        travelTimes: currentPoint.travel_times
+        travelTimes: currentPoint.travel_times || currentPoint.travelTimes
       });
       setRoutes(routesData[0] || result.routes || []);
       setCurrentMeetingPointIndex(0);
@@ -127,7 +141,7 @@ export default function HomeScreen() {
       setMeetingPoint({
         name: currentPoint.name,
         coordinates: currentPoint.coordinates,
-        travelTimes: currentPoint.travel_times
+        travelTimes: currentPoint.travel_times || currentPoint.travelTimes
       });
       setRoutes(allRoutes[index] || []);
       setCurrentMeetingPointIndex(index);
@@ -260,6 +274,9 @@ export default function HomeScreen() {
                     />
                   </TouchableOpacity>
                 )}
+                
+                {/* Auth Button - SignIn or Profile */}
+                <AuthButton />
               </View>
             </View>
 

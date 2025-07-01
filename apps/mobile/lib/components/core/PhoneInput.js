@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
-  Pressable
+  Pressable,
+  StyleSheet
 } from 'react-native';
 import { validatePhoneNumber, formatPhoneNumber, getCountryCodes } from '../../utils/phoneUtils';
 
@@ -18,16 +19,16 @@ const PhoneInput = ({
   label = 'Phone Number',
   showLabel = true,
   showValidation = true,
-  selectedCountryCode = '+1',
+  selectedCountryCode = '+33',
   size = 'md',
   onCountryChange,
-  onChange,
+  onChangeText,
   onInput
 }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [currentCountryCode, setCurrentCountryCode] = useState(selectedCountryCode);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
-  const [initialized, setInitialized] = useState(false);
+  const [isExternalUpdate, setIsExternalUpdate] = useState(false);
 
   // Get country codes
   const countryCodes = getCountryCodes();
@@ -35,13 +36,6 @@ const PhoneInput = ({
   // Computed values
   const fullPhoneNumber = currentCountryCode + phoneNumber.replace(/[^\d]/g, '');
   const isPhoneValid = validatePhoneNumber(fullPhoneNumber);
-
-  // Size classes using NativeWind
-  const sizeStyles = {
-    sm: 'px-2 py-1 text-sm',
-    md: 'px-3 py-2 text-sm', 
-    lg: 'px-4 py-3 text-base'
-  };
 
   // Handle country code selection
   const selectCountryCode = (code) => {
@@ -52,28 +46,35 @@ const PhoneInput = ({
     if (onCountryChange) {
       onCountryChange({ countryCode: code });
     }
-    if (onChange) {
-      onChange({ value: newFullNumber, isValid: validatePhoneNumber(newFullNumber) });
+    if (onChangeText) {
+      onChangeText(newFullNumber);
     }
   };
 
   // Handle phone number input
   const handlePhoneInput = (inputValue) => {
+    
+    // Allow only digits
     const cleanedValue = inputValue.replace(/[^\d]/g, '');
     setPhoneNumber(cleanedValue);
     const newFullNumber = currentCountryCode + cleanedValue;
     
+    
+    // Call callbacks
     if (onInput) {
       onInput({ value: newFullNumber, isValid: validatePhoneNumber(newFullNumber) });
     }
-    if (onChange) {
-      onChange({ value: newFullNumber, isValid: validatePhoneNumber(newFullNumber) });
+    if (onChangeText) {
+      onChangeText(newFullNumber);
     }
   };
 
   // Initialize from external value
   const initializeFromValue = (val) => {
-    if (!val) return;
+    if (!val || val === currentCountryCode) {
+      setPhoneNumber('');
+      return;
+    }
     
     // Parse external value to extract country code and phone number
     const codes = countryCodes.map(c => c.code).sort((a, b) => b.length - a.length);
@@ -81,59 +82,76 @@ const PhoneInput = ({
     if (matchingCode) {
       setCurrentCountryCode(matchingCode);
       setPhoneNumber(val.slice(matchingCode.length));
+    } else if (val.startsWith('+')) {
+      // If it starts with + but no matching code found, just set as phone number
+      setPhoneNumber(val.replace(/[^\d]/g, ''));
+    } else {
+      // Raw phone number without country code
+      setPhoneNumber(val.replace(/[^\d]/g, ''));
     }
   };
 
-  // Initialize component
+  // Initialize component only once
   useEffect(() => {
-    if (value) {
+    if (value && !isExternalUpdate) {
+      setIsExternalUpdate(true);
       initializeFromValue(value);
     }
-    setInitialized(true);
-  }, []);
+  }, [value, isExternalUpdate]);
 
-  // Watch for external value changes after initialization
+  // Reset external update flag when user starts typing
   useEffect(() => {
-    if (initialized && value && value !== fullPhoneNumber) {
-      initializeFromValue(value);
+    if (phoneNumber && isExternalUpdate) {
+      setIsExternalUpdate(false);
     }
-  }, [value, initialized, fullPhoneNumber]);
+  }, [phoneNumber, isExternalUpdate]);
 
   return (
-    <View className="phone-input">
+    <View style={styles.container}>
       {showLabel && (
-        <Text className="block text-sm font-medium text-gray-700 mb-1">
+        <Text style={styles.label}>
           {label}
-          {required && <Text className="text-red-500"> *</Text>}
+          {required && <Text style={styles.required}> *</Text>}
         </Text>
       )}
       
-      <View className="flex-row">
+      <View 
+        style={styles.inputContainer}
+        onStartShouldSetResponder={() => {
+          return false;
+        }}
+      >
         {/* Country Code Dropdown Button */}
         <TouchableOpacity
-          className={`flex-row items-center border border-r-0 border-gray-300 rounded-l-md bg-gray-50 ${sizeStyles[size]} ${disabled ? 'opacity-50' : ''}`}
+          style={[styles.countryButton, disabled && styles.disabled]}
           onPress={() => !disabled && setShowCountryDropdown(true)}
           disabled={disabled}
         >
-          <Text className="font-medium">{currentCountryCode}</Text>
-          <Text className="ml-1">▼</Text>
+          <Text style={styles.countryCodeText}>{currentCountryCode}</Text>
+          <Text style={styles.dropdownArrow}>▼</Text>
         </TouchableOpacity>
         
         {/* Phone Number Input */}
         <TextInput
-          className={`flex-1 border border-gray-300 rounded-r-md ${sizeStyles[size]} ${disabled ? 'opacity-50 bg-gray-100' : 'bg-white'}`}
+          style={[styles.phoneInput, disabled && styles.disabled]}
           value={phoneNumber}
           onChangeText={handlePhoneInput}
           placeholder={placeholder}
           editable={!disabled}
           keyboardType="phone-pad"
           autoComplete="tel"
+          placeholderTextColor="#9ca3af"
+          autoCorrect={false}
+          autoCapitalize="none"
+          textContentType="telephoneNumber"
+          returnKeyType="done"
+          pointerEvents="auto"
         />
       </View>
       
       {/* Validation Display */}
       {showValidation && fullPhoneNumber && isPhoneValid && (
-        <Text className="text-sm text-gray-600 mt-1">
+        <Text style={styles.validationText}>
           {formatPhoneNumber(fullPhoneNumber)}
         </Text>
       )}
@@ -146,33 +164,33 @@ const PhoneInput = ({
         onRequestClose={() => setShowCountryDropdown(false)}
       >
         <Pressable 
-          className="flex-1 bg-black/50 justify-center items-center"
+          style={styles.modalOverlay}
           onPress={() => setShowCountryDropdown(false)}
         >
-          <View className="bg-white rounded-lg mx-4 w-80 max-h-96">
-            <View className="p-4 border-b border-gray-200">
-              <Text className="text-lg font-semibold text-center">Select Country Code</Text>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country Code</Text>
             </View>
             
-            <ScrollView className="max-h-80">
+            <ScrollView style={styles.countryList}>
               {countryCodes.map((country) => (
                 <TouchableOpacity
-                  key={country.code}
-                  className="flex-row items-center px-4 py-3 border-b border-gray-100"
+                  key={country.id}
+                  style={styles.countryItem}
                   onPress={() => selectCountryCode(country.code)}
                 >
-                  <Text className="mr-3 text-lg">{country.flag}</Text>
-                  <Text className="mr-3 font-medium text-base">{country.code}</Text>
-                  <Text className="text-gray-500 text-base">{country.country}</Text>
+                  <Text style={styles.countryFlag}>{country.flag}</Text>
+                  <Text style={styles.countryCode}>{country.code}</Text>
+                  <Text style={styles.countryName}>{country.country}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
             
             <TouchableOpacity
-              className="p-4 border-t border-gray-200"
+              style={styles.modalCancelButton}
               onPress={() => setShowCountryDropdown(false)}
             >
-              <Text className="text-center text-blue-600 font-medium">Cancel</Text>
+              <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -180,5 +198,132 @@ const PhoneInput = ({
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    marginVertical: 8,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  required: {
+    color: '#ef4444',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  countryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRightWidth: 0,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minWidth: 80,
+  },
+  countryCodeText: {
+    fontWeight: '600',
+    color: '#374151',
+    marginRight: 4,
+  },
+  dropdownArrow: {
+    fontSize: 10,
+    color: '#6b7280',
+  },
+  phoneInput: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#374151',
+    minHeight: 44, // Ensure minimum touch target
+    zIndex: 1, // Ensure it's above other elements
+  },
+  disabled: {
+    opacity: 0.5,
+    backgroundColor: '#f3f4f6',
+  },
+  validationText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    width: 320,
+    maxHeight: 400,
+  },
+  modalHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    color: '#374151',
+  },
+  countryList: {
+    maxHeight: 280,
+  },
+  countryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  countryFlag: {
+    fontSize: 18,
+    marginRight: 12,
+  },
+  countryCode: {
+    fontWeight: '600',
+    fontSize: 16,
+    color: '#374151',
+    marginRight: 12,
+    minWidth: 60,
+  },
+  countryName: {
+    fontSize: 16,
+    color: '#6b7280',
+    flex: 1,
+  },
+  modalCancelButton: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  modalCancelText: {
+    textAlign: 'center',
+    color: '#6366f1',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+});
 
 export default PhoneInput; 

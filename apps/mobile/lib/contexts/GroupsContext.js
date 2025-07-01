@@ -1,19 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import { db } from '../firebase-auth/config';
 import { useAuth } from './AuthContext';
-import {
-  createGroup,
-  getGroup,
-  getUserGroups,
-  getGroupMembers,
-  updateGroup,
-  addGroupMember,
-  removeGroupMember,
-  leaveGroup,
-  deleteGroup,
-  subscribeToGroup,
-  subscribeToGroupMembers
-} from '../firebase-auth/groups';
+import { groupsService } from '../services/groupsService';
 
 // Initial state
 const initialState = {
@@ -138,7 +125,7 @@ export function GroupsProvider({ children }) {
     dispatch({ type: GroupsActionTypes.SET_LOADING, payload: true });
     
     try {
-      const userGroupsList = await getUserGroups(db, user.uid);
+      const userGroupsList = await groupsService.getUserGroups(user.uid);
       dispatch({
         type: GroupsActionTypes.SET_GROUPS,
         payload: userGroupsList
@@ -165,7 +152,7 @@ export function GroupsProvider({ children }) {
     dispatch({ type: GroupsActionTypes.SET_LOADING, payload: true });
 
     try {
-      const groupData = await getGroup(db, groupId);
+      const groupData = await groupsService.getGroup(groupId);
       
       dispatch({
         type: GroupsActionTypes.SET_CURRENT_GROUP,
@@ -194,7 +181,7 @@ export function GroupsProvider({ children }) {
     }
 
     try {
-      const members = await getGroupMembers(db, groupId, user.uid);
+      const members = await groupsService.getGroupMembers(groupId, user.uid);
       
       dispatch({
         type: GroupsActionTypes.SET_CURRENT_GROUP_MEMBERS,
@@ -210,7 +197,7 @@ export function GroupsProvider({ children }) {
   }, [user]);
 
   // Create new group
-  const createNewGroup = useCallback(async (groupData, initialMembers = []) => {
+  const createNewGroup = useCallback(async (groupData, memberIds = [], customAddresses = []) => {
     if (!user) {
       dispatch({
         type: GroupsActionTypes.SET_ERROR,
@@ -222,7 +209,33 @@ export function GroupsProvider({ children }) {
     dispatch({ type: GroupsActionTypes.SET_LOADING, payload: true });
 
     try {
-      const newGroup = await createGroup(db, user.uid, groupData, initialMembers);
+      // Convert memberIds array to initialMembers format
+      const initialMembers = memberIds.map(userId => ({
+        user_id: userId
+      }));
+
+      const newGroup = await groupsService.createGroup(user.uid, groupData, initialMembers);
+      
+      // Add custom addresses to the group if any
+      if (customAddresses.length > 0) {
+        console.log('🏠 Adding custom addresses to group:', customAddresses);
+        for (const address of customAddresses) {
+          try {
+            await groupsService.addCustomLocationToGroup(newGroup.id, address, user.uid);
+            console.log('✅ Added custom address:', address.address);
+          } catch (error) {
+            console.error('❌ Failed to add custom address:', address.address, error);
+          }
+        }
+        
+        // Load group members to include the new custom locations
+        try {
+          await loadGroupMembers(newGroup.id);
+          console.log('🔄 Reloaded group members after adding custom addresses');
+        } catch (error) {
+          console.warn('Failed to reload group members:', error);
+        }
+      }
       
       dispatch({
         type: GroupsActionTypes.ADD_GROUP,
@@ -245,7 +258,7 @@ export function GroupsProvider({ children }) {
     }
   }, [user]);
 
-  // Update group info - placeholder implementation
+  // Update group info
   const updateGroupInfo = useCallback(async (groupId, updateData) => {
     if (!user) {
       dispatch({
@@ -258,15 +271,7 @@ export function GroupsProvider({ children }) {
     dispatch({ type: GroupsActionTypes.SET_LOADING, payload: true });
 
     try {
-      // TODO: Implement group update logic
-      console.log('Updating group:', groupId, 'with data:', updateData);
-      
-      // Placeholder updated group
-      const updatedGroup = {
-        ...state.currentGroup,
-        ...updateData,
-        updatedAt: new Date()
-      };
+      const updatedGroup = await groupsService.updateGroup(groupId, updateData, user.uid);
       
       dispatch({
         type: GroupsActionTypes.UPDATE_GROUP,
@@ -282,7 +287,7 @@ export function GroupsProvider({ children }) {
       });
       return false;
     }
-  }, [user, state.currentGroup]);
+  }, [user]);
 
   // Load group invites - placeholder implementation
   const loadGroupInvites = useCallback(async () => {
@@ -383,7 +388,7 @@ export function GroupsProvider({ children }) {
     }
   }, [user]);
 
-  // Update attendance - placeholder implementation
+  // Update attendance
   const updateMyAttendance = useCallback(async (groupId, isAttending, location = null) => {
     if (!user) {
       dispatch({
@@ -394,21 +399,10 @@ export function GroupsProvider({ children }) {
     }
 
     try {
-      // TODO: Implement attendance update logic
-      console.log('Updating attendance for group:', groupId, 'attending:', isAttending, 'location:', location);
+      await groupsService.updateAttendance(groupId, user.uid, isAttending, location);
       
-      // Update local attendance state
-      const newAttendance = new Map(state.attendance);
-      newAttendance.set(user.uid, {
-        isAttending,
-        updatedAt: new Date(),
-        location
-      });
-      
-      dispatch({
-        type: GroupsActionTypes.SET_ATTENDANCE,
-        payload: newAttendance
-      });
+      // Reload group members to get updated attendance data
+      await loadGroupMembers(groupId);
       
       return true;
     } catch (error) {
@@ -419,7 +413,213 @@ export function GroupsProvider({ children }) {
       });
       return false;
     }
-  }, [user, state.attendance]);
+  }, [user, loadGroupMembers]);
+
+  // Get current user's attendance for a group
+  const getMyAttendance = useCallback(async (groupId) => {
+    if (!user) return null;
+
+    try {
+      return await groupsService.getUserAttendance(groupId, user.uid);
+    } catch (error) {
+      console.error('Error getting attendance:', error);
+      return null;
+    }
+  }, [user]);
+
+  // Reset all attendance for a group (admin only)
+  const resetGroupAttendance = useCallback(async (groupId) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    try {
+      await groupsService.resetGroupAttendance(groupId, user.uid);
+      
+      // Reload group members to get updated attendance data
+      await loadGroupMembers(groupId);
+      
+      return true;
+    } catch (error) {
+      console.error('Error resetting group attendance:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return false;
+    }
+  }, [user, loadGroupMembers]);
+
+  // Search for users to add to group
+  const searchUsers = useCallback(async (searchTerm) => {
+    if (!user) {
+      return [];
+    }
+
+    try {
+      return await groupsService.searchUsers(searchTerm, user.uid);
+    } catch (error) {
+      console.error('Error searching users:', error);
+      return [];
+    }
+  }, [user]);
+
+  // Find users by phone numbers (for contact import)
+  const findUsersByPhoneNumbers = useCallback(async (phoneNumbers) => {
+    try {
+      return await groupsService.findUsersByPhoneNumbers(phoneNumbers);
+    } catch (error) {
+      console.error('Error finding users by phone numbers:', error);
+      return [];
+    }
+  }, []);
+
+  // Get addresses for group members
+  const getGroupMemberAddresses = useCallback(async (groupId) => {
+    if (!user) return {};
+    
+    try {
+      return await groupsService.getGroupMemberAddresses(groupId, user.uid);
+    } catch (error) {
+      console.error('Error getting group member addresses:', error);
+      return {};
+    }
+  }, [user]);
+
+  // Get user addresses by user IDs (fallback)
+  const getUserAddresses = useCallback(async (userIds) => {
+    try {
+      return await groupsService.getUserAddresses(userIds);
+    } catch (error) {
+      console.error('Error getting user addresses:', error);
+      return {};
+    }
+  }, []);
+
+  // Add member to group
+  const addGroupMember = useCallback(async (groupId, userId) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    try {
+      await groupsService.addGroupMember(groupId, userId, user.uid);
+      // Reload group members
+      await loadGroupMembers(groupId);
+      return true;
+    } catch (error) {
+      console.error('Error adding group member:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return false;
+    }
+  }, [user, loadGroupMembers]);
+
+  // Remove member from group
+  const removeGroupMember = useCallback(async (groupId, userId) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    try {
+      await groupsService.removeGroupMember(groupId, userId, user.uid);
+      // Reload group members
+      await loadGroupMembers(groupId);
+      return true;
+    } catch (error) {
+      console.error('Error removing group member:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return false;
+    }
+  }, [user, loadGroupMembers]);
+
+  // Add custom location to group
+  const addCustomLocationToGroup = useCallback(async (groupId, location) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    try {
+      const result = await groupsService.addCustomLocationToGroup(groupId, location, user.uid);
+      console.log('✅ Custom location added to group:', result);
+      return result;
+    } catch (error) {
+      console.error('Error adding custom location to group:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return null;
+    }
+  }, [user]);
+
+  // Get custom locations for group
+  const getGroupCustomLocations = useCallback(async (groupId) => {
+    try {
+      return await groupsService.getGroupCustomLocations(groupId);
+    } catch (error) {
+      console.error('Error getting group custom locations:', error);
+      return [];
+    }
+  }, []);
+
+  // Update custom location attendance
+  const updateCustomLocationAttendance = useCallback(async (locationId, isAttending) => {
+    try {
+      return await groupsService.updateCustomLocationAttendance(locationId, isAttending);
+    } catch (error) {
+      console.error('Error updating custom location attendance:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return false;
+    }
+  }, []);
+
+  // Remove custom location from group
+  const removeCustomLocationFromGroup = useCallback(async (locationId) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    try {
+      await groupsService.removeCustomLocationFromGroup(locationId, user.uid);
+      return true;
+    } catch (error) {
+      console.error('Error removing custom location from group:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return false;
+    }
+  }, [user]);
 
   // Clear error
   const clearError = useCallback(() => {
@@ -440,6 +640,18 @@ export function GroupsProvider({ children }) {
     acceptInvite,
     declineInvite,
     updateMyAttendance,
+    getMyAttendance,
+    resetGroupAttendance,
+    searchUsers,
+    findUsersByPhoneNumbers,
+    getUserAddresses,
+    getGroupMemberAddresses,
+    addGroupMember,
+    removeGroupMember,
+    addCustomLocationToGroup,
+    getGroupCustomLocations,
+    updateCustomLocationAttendance,
+    removeCustomLocationFromGroup,
     clearError
   };
 

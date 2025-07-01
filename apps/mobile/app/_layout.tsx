@@ -4,9 +4,36 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import 'react-native-reanimated';
+import { useAuth } from '../lib/contexts/AuthContext';
+import { AuthNavigator } from '../lib/components/auth';
+import AppProviders from '../lib/components/AppProviders';
+
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
+  const { user, isFullyOnboarded, onboardingStep } = useAuth();
+
+  // Only show auth navigator if user is authenticated AND has an active onboarding step
+  // This ensures non-authenticated users and authenticated users who haven't started onboarding
+  // both go to the main app
+  if (user && onboardingStep && onboardingStep !== 'complete' && !isFullyOnboarded) {
+    return <AuthNavigator />;
+  }
+
+  // Show main app navigation for all other cases
+  return (
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="groups/[id]/index" options={{ headerShown: false }} />
+        <Stack.Screen name="groups/[id]/settings" options={{ headerShown: false }} />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <StatusBar style="auto" />
+    </ThemeProvider>
+  );
+}
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -17,12 +44,8 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <AppProviders>
+      <RootLayoutNav />
+    </AppProviders>
   );
 }

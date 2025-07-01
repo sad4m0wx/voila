@@ -88,141 +88,273 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
       const primaryRoutes = allRoutes[0] || [];
 
       // Transform the Rust API response to match what our frontend expects
-      return {
+      const transformedResult = {
         name: primaryMeetingPoint.name,
         coordinates: primaryMeetingPoint.coordinates,
-        travelTimes: primaryMeetingPoint.travel_times.map(tt => ({
-          id: tt.id,
-          address: tt.address,
-          duration: tt.duration,
-          distance: tt.distance,
-          estimated: tt.estimated,
-          transitSummary: tt.transit_summary
-        })),
-        routes: primaryRoutes.map((route, routeIndex) => {
-          // Improved coordinate reconstruction with better deduplication
-          const allCoordinates = [];
+        travelTimes: primaryMeetingPoint.travel_times.map(tt => {
+          // The API returns duration in minutes - RouteDetails expects minutes
+          let durationInMinutes = tt.duration;
           
-          if (route.steps && route.steps.length > 0) {
-            route.steps.forEach((step, stepIndex) => {
-              if (step.geometry && step.geometry.coordinates && Array.isArray(step.geometry.coordinates) && step.geometry.coordinates.length > 0) {
-                const stepCoords = step.geometry.coordinates;
-                
-                stepCoords.forEach((coord, coordIndex) => {
-                  // Validate coordinate format [lng, lat]
-                  if (Array.isArray(coord) && coord.length >= 2 && 
-                      typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-                    
-                    // Check for duplicates with a small tolerance for floating point errors
-                    const isDuplicate = allCoordinates.length > 0 && 
-                      Math.abs(allCoordinates[allCoordinates.length - 1][0] - coord[0]) < 0.000001 &&
-                      Math.abs(allCoordinates[allCoordinates.length - 1][1] - coord[1]) < 0.000001;
-                    
-                    if (!isDuplicate) {
-                      allCoordinates.push([coord[0], coord[1]]);
-                    }
-                  }
-                });
-              }
-            });
+          // If duration is a string with format "XX min", parse it
+          if (typeof tt.duration === 'string') {
+            const match = tt.duration.match(/(\d+)\s*(min|minutes|sec|seconds)/i);
+            if (match) {
+              const value = parseInt(match[1]);
+              const unit = match[2].toLowerCase();
+              durationInMinutes = unit.startsWith('min') ? value : Math.round(value / 60);
+            } else {
+              // Try to parse as a number - if it's a number, assume it's minutes from the API
+              durationInMinutes = parseInt(tt.duration) || 0;
+            }
+          } else if (typeof tt.duration === 'number') {
+            // API returns duration in minutes, use as-is
+            durationInMinutes = tt.duration;
           }
           
-          // If we don't have coordinates from steps, try using the route's geometry directly
-          if (allCoordinates.length < 2 && route.geometry && route.geometry.coordinates) {
-            route.geometry.coordinates.forEach(coord => {
-              if (Array.isArray(coord) && coord.length >= 2 && 
-                  typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-                allCoordinates.push([coord[0], coord[1]]);
-              }
-            });
+          // Ensure duration is a reasonable number (not negative, not too huge)
+          if (!durationInMinutes || durationInMinutes < 0 || durationInMinutes > 120) { // Max 2 hours
+            durationInMinutes = 0;
           }
           
-          console.log(`Route ${routeIndex}: Reconstructed ${allCoordinates.length} coordinates from ${route.steps?.length || 0} steps`);
+          console.log(`Travel time for ${tt.address}: ${tt.duration} minutes -> ${durationInMinutes} minutes (for RouteDetails)`);
           
           return {
-            id: route.id || `route-${routeIndex}`,
-            geometry: {
-              type: "LineString",
-              coordinates: allCoordinates
-            },
-            steps: route.steps,
-            color: route.color || getRouteColor(routeIndex),
-            weight: 5
+            id: tt.id,
+            address: tt.address,
+            duration: durationInMinutes, // Keep in minutes for RouteDetails component
+            distance: tt.distance,
+            estimated: tt.estimated || false,
+            transitSummary: tt.transit_summary
           };
         }),
-        venues: rustResponse.venues || [],
-        // Include debug data for visualization
-        debug: rustResponse.debug_data || null,
-        // Include all meeting points and routes
-        allMeetingPoints: meetingPoints,
-        allRoutes: allRoutes.map(routeSet => 
-          routeSet.map((route, routeIndex) => {
-            // Improved coordinate reconstruction with better deduplication
-            const allCoordinates = [];
-            
+                routes: (() => {
+          const processedRoutes = [];
+          
+          primaryRoutes.forEach((route, routeIndex) => {
+            // Process each step as a separate route segment - matching SvelteKit approach
             if (route.steps && route.steps.length > 0) {
               route.steps.forEach((step, stepIndex) => {
-                if (step.geometry && step.geometry.coordinates && Array.isArray(step.geometry.coordinates) && step.geometry.coordinates.length > 0) {
-                  const stepCoords = step.geometry.coordinates;
-                  
-                  stepCoords.forEach((coord, coordIndex) => {
-                    // Validate coordinate format [lng, lat]
-                    if (Array.isArray(coord) && coord.length >= 2 && 
-                        typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-                      
-                      // Check for duplicates with a small tolerance for floating point errors
-                      const isDuplicate = allCoordinates.length > 0 && 
-                        Math.abs(allCoordinates[allCoordinates.length - 1][0] - coord[0]) < 0.000001 &&
-                        Math.abs(allCoordinates[allCoordinates.length - 1][1] - coord[1]) < 0.000001;
-                      
-                      if (!isDuplicate) {
-                        allCoordinates.push([coord[0], coord[1]]);
-                      }
-                    }
+                if (!step.geometry || !step.geometry.coordinates || !Array.isArray(step.geometry.coordinates)) {
+                  return;
+                }
+                
+                const stepCoords = step.geometry.coordinates;
+                if (stepCoords.length < 2) {
+                  return;
+                }
+                
+                // Create path from the step's detailed coordinates
+                const validCoordinates = stepCoords
+                  .filter(coord => 
+                    Array.isArray(coord) && 
+                    coord.length >= 2 && 
+                    typeof coord[0] === 'number' && 
+                    typeof coord[1] === 'number' &&
+                    Math.abs(coord[0]) <= 180 && 
+                    Math.abs(coord[1]) <= 90
+                  );
+                
+                if (validCoordinates.length < 2) {
+                  return;
+                }
+                
+                // Remove duplicate consecutive coordinates
+                const dedupedCoordinates = [];
+                validCoordinates.forEach((coord, i) => {
+                  if (i === 0 || 
+                      Math.abs(coord[0] - validCoordinates[i-1][0]) > 0.000001 ||
+                      Math.abs(coord[1] - validCoordinates[i-1][1]) > 0.000001) {
+                    dedupedCoordinates.push([coord[0], coord[1]]);
+                  }
+                });
+                
+                if (dedupedCoordinates.length >= 2) {
+                  processedRoutes.push({
+                    id: `route-${routeIndex}-step-${stepIndex}`,
+                    geometry: {
+                      type: "LineString",
+                      coordinates: dedupedCoordinates
+                    },
+                    step: step,
+                    color: getStepColor(step),
+                    weight: step.mode === 'walking' ? 3 : 5,
+                    opacity: 0.8,
+                    mode: step.mode
                   });
                 }
               });
+            } else {
+              // Fallback to main route geometry if no steps
+              const allCoordinates = [];
+              
+              if (route.geometry && route.geometry.coordinates) {
+                route.geometry.coordinates.forEach(coord => {
+                  if (Array.isArray(coord) && coord.length >= 2 && 
+                      typeof coord[0] === 'number' && typeof coord[1] === 'number') {
+                    allCoordinates.push([coord[0], coord[1]]);
+                  }
+                });
+              }
+              
+              if (allCoordinates.length >= 2) {
+                processedRoutes.push({
+                  id: route.id || `route-${routeIndex}`,
+                  geometry: {
+                    type: "LineString",
+                    coordinates: allCoordinates
+                  },
+                  steps: route.steps,
+                  color: route.color || getRouteColor(routeIndex),
+                  weight: route.stroke_width || 5,
+                  opacity: route.opacity || 0.8,
+                  mode: route.travel_mode || route.mode
+                });
+              }
             }
+          });
+          
+          return processedRoutes;
+        })(),
+        venues: rustResponse.venues || [],
+        // Include debug data for visualization
+        debug: rustResponse.debug_data || null,
+        // Include all meeting points for swipeable interface
+        allMeetingPoints: meetingPoints.map((mp, mpIndex) => ({
+          name: mp.name,
+          coordinates: mp.coordinates,
+          travelTimes: mp.travel_times.map(tt => ({
+            id: tt.id,
+            address: tt.address,
+            duration: typeof tt.duration === 'number' ? tt.duration : parseInt(tt.duration) || 0,
+            distance: tt.distance,
+            estimated: tt.estimated || false,
+            transitSummary: tt.transit_summary
+          })),
+          routes: (() => {
+            const processedRoutes = [];
+            const mpRoutes = allRoutes[mpIndex] || [];
             
-            // If we don't have coordinates from steps, try using the route's geometry directly
-            if (allCoordinates.length < 2 && route.geometry && route.geometry.coordinates) {
-              route.geometry.coordinates.forEach(coord => {
-                if (Array.isArray(coord) && coord.length >= 2 && 
-                    typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-                  allCoordinates.push([coord[0], coord[1]]);
+            mpRoutes.forEach((route, routeIndex) => {
+              // Process each step as a separate route segment
+              if (route.steps && route.steps.length > 0) {
+                route.steps.forEach((step, stepIndex) => {
+                  if (!step.geometry || !step.geometry.coordinates || !Array.isArray(step.geometry.coordinates)) {
+                    return;
+                  }
+                  
+                  const stepCoords = step.geometry.coordinates;
+                  if (stepCoords.length < 2) {
+                    return;
+                  }
+                  
+                  const validCoordinates = stepCoords
+                    .filter(coord => 
+                      Array.isArray(coord) && 
+                      coord.length >= 2 && 
+                      typeof coord[0] === 'number' && 
+                      typeof coord[1] === 'number' &&
+                      Math.abs(coord[0]) <= 180 && 
+                      Math.abs(coord[1]) <= 90
+                    );
+                  
+                  if (validCoordinates.length < 2) {
+                    return;
+                  }
+                  
+                  const dedupedCoordinates = [];
+                  validCoordinates.forEach((coord, i) => {
+                    if (i === 0 || 
+                        Math.abs(coord[0] - validCoordinates[i-1][0]) > 0.000001 ||
+                        Math.abs(coord[1] - validCoordinates[i-1][1]) > 0.000001) {
+                      dedupedCoordinates.push([coord[0], coord[1]]);
+                    }
+                  });
+                  
+                  if (dedupedCoordinates.length >= 2) {
+                    processedRoutes.push({
+                      id: `route-${mpIndex}-${routeIndex}-step-${stepIndex}`,
+                      geometry: {
+                        type: "LineString",
+                        coordinates: dedupedCoordinates
+                      },
+                      step: step,
+                      color: getStepColor(step),
+                      weight: step.mode === 'walking' ? 3 : 5,
+                      opacity: 0.8,
+                      mode: step.mode
+                    });
+                  }
+                });
+              } else {
+                // Fallback to main route geometry
+                const allCoordinates = [];
+                
+                if (route.geometry && route.geometry.coordinates) {
+                  route.geometry.coordinates.forEach(coord => {
+                    if (Array.isArray(coord) && coord.length >= 2 && 
+                        typeof coord[0] === 'number' && typeof coord[1] === 'number') {
+                      allCoordinates.push([coord[0], coord[1]]);
+                    }
+                  });
                 }
-              });
-            }
+                
+                if (allCoordinates.length >= 2) {
+                  processedRoutes.push({
+                    id: route.id || `route-${mpIndex}-${routeIndex}`,
+                    geometry: {
+                      type: "LineString",
+                      coordinates: allCoordinates
+                    },
+                    steps: route.steps,
+                    color: route.color || getRouteColor(routeIndex),
+                    weight: route.stroke_width || 5,
+                    opacity: route.opacity || 0.8,
+                    mode: route.travel_mode || route.mode
+                  });
+                }
+              }
+            });
             
-            return {
-              id: route.id || `route-${routeIndex}`,
-              geometry: {
-                type: "LineString",
-                coordinates: allCoordinates
-              },
-              steps: route.steps,
-              color: route.color || getRouteColor(routeIndex),
-              weight: 5
-            };
-          })
-        )
+            return processedRoutes;
+          })(),
+          venues: rustResponse.venues || []
+        }))
       };
+
+      return transformedResult;
     } catch (apiError) {
       console.error('Error from Rust API, falling back to centroid calculation:', apiError);
 
-      // Fall back to simple centroid calculation
-      return {
-        name: "Simple Meeting Point",
-        coordinates: findCentroid(addressesWithCoordinates.map(addr => addr.coordinates)),
-        travelTimes: addressesWithCoordinates.map(addr => ({
+      // Fall back to simple centroid calculation with better travel time estimates
+      const centroid = findCentroid(addressesWithCoordinates.map(addr => addr.coordinates));
+      
+      // Calculate approximate travel times based on distance (rough estimate)
+      const travelTimes = addressesWithCoordinates.map(addr => {
+        const distance = calculateDistance(addr.coordinates, centroid);
+        // Rough estimate: 30 km/h average speed in city traffic
+        const estimatedDurationMinutes = Math.max(5, Math.round((distance / 30) * 60));
+        
+        console.log(`Fallback travel time for ${addr.value}: ${distance.toFixed(2)}km -> ${estimatedDurationMinutes} minutes`);
+        
+        return {
           id: addr.id,
           address: addr.value,
-          duration: 10, // Placeholder duration
+          duration: estimatedDurationMinutes, // Keep in minutes for RouteDetails component
+          distance: distance * 1000, // Convert to meters
           estimated: true
-        })),
+        };
+      });
+
+      return {
+        name: "Geographic Center",
+        coordinates: centroid,
+        travelTimes: travelTimes,
         routes: [],
         venues: [],
-        debug: null // No debug data in fallback
+        debug: {
+          fallbackReason: apiError.message,
+          calculationMethod: "centroid"
+        }
       };
     }
   } catch (error) {
@@ -232,8 +364,21 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
 }
 
 function getRouteColor(index) {
-  const colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b']; // Indigo, Purple, Cyan, Green, Orange
+  const colors = ['#1a73e8', '#e53935', '#43a047', '#fb8c00', '#8e24aa']; // Match SvelteKit colors
   return colors[index % colors.length];
+}
+
+function getStepColor(step) {
+  // Color based on transport mode - matching SvelteKit implementation
+  if (step.mode === 'walking') {
+    return '#059669'; // Darker emerald for walking
+  } else if (step.mode === 'transit') {
+    // Use transit line color if available, otherwise purple
+    return step.transit_details?.line?.color || '#7C3AED';
+  } else if (step.mode === 'driving') {
+    return '#2563EB'; // Darker blue for driving
+  }
+  return '#6366F1'; // Default indigo
 }
 
 /**
@@ -256,4 +401,31 @@ function findCentroid(coordinates) {
   
   // Divide by number of points to get average
   return [sum[0] / n, sum[1] / n];
+}
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * @param {Array} coord1 - [lng, lat]
+ * @param {Array} coord2 - [lng, lat]
+ * @returns {Number} - Distance in kilometers
+ */
+function calculateDistance(coord1, coord2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRadians(coord2[1] - coord1[1]);
+  const dLng = toRadians(coord2[0] - coord1[0]);
+  
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(coord1[1])) * Math.cos(toRadians(coord2[1])) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Convert degrees to radians
+ */
+function toRadians(degrees) {
+  return degrees * (Math.PI / 180);
 } 

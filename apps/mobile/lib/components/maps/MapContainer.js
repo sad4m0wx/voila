@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ const MapContainer = ({
   style = {}
 }) => {
   const mapRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
 
   // Convert [lng, lat] to {latitude, longitude} format for react-native-maps
   const centerCoord = {
@@ -25,30 +26,36 @@ const MapContainer = ({
     longitudeDelta: 0.0421,
   };
 
+  const handleMapReady = () => {
+    setMapReady(true);
+  };
+
   useEffect(() => {
-    if (animateToResults && markers.length > 0 && mapRef.current) {
+    if (animateToResults && markers.length > 0 && mapRef.current && mapReady) {
       // Fit map to show all markers
       setTimeout(() => {
-        const coordinates = markers.map(marker => ({
-          latitude: marker.position[1],
-          longitude: marker.position[0],
-        }));
+        if (mapRef.current) {
+          const coordinates = markers.map(marker => ({
+            latitude: marker.position[1],
+            longitude: marker.position[0],
+          }));
 
-        if (coordinates.length > 1) {
-          mapRef.current.fitToCoordinates(coordinates, {
-            edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-            animated: true,
-          });
-        } else if (coordinates.length === 1) {
-          mapRef.current.animateToRegion({
-            ...coordinates[0],
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          }, 1000);
+          if (coordinates.length > 1) {
+            mapRef.current.fitToCoordinates(coordinates, {
+              edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+              animated: true,
+            });
+          } else if (coordinates.length === 1) {
+            mapRef.current.animateToRegion({
+              ...coordinates[0],
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }, 1000);
+          }
         }
-      }, 100);
+      }, 500); // Increased timeout
     }
-  }, [animateToResults, markers]);
+  }, [animateToResults, markers, mapReady]);
 
   const getMarkerColor = (type) => {
     switch (type) {
@@ -102,22 +109,60 @@ const MapContainer = ({
   };
 
   const renderRoute = (route, index) => {
+    // Reduced logging to essential info only
+    if (index === 0) {
+      console.log(`🗺️ Map rendering ${routes.length} route segments. First segment:`, {
+        color: route.color,
+        mode: route.mode,
+        coordinatesLength: route.geometry?.coordinates?.length || 0
+      });
+    }
+
     if (!route.geometry || !route.geometry.coordinates || route.geometry.coordinates.length < 2) {
       return null;
     }
 
-    const coordinates = route.geometry.coordinates.map(coord => ({
-      latitude: coord[1],
-      longitude: coord[0],
-    }));
+    // Convert coordinates to react-native-maps format
+    const coordinates = route.geometry.coordinates
+      .filter(coord => 
+        Array.isArray(coord) && 
+        coord.length >= 2 && 
+        typeof coord[0] === 'number' && 
+        typeof coord[1] === 'number' &&
+        Math.abs(coord[0]) <= 180 && 
+        Math.abs(coord[1]) <= 90
+      )
+      .map(coord => ({
+        latitude: coord[1],
+        longitude: coord[0],
+      }));
+
+    // Skip routes with too few valid coordinates
+    if (coordinates.length < 2) {
+      return null;
+    }
+
+    // Determine line style based on mode
+    const strokeWidth = route.weight || (route.mode === 'walking' ? 3 : 5);
+    const strokeColor = route.color || '#6366f1';
+    
+    // Debug map colors for first few routes
+    if (index < 3) {
+      console.log(`🎨 Map route ${index} color:`, {
+        routeColor: route.color,
+        finalColor: strokeColor,
+        mode: route.mode,
+        routeId: route.id
+      });
+    }
 
     return (
       <Polyline
-        key={`route-${index}`}
+        key={`route-${index}-${route.id || ''}-${strokeColor}`}
         coordinates={coordinates}
-        strokeColor={route.color || '#6366f1'}
-        strokeWidth={route.weight || 4}
-        strokeOpacity={0.8}
+        strokeColor={strokeColor}
+        strokeWidth={strokeWidth}
+        strokeOpacity={route.opacity || 0.8}
       />
     );
   };
@@ -146,6 +191,7 @@ const MapContainer = ({
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={centerCoord}
+        onMapReady={handleMapReady}
         showsUserLocation={true}
         showsCompass={true}
         showsScale={true}

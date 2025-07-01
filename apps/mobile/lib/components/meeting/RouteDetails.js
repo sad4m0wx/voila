@@ -3,6 +3,20 @@ import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 
 const RouteDetails = ({ routes = [], travelTimes = [] }) => {
+  // Only log once for debugging (reduced noise)
+  if (routes.length > 0) {
+    console.log('🚗 RouteDetails received (condensed):', { 
+      routesCount: routes.length, 
+      travelTimesCount: travelTimes.length,
+      firstRouteStructure: routes[0] ? Object.keys(routes[0]) : [],
+      hasSteps: routes[0]?.steps ? 'yes' : 'no',
+      hasStep: routes[0]?.step ? 'yes' : 'no',
+      firstRouteKeys: routes[0] ? Object.keys(routes[0]) : [],
+      firstRouteSteps: routes[0]?.steps ? routes[0].steps.length : 'no steps',
+      firstRouteStep: routes[0]?.step ? 'has step' : 'no step'
+    });
+  }
+
   // Helper function to get vehicle icon
   const getVehicleIcon = (vehicleType, mode) => {
     if (mode === 'walking' || mode === 'walk') {
@@ -57,13 +71,35 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
     return { backgroundColor: '#f3f4f6', color: '#374151', borderColor: '#d1d5db' };
   };
   
-  // Combine routes with travel time info
-  const routesWithTravelTime = routes.map((route, index) => {
-    const travelTime = travelTimes[index];
-    return {
-      ...route,
-      travelTime
-    };
+  // Routes are already in the correct format, just map them to include travel times
+  const routesWithTravelTime = [];
+  
+  // Group steps into routes based on travel times
+  let currentRouteSteps = [];
+  let currentRouteIndex = 0;
+  
+  routes.forEach((route, index) => {
+    // If this route has steps, add them to current route
+    if (route.steps && route.steps.length > 0) {
+      currentRouteSteps.push(...route.steps);
+    } else if (route.step) {
+      // Handle single step format
+      currentRouteSteps.push(route.step);
+    }
+    
+    // Check if we should create a new route (every routesPerTravelTime items)
+    const routesPerTravelTime = Math.ceil(routes.length / travelTimes.length);
+    if ((index + 1) % routesPerTravelTime === 0 || index === routes.length - 1) {
+      if (currentRouteSteps.length > 0) {
+        routesWithTravelTime.push({
+          id: `route-${currentRouteIndex}`,
+          steps: currentRouteSteps,
+          travelTime: travelTimes[currentRouteIndex] || null
+        });
+        currentRouteSteps = [];
+        currentRouteIndex++;
+      }
+    }
   });
 
   if (routesWithTravelTime.length === 0) {

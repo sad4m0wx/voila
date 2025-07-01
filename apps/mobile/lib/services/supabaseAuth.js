@@ -1,4 +1,5 @@
-import { supabase } from '../supabase/config';
+import { supabase } from '../config';
+import { normalizePhoneNumber } from '../utils/phoneUtils';
 
 class SupabaseAuthService {
   constructor() {
@@ -24,10 +25,11 @@ class SupabaseAuthService {
 
   async sendVerificationCode(phoneNumber) {
     try {
-      console.log('📱 Sending SMS verification code to:', phoneNumber);
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      console.log('📱 Sending SMS verification code to:', normalizedPhone);
 
       const { data, error } = await supabase.auth.signInWithOtp({
-        phone: phoneNumber,
+        phone: normalizedPhone,
       });
 
       if (error) {
@@ -40,8 +42,9 @@ class SupabaseAuthService {
 
       return {
         success: true,
-        message: `SMS sent to ${phoneNumber}`,
-        data
+        message: `SMS sent to ${normalizedPhone}`,
+        data,
+        phoneNumber: normalizedPhone
       };
     } catch (error) {
       console.error('Error in sendVerificationCode:', error);
@@ -55,10 +58,11 @@ class SupabaseAuthService {
   // Verify SMS code using Supabase
   async verifyCode(phoneNumber, token) {
     try {
-      console.log('📱 Verifying SMS code for:', phoneNumber);
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      console.log('📱 Verifying SMS code for:', normalizedPhone);
 
       const { data, error } = await supabase.auth.verifyOtp({
-        phone: phoneNumber,
+        phone: normalizedPhone,
         token,
         type: 'sms'
       });

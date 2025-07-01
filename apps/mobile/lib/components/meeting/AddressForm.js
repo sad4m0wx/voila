@@ -18,15 +18,17 @@ const AddressForm = ({
   mapBounds = null,
   error = null
 }) => {
-  let nextId = 3;
-
   const addAddress = () => {
     if (addresses.length >= 5) {
       // Don't add more than 5 addresses
       return;
     }
+    
+    // Calculate the next available ID dynamically
+    const maxId = addresses.length > 0 ? Math.max(...addresses.map(addr => addr.id)) : 0;
+    const nextId = maxId + 1;
+    
     const newAddresses = [...addresses, { id: nextId, value: '', coordinates: null }];
-    nextId += 1;
     onAddressesChange && onAddressesChange(newAddresses);
   };
 
