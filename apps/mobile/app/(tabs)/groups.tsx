@@ -150,7 +150,7 @@ function CreateGroupModal({ visible, onClose, onCreateGroup, isLoading }: Create
 
           <ScrollView style={styles.modalForm}>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Group Name *</Text>
+              <Text style={styles.inputLabel}>Name</Text>
               <TextInput
                 style={styles.textInput}
                 value={groupName}
@@ -219,7 +219,7 @@ function CreateGroupModal({ visible, onClose, onCreateGroup, isLoading }: Create
 
             {/* Add Members Component */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Add Members & Locations</Text>
+              <Text style={styles.inputLabel}>Add friends</Text>
               <AddMemberComponent
                 onAddMember={handleAddMember}
                 onAddCustomAddress={handleAddCustomAddress}

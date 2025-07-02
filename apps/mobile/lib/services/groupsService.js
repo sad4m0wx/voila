@@ -177,8 +177,6 @@ class GroupsService {
         type: 'user',
       }));
 
-      console.log('📍 Raw custom locations from database:', customLocations);
-
       // Add custom locations as virtual attendees
       if (customLocations && customLocations.length > 0) {
         const customLocationMembers = customLocations.map(location => ({
@@ -202,14 +200,9 @@ class GroupsService {
           created_by: location.profiles?.display_name || 'Unknown',
         }));
 
-        console.log('📍 Formatted custom location members:', customLocationMembers);
-
         // Add custom locations to the members array
         members.push(...customLocationMembers);
       }
-
-      console.log('📍 Final members array (users + custom locations):', members.length, 'total members');
-      console.log('📍 Custom locations count:', customLocations?.length || 0);
 
       return members;
     } catch (error) {
@@ -361,87 +354,46 @@ class GroupsService {
 
   // Find users by phone numbers (for contact import)
   async findUsersByPhoneNumbers(phoneNumbers) {
+    if (!phoneNumbers || phoneNumbers.length === 0) {
+      return [];
+    }
+
     try {
-      const normalizedPhones = phoneNumbers.map(phone => normalizePhoneNumber(phone));
+      // Create variations for each phone number (with/without +)
+      const phoneVariations = [];
+      phoneNumbers.forEach(phone => {
+        if (phone) {
+          phoneVariations.push(phone);
+          
+          // Add opposite format (with/without +)
+          if (phone.startsWith('+')) {
+            phoneVariations.push(phone.substring(1));
+          } else {
+            phoneVariations.push('+' + phone);
+          }
+        }
+      });
+
+      // Remove duplicates
+      const uniquePhoneVariations = [...new Set(phoneVariations)];
       
-      
-      // First, let's see what phone numbers are actually in the database
-      const { data: allUsers, error: allError } = await supabase
+      // Query profiles with phone number in the variations
+      const { data: profiles, error } = await supabase
         .from('profiles')
         .select('id, display_name, phone_number')
+        .in('phone_number', uniquePhoneVariations)
         .not('phone_number', 'is', null);
 
-      if (allError) {
-        console.error('🔍 Error getting all users:', allError);
-      } else {
-        console.log('🔍 Sample of all user phone numbers in DB:', 
-          allUsers?.slice(0, 5).map(u => u.phone_number));
-      }
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, display_name, phone_number')
-        .in('phone_number', normalizedPhones);
-
       if (error) {
-        console.error('🔍 Database error:', error);
+        console.error('Database query error:', error);
         throw error;
       }
 
-      console.log('🔍 Database returned:', data);
-      console.log('🔍 Found', data?.length || 0, 'matching users');
-
-      // If no matches, try flexible matching
-      if (!data || data.length === 0) {
-        console.log('🔍 No exact matches, trying flexible search...');
-        
-        // Create variations of each phone number
-        const phoneVariations = new Set();
-        phoneNumbers.forEach(phone => {
-          const normalized = normalizePhoneNumber(phone);
-          phoneVariations.add(normalized);
-          
-          // Add variations without +
-          if (normalized.startsWith('+')) {
-            phoneVariations.add(normalized.substring(1));
-          }
-          
-          // Add French format variations
-          if (normalized.startsWith('+33')) {
-            phoneVariations.add('0' + normalized.substring(3)); // +33602039126 -> 0602039126
-            phoneVariations.add(normalized.substring(3)); // +33602039126 -> 602039126
-          }
-          
-          // Add variations with common contact formatting (spaces, dashes, dots, parentheses)
-          const cleanNumber = phone.replace(/[\s\-\.\(\)]/g, '');
-          if (cleanNumber !== phone) {
-            phoneVariations.add(cleanNumber);
-            const normalizedClean = normalizePhoneNumber(cleanNumber);
-            if (normalizedClean !== normalized) {
-              phoneVariations.add(normalizedClean);
-            }
-          }
-        });
-
-        const variationsArray = Array.from(phoneVariations);
-
-        const { data: flexData, error: flexError } = await supabase
-          .from('profiles')
-          .select('id, display_name, phone_number')
-          .in('phone_number', variationsArray);
-
-        if (flexError) {
-          console.error('🔍 Flexible search error:', flexError);
-        } else {
-          console.log('🔍 Flexible search found:', flexData?.length || 0, 'users');
-          return flexData || [];
-        }
-      }
-
-      return data || [];
+      return profiles || [];
+      
     } catch (error) {
       console.error('Error finding users by phone numbers:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -619,12 +571,6 @@ class GroupsService {
   // Add custom location to group
   async addCustomLocationToGroup(groupId, location, createdBy) {
     try {
-      console.log('🏠 addCustomLocationToGroup called with:', {
-        groupId,
-        location,
-        createdBy
-      });
-
       const insertData = {
         group_id: groupId,
         name: location.display_name || location.address,
@@ -636,8 +582,6 @@ class GroupsService {
         created_by: createdBy,
       };
 
-      console.log('🏠 Inserting into database:', insertData);
-
       const { data, error } = await supabase
         .from('group_custom_locations')
         .insert(insertData)
@@ -645,14 +589,13 @@ class GroupsService {
         .single();
 
       if (error) {
-        console.error('❌ Database error:', error);
+        console.error('Database error:', error);
         throw error;
       }
 
-      console.log('✅ Successfully added custom location to database:', data);
       return data;
     } catch (error) {
-      console.error('❌ Error adding custom location to group:', error);
+      console.error('Error adding custom location to group:', error);
       throw error;
     }
   }
@@ -742,6 +685,48 @@ class GroupsService {
     } catch (error) {
       console.error('Error removing custom location:', error);
       throw error;
+    }
+  }
+
+  // TEMPORARY: Fix phone numbers in profiles table
+  async fixPhoneNumbers() {
+    try {
+      // Get current user to make sure we have auth access
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('No authenticated user');
+        return false;
+      }
+
+      // Use SQL to update profiles table with phone numbers from auth.users
+      const { data, error } = await supabase.rpc('fix_phone_numbers');
+      
+      if (error) {
+        console.error('Error fixing phone numbers:', error);
+        
+        // If the function doesn't exist, try direct update
+        console.log('Trying direct update approach...');
+        
+        // Update current user's profile with their phone number
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ phone_number: user.phone })
+          .eq('id', user.id);
+          
+        if (updateError) {
+          console.error('Error updating current user phone:', updateError);
+          return false;
+        } else {
+          console.log('Updated current user phone number');
+          return true;
+        }
+      }
+
+      console.log('Phone numbers fixed successfully');
+      return true;
+    } catch (error) {
+      console.error('Error in fixPhoneNumbers:', error);
+      return false;
     }
   }
 }

@@ -1,8 +1,9 @@
 -- =====================================================
--- Voilà Mobile App - FRESH COMPLETE Database Schema
+-- Voilà Mobile App - COMPLETE Database Schema
 -- =====================================================
 -- This creates a new database from scratch with all
 -- required tables, functions, and sample data
+-- Includes all fixes and updates merged together
 -- Safe to run on empty or existing databases
 -- =====================================================
 
@@ -29,6 +30,7 @@ BEGIN
     DROP TRIGGER IF EXISTS handle_user_contacts_updated_at ON public.user_contacts;
     DROP TRIGGER IF EXISTS handle_groups_updated_at ON public.groups;
     DROP TRIGGER IF EXISTS handle_group_attendance_updated_at ON public.group_attendance;
+    DROP TRIGGER IF EXISTS handle_group_custom_locations_updated_at ON public.group_custom_locations;
 EXCEPTION
     WHEN undefined_table THEN NULL;
     WHEN undefined_object THEN NULL;
@@ -94,6 +96,7 @@ EXCEPTION
 END $$;
 
 -- Drop tables in dependency order (CASCADE for safety)
+DROP TABLE IF EXISTS public.group_custom_locations CASCADE;
 DROP TABLE IF EXISTS public.group_attendance CASCADE;
 DROP TABLE IF EXISTS public.group_members CASCADE;
 DROP TABLE IF EXISTS public.groups CASCADE;
@@ -251,7 +254,40 @@ CREATE INDEX group_attendance_user_id_idx ON public.group_attendance(user_id);
 CREATE INDEX group_attendance_group_user_idx ON public.group_attendance(group_id, user_id);
 
 -- =====================================================
--- 7. UTILITY FUNCTIONS
+-- 7. GROUP CUSTOM LOCATIONS TABLE
+-- =====================================================
+CREATE TABLE public.group_custom_locations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    group_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    address TEXT NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    place_id TEXT,
+    is_attending BOOLEAN DEFAULT true,
+    created_by UUID NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Add foreign key constraints
+ALTER TABLE public.group_custom_locations 
+ADD CONSTRAINT group_custom_locations_group_id_fkey 
+FOREIGN KEY (group_id) REFERENCES public.groups(id) ON DELETE CASCADE;
+
+ALTER TABLE public.group_custom_locations 
+ADD CONSTRAINT group_custom_locations_created_by_fkey 
+FOREIGN KEY (created_by) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+-- Disable RLS for simplicity (same as other group tables)
+ALTER TABLE public.group_custom_locations DISABLE ROW LEVEL SECURITY;
+
+-- Create indexes
+CREATE INDEX group_custom_locations_group_id_idx ON public.group_custom_locations(group_id);
+CREATE INDEX group_custom_locations_created_by_idx ON public.group_custom_locations(created_by);
+
+-- =====================================================
+-- 8. UTILITY FUNCTIONS
 -- =====================================================
 
 -- Function to normalize phone numbers
@@ -314,7 +350,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get addresses for group members (with elevated privileges)
+-- Function to get addresses for group members (with elevated privileges) - FIXED VERSION
 CREATE OR REPLACE FUNCTION public.get_group_member_addresses(group_id UUID, requesting_user_id UUID)
 RETURNS TABLE(
     user_id UUID,
@@ -372,7 +408,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================================
--- 8. TRIGGERS AND AUTOMATION
+-- 9. TRIGGERS AND AUTOMATION
 -- =====================================================
 
 -- Function to handle new user creation
@@ -424,8 +460,33 @@ CREATE TRIGGER handle_group_attendance_updated_at
     BEFORE UPDATE ON public.group_attendance
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+CREATE TRIGGER handle_group_custom_locations_updated_at
+    BEFORE UPDATE ON public.group_custom_locations
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
 -- =====================================================
--- 9. SAMPLE DATA FOR TESTING
+-- 10. DATA MIGRATION: Fix phone numbers
+-- =====================================================
+
+-- Sync phone numbers from auth.users to profiles table
+DO $$
+BEGIN
+    -- Update profiles table with phone numbers from auth.users
+    UPDATE public.profiles 
+    SET phone_number = auth.users.phone
+    FROM auth.users 
+    WHERE public.profiles.id = auth.users.id 
+    AND auth.users.phone IS NOT NULL 
+    AND (public.profiles.phone_number IS NULL OR public.profiles.phone_number = '');
+    
+    RAISE NOTICE 'Phone numbers synced from auth.users to profiles table';
+EXCEPTION
+    WHEN others THEN
+        RAISE WARNING 'Failed to sync phone numbers: %', SQLERRM;
+END $$;
+
+-- =====================================================
+-- 11. SAMPLE DATA FOR TESTING
 -- =====================================================
 
 -- Insert sample users (if they don't exist in auth.users, this won't work)
@@ -493,7 +554,7 @@ EXCEPTION
 END $$;
 
 -- =====================================================
--- 10. COMMENTS AND DOCUMENTATION
+-- 12. COMMENTS AND DOCUMENTATION
 -- =====================================================
 
 COMMENT ON TABLE public.profiles IS 'User profiles with onboarding status';
@@ -502,7 +563,8 @@ COMMENT ON TABLE public.user_contacts IS 'Normalized contact information for fri
 COMMENT ON TABLE public.groups IS 'Groups for multi-user meetups (RLS disabled to prevent recursion)';
 COMMENT ON TABLE public.group_members IS 'Group membership information (RLS disabled to prevent recursion)';
 COMMENT ON TABLE public.group_attendance IS 'Group attendance tracking for meeting point calculation';
-COMMENT ON FUNCTION public.get_group_member_addresses IS 'Retrieves addresses for all members of a group (elevated privileges)';
+COMMENT ON TABLE public.group_custom_locations IS 'Custom locations/addresses added to groups for meeting planning';
+COMMENT ON FUNCTION public.get_group_member_addresses IS 'Retrieves addresses for all members of a group (elevated privileges) - FIXED AMBIGUOUS COLUMNS';
 COMMENT ON FUNCTION public.reset_group_attendance IS 'Resets attendance for all group members';
 COMMENT ON FUNCTION public.normalize_phone_number IS 'Normalizes phone numbers to international format';
 COMMENT ON FUNCTION public.find_users_by_phone_numbers IS 'Finds registered users by their phone numbers';
@@ -513,16 +575,19 @@ COMMENT ON FUNCTION public.find_users_by_phone_numbers IS 'Finds registered user
 
 DO $$
 BEGIN
-    RAISE NOTICE '✅ Voilà Mobile App FRESH database schema created successfully!';
+    RAISE NOTICE '✅ Voilà Mobile App COMPLETE database schema created successfully!';
     RAISE NOTICE '📱 All tables, functions, and triggers are in place.';
     RAISE NOTICE '🔒 RLS configured appropriately for each table.';
     RAISE NOTICE '🔧 Groups functionality should work correctly.';
     RAISE NOTICE '📍 Group attendance tracking enabled.';
-    RAISE NOTICE '🗺️ Cross-user address access function available.';
+    RAISE NOTICE '🗺️ Cross-user address access function available (FIXED).';
+    RAISE NOTICE '🏠 Custom group locations table added.';
+    RAISE NOTICE '📞 Phone numbers synced from auth.users.';
     RAISE NOTICE '🏠 Sample data will be added when users exist.';
     RAISE NOTICE '';
     RAISE NOTICE 'Next steps:';
     RAISE NOTICE '1. Create users through your app auth flow';
     RAISE NOTICE '2. Test the groups functionality';
     RAISE NOTICE '3. Verify address-based meeting points work';
+    RAISE NOTICE '4. Test custom group locations feature';
 END $$; 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -70,21 +70,6 @@ export function AddMemberComponent({
     }
   };
 
-  // Test phone number normalization
-  useEffect(() => {
-    const testCases = [
-      '0602039126',
-      '+33602039126', 
-      '602039126',
-      '+33 6 02 03 91 26',
-      '06 02 03 91 26'
-    ];
-    
-    testCases.forEach(phone => {
-      const normalized = normalizePhoneNumber(phone);
-    });
-  }, []);
-
   const loadContacts = async () => {
     try {
       // Check permission status
@@ -98,61 +83,119 @@ export function AddMemberComponent({
       // Load contacts
       await contactService.loadContacts();
       
-      // Use the already normalized phone numbers from contactService
-      const allPhones = contactService.contacts.flatMap(contact => 
-        contact.phoneNumbers.map(phone => {
-          return phone.normalized;
-        })
-      ).filter(phone => phone); // Remove empty phones
+      // Store all contacts as unregistered initially
+      const allContacts = contactService.contacts.map(contact => ({
+        ...contact,
+        type: 'contact',
+        isRegistered: false,
+      }));
 
-      // Find which contacts are registered users
-      const registeredData = await findUsersByPhoneNumbers(allPhones);
+      setUnregisteredContacts(allContacts);
+      setRegisteredUsers([]); // Clear registered users
       
-      // Create map of registered phone numbers to user data
-      const registeredPhoneMap = new Map();
-      registeredData.forEach(user => {
-        registeredPhoneMap.set(user.phone_number, user);
-      });
+    } catch (error) {
+      console.error('Error loading contacts:', error);
+    }
+  };
 
-      // Separate registered and unregistered contacts
-      const registered = [];
-      const unregistered = [];
+  // Check which contacts have accounts (only for filtered results)
+  const checkContactsForAccounts = async (filteredContacts) => {
+    if (filteredContacts.length === 0) return;
+    
+    setSearching(true);
 
-      contactService.contacts.forEach(contact => {
-        let matchedUserData = null;
-        
-        // Check each phone number in the contact
-        for (const phoneObj of contact.phoneNumbers) {
-          // Use the already normalized phone from contactService
-          if (registeredPhoneMap.has(phoneObj.normalized)) {
-            matchedUserData = registeredPhoneMap.get(phoneObj.normalized);
-            break;
+    try {
+      // Extract phone numbers from filtered contacts only
+      const phoneNumbers = filteredContacts.flatMap(contact => 
+        contact.phoneNumbers.map(phone => phone.normalized)
+      ).filter(phone => phone);
+
+      // Query database for these specific phone numbers
+      const registeredData = await findUsersByPhoneNumbers(phoneNumbers);
+
+      if (registeredData.length > 0) {
+        // Create map of registered phone numbers to user data
+        const registeredPhoneMap = new Map();
+        registeredData.forEach(user => {
+          const dbPhone = user.phone_number;
+          registeredPhoneMap.set(dbPhone, user);
+          
+          // Also store with/without + variations
+          if (dbPhone.startsWith('+')) {
+            registeredPhoneMap.set(dbPhone.substring(1), user);
+          } else {
+            registeredPhoneMap.set('+' + dbPhone, user);
           }
-        }
+        });
 
-        if (matchedUserData) {
-          // Skip if already a member
-          if (!existingMembers.find(m => m.user_id === matchedUserData.id)) {
+        // Separate registered and unregistered from filtered contacts
+        const registered = [];
+        const unregistered = [];
+
+        filteredContacts.forEach(contact => {
+          let matchedUserData = null;
+          
+          // Check each phone number in the contact
+          for (const phoneObj of contact.phoneNumbers) {
+            const contactNormalized = phoneObj.normalized;
+            
+            if (registeredPhoneMap.has(contactNormalized)) {
+              matchedUserData = registeredPhoneMap.get(contactNormalized);
+              break;
+            }
+            
+            // Try without + prefix
+            if (contactNormalized.startsWith('+')) {
+              const withoutPlus = contactNormalized.substring(1);
+              if (registeredPhoneMap.has(withoutPlus)) {
+                matchedUserData = registeredPhoneMap.get(withoutPlus);
+                break;
+              }
+            }
+            
+            // Try with + prefix
+            if (!contactNormalized.startsWith('+')) {
+              const withPlus = '+' + contactNormalized;
+              if (registeredPhoneMap.has(withPlus)) {
+                matchedUserData = registeredPhoneMap.get(withPlus);
+                break;
+              }
+            }
+          }
+
+          if (matchedUserData && !existingMembers.find(m => m.user_id === matchedUserData.id)) {
             registered.push({
               ...contact,
               userData: matchedUserData,
               type: 'registered',
               isRegistered: true,
             });
+          } else {
+            unregistered.push({
+              ...contact,
+              type: 'contact',
+              isRegistered: false,
+            });
           }
-        } else {
-          unregistered.push({
-            ...contact,
-            type: 'contact',
-            isRegistered: false,
-          });
-        }
-      });
+        });
 
-      setRegisteredUsers(registered);
-      setUnregisteredContacts(unregistered);
+        // Update state with the checked results
+        setRegisteredUsers(registered);
+        setUnregisteredContacts(unregistered);
+      } else {
+        // No registered users found, all are unregistered
+        const unregistered = filteredContacts.map(contact => ({
+          ...contact,
+          type: 'contact',
+          isRegistered: false,
+        }));
+        setRegisteredUsers([]);
+        setUnregisteredContacts(unregistered);
+      }
     } catch (error) {
-      console.error('Error loading contacts:', error);
+      console.error('Error checking contacts for accounts:', error);
+    } finally {
+      setSearching(false);
     }
   };
 
@@ -162,23 +205,52 @@ export function AddMemberComponent({
 
     const term = searchTerm.toLowerCase().trim();
     
-    // Filter registered users by name
-    const filteredRegistered = registeredUsers.filter(contact =>
+    // Filter all contacts by name (client-side)
+    const filtered = contactService.contacts.filter(contact =>
       contact.name.toLowerCase().includes(term) ||
       contact.firstName.toLowerCase().includes(term) ||
       contact.lastName.toLowerCase().includes(term)
     );
 
-    // Filter unregistered contacts by name
-    const filteredUnregistered = unregisteredContacts.filter(contact =>
-      contact.name.toLowerCase().includes(term) ||
-      contact.firstName.toLowerCase().includes(term) ||
-      contact.lastName.toLowerCase().includes(term)
-    );
+    // Return filtered contacts - account checking is handled separately
+    return filtered;
+  }, [searchTerm]);
 
+  // Check for accounts when search results change
+  useEffect(() => {
+    const filtered = filteredContacts();
+    
+    if (filtered.length > 0 && filtered.length <= 20) {
+      // Debounce the account checking
+      const timeoutId = setTimeout(() => {
+        checkContactsForAccounts(filtered);
+      }, 300);
+
+      return () => clearTimeout(timeoutId);
+    } else {
+      // Clear previous results if too many or no results
+      setRegisteredUsers([]);
+      setUnregisteredContacts([]);
+      setSearching(false);
+    }
+  }, [searchTerm]);
+
+  // Combine registered and unregistered for display
+  const displayedContacts = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    
+    // If we're currently searching, show filtered contacts as loading
+    if (searching) {
+      return filteredContacts().map(contact => ({
+        ...contact,
+        type: 'contact',
+        isRegistered: false,
+      }));
+    }
+    
     // Return registered users first, then unregistered
-    return [...filteredRegistered, ...filteredUnregistered];
-  }, [searchTerm, registeredUsers, unregisteredContacts]);
+    return [...registeredUsers, ...unregisteredContacts];
+  }, [searchTerm, searching, registeredUsers, unregisteredContacts]);
 
   const handleAddMember = (contact) => {
     if (contact.isRegistered && contact.userData) {
@@ -242,7 +314,7 @@ export function AddMemberComponent({
           // Update with database ID
           customAddressItem.id = dbLocation.id;
         } else {
-          console.error('❌ Failed to save custom location to database');
+          console.error('Failed to save custom location to database');
         }
       }
 
@@ -295,8 +367,6 @@ export function AddMemberComponent({
       Alert.alert('Error', 'Failed to update attendance');
     }
   };
-
-  const displayedContacts = filteredContacts();
 
   return (
     <View style={[styles.container, style]}>
