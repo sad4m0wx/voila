@@ -104,9 +104,6 @@ function CreateGroupModal({ visible, onClose, onCreateGroup, isLoading }: Create
       const userMemberIds = selectedMembers
         .filter(m => m.type === 'user' || m.type === 'registered')
         .map(m => m.user_id || m.id);
-
-      console.log('🔧 Creating group with user members:', userMemberIds);
-      console.log('🔧 Custom addresses to add separately:', customAddresses);
       
       await onCreateGroup(groupName.trim(), userMemberIds, customAddresses);
       handleClose();

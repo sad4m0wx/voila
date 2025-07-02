@@ -117,7 +117,6 @@ export default function HomeScreen() {
       });
       setRoutes(routesData[0] || result.routes || []);
       setCurrentMeetingPointIndex(0);
-      console.log('Initial routes set:', routesData[0] || result.routes || []);
 
       setVenues(result.venues || []);
 
@@ -145,7 +144,6 @@ export default function HomeScreen() {
       });
       setRoutes(allRoutes[index] || []);
       setCurrentMeetingPointIndex(index);
-      console.log('Routes set:', allRoutes[index] || []); // Debug log
     }
   };
 
@@ -233,23 +231,19 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Enhanced Background with Multiple Layers */}
+      {/* Background */}
       <View style={styles.backgroundContainer}>
-        <View style={styles.gradientOverlay} />
-        <View style={styles.radialOverlay} />
         <MetroBackground />
       </View>
 
-      <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
-        {/* Main Content Area */}
-        <View style={styles.mainContent}>
-          {/* MAP AT TOP - Priority Position */}
-          <View 
-            style={[
-              styles.mapArea,
-              { height: mapExpanded ? 320 : showResults ? 200 : 240 }
-            ]}
-          >
+      <View style={styles.mainContent}>
+        {/* MAP AT TOP - Full Screen */}
+        <View 
+          style={[
+            styles.mapArea,
+            { height: mapExpanded ? 360 : showResults ? 280 : 320 }
+          ]}
+        >
             {/* Map Header with Controls */}
             <View style={styles.headerControls}>
               {/* Floating Logo */}
@@ -269,7 +263,7 @@ export default function HomeScreen() {
                   >
                     <MaterialIcons 
                       name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                      size={16} 
+                      size={20} 
                       color="#6b7280" 
                     />
                   </TouchableOpacity>
@@ -298,11 +292,12 @@ export default function HomeScreen() {
           </View>
 
           {/* CONTENT BELOW MAP */}
-          <ScrollView 
-            style={styles.contentScrollView} 
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-          >
+          <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
+            <ScrollView 
+              style={styles.contentScrollView} 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}
+            >
             {/* Enhanced Mobile Loading State */}
             {isCalculating && (
               <View style={styles.loadingContainer}>
@@ -334,15 +329,17 @@ export default function HomeScreen() {
 
             {/* Results or Address Form */}
             {showResults && meetingPoint ? (
-              <MeetingPointResults
-                meetingPoint={meetingPoint}
-                meetingPoints={meetingPoints}
-                currentMeetingPointIndex={currentMeetingPointIndex}
-                setCurrentMeetingPointIndex={handleMeetingPointChange}
-                onStartNewSearch={handleStartNewSearch}
-                onCreateGroup={handleSaveLocation}
-                mode="main"
-              />
+              <View style={styles.resultsContainer}>
+                <MeetingPointResults
+                  meetingPoint={meetingPoint}
+                  meetingPoints={meetingPoints}
+                  currentMeetingPointIndex={currentMeetingPointIndex}
+                  setCurrentMeetingPointIndex={handleMeetingPointChange}
+                  onStartNewSearch={handleStartNewSearch}
+                  onCreateGroup={handleSaveLocation}
+                  mode="main"
+                />
+              </View>
             ) : (
               <AddressForm
                 addresses={addresses}
@@ -356,9 +353,9 @@ export default function HomeScreen() {
 
             {/* Bottom spacing for tab bar */}
             <View style={styles.bottomSpacing} />
-          </ScrollView>
+            </ScrollView>
+          </SafeAreaView>
         </View>
-      </SafeAreaView>
     </View>
   );
 }
@@ -374,53 +371,40 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1,
-  },
-  gradientOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#f1f5f9',
-    opacity: 0.9,
-  },
-  radialOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(139, 92, 246, 0.03)',
-  },
-  safeArea: {
-    flex: 1,
-    position: 'relative',
-    zIndex: 10,
-    paddingTop: Platform.OS === 'ios' ? 44 : 24,
+    zIndex: 0,
   },
   mainContent: {
     flex: 1,
+    zIndex: 1,
+    position: 'relative',
+  },
+  contentSafeArea: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   mapArea: {
-    marginHorizontal: 12,
-    marginTop: 4,
-    marginBottom: 12,
-    borderRadius: 16,
+    marginTop: 0,
+    marginBottom: 0,
+    borderRadius: 0,
     overflow: 'hidden',
     position: 'relative',
     shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerControls: {
     position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    zIndex: 20,
+    top: Platform.OS === 'ios' ? 50 : 40,
+    left: 16,
+    right: 16,
+    zIndex: 30,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
@@ -454,8 +438,8 @@ const styles = StyleSheet.create({
   mapControlButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 16,
-    width: 32,
-    height: 32,
+    width: 42,
+    height: 42,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -466,7 +450,7 @@ const styles = StyleSheet.create({
   },
   mapContainer: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 0,
     overflow: 'hidden',
     backgroundColor: '#f3f4f6',
   },
@@ -474,15 +458,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 12,
+    paddingBottom: 32,
   },
   loadingContainer: {
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 24,
-    marginHorizontal: 12,
     marginVertical: 16,
+    marginHorizontal: 16,
     alignItems: 'center',
     shadowColor: '#8b5cf6',
     shadowOffset: { width: 0, height: 4 },
@@ -496,8 +479,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 16,
-    marginHorizontal: 12,
     marginVertical: 16,
+    marginHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
     shadowColor: '#ef4444',
@@ -541,6 +524,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bottomSpacing: {
-    height: 80,
+    height: 32,
+  },
+  resultsContainer: {
+    paddingHorizontal: 0,
+    paddingVertical: 16,
   },
 });

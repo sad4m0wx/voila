@@ -44,9 +44,7 @@ const MeetingPointResults = ({
     
     return (
       <View style={styles.meetingPointSlide}>
-        <View style={styles.meetingPointContent}>
-          <Text style={styles.locationName}>{mp.name}</Text>
-          
+        <View style={styles.meetingPointContent}>          
           {/* Statistics */}
           <StatsDisplay travelTimes={mp.travelTimes || mp.travel_times || []} />
 
@@ -145,14 +143,13 @@ const MeetingPointResults = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 12,
     marginBottom: 16,
   },
   swipeableContainer: {
     marginBottom: 16,
   },
   singleContainer: {
-    marginHorizontal: 4,
+    paddingHorizontal: 16,
   },
   paginationContainer: {
     flexDirection: 'row',
@@ -176,23 +173,25 @@ const styles = StyleSheet.create({
   },
   meetingPointSlide: {
     width: screenWidth,
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
   },
   meetingPointContent: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
   locationName: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
     color: '#111827',
-    marginBottom: 16,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   fallbackNotice: {
     flexDirection: 'row',

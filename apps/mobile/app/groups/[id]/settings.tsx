@@ -253,7 +253,35 @@ export default function GroupSettingsScreen() {
         >
           <MaterialIcons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Group Settings</Text>
+        {editingName ? (
+          <View style={styles.headerEditContainer}>
+            <TextInput
+              style={styles.headerEditInput}
+              value={groupName}
+              onChangeText={setGroupName}
+              placeholder="Enter group name"
+              maxLength={50}
+              autoFocus
+              onBlur={handleUpdateName}
+            />
+            <TouchableOpacity onPress={handleUpdateName}>
+              <MaterialIcons name="check" size={20} color="#10b981" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.headerTitleContainer}
+            onPress={() => canManageGroup && setEditingName(true)}
+            disabled={!canManageGroup}
+          >
+            <Text style={styles.headerTitle}>
+              {currentGroup?.name || 'Group Settings'}
+            </Text>
+            {canManageGroup && (
+              <MaterialIcons name="edit" size={16} color="#6b7280" style={styles.headerEditIcon} />
+            )}
+          </TouchableOpacity>
+        )}
         <View style={styles.headerPlaceholder} />
       </View>
 
@@ -268,43 +296,7 @@ export default function GroupSettingsScreen() {
 
       <ScrollView style={styles.content}>
         {/* Group Info Section */}
-        <View style={styles.section}>          
-          {/* Group Name */}
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>Group Name</Text>
-            {editingName ? (
-              <View style={styles.editContainer}>
-                <TextInput
-                  style={styles.editInput}
-                  value={groupName}
-                  onChangeText={setGroupName}
-                  placeholder="Enter group name"
-                  maxLength={50}
-                  autoFocus
-                  onBlur={handleUpdateName}
-                />
-                <TouchableOpacity onPress={handleUpdateName}>
-                  <MaterialIcons name="check" size={24} color="#10b981" />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.editableField}
-                onPress={() => canManageGroup && setEditingName(true)}
-                disabled={!canManageGroup}
-              >
-                <Text style={styles.settingValue}>
-                  {currentGroup?.name || 'Loading...'}
-                </Text>
-                {canManageGroup && (
-                  <MaterialIcons name="edit" size={20} color="#6b7280" />
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-
-          
-        </View>
+        
 
         {/* Members Section */}
         <View style={styles.section}>
@@ -622,5 +614,29 @@ const styles = StyleSheet.create({
 
   membersList: {
     gap: 8,
+  },
+
+  headerEditContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerEditInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    color: '#111827',
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerEditIcon: {
+    marginLeft: 4,
   },
 }); 

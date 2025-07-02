@@ -218,11 +218,9 @@ export function GroupsProvider({ children }) {
       
       // Add custom addresses to the group if any
       if (customAddresses.length > 0) {
-        console.log('🏠 Adding custom addresses to group:', customAddresses);
         for (const address of customAddresses) {
           try {
             await groupsService.addCustomLocationToGroup(newGroup.id, address, user.uid);
-            console.log('✅ Added custom address:', address.address);
           } catch (error) {
             console.error('❌ Failed to add custom address:', address.address, error);
           }
@@ -231,7 +229,6 @@ export function GroupsProvider({ children }) {
         // Load group members to include the new custom locations
         try {
           await loadGroupMembers(newGroup.id);
-          console.log('🔄 Reloaded group members after adding custom addresses');
         } catch (error) {
           console.warn('Failed to reload group members:', error);
         }

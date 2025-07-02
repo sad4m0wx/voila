@@ -9,49 +9,20 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
       return [];
     }
 
-    // If we have travel times, pair them with routes
-    if (Array.isArray(travelTimes) && travelTimes.length > 0) {
-      return travelTimes.map((travelTime, index) => {
-        // Calculate how many routes per travel time
-        const routesPerTravelTime = Math.ceil(routes.length / travelTimes.length);
-        const startIndex = index * routesPerTravelTime;
-        const endIndex = Math.min(startIndex + routesPerTravelTime, routes.length);
-        
-        // Get routes for this travel time
-        const routesForThisTime = routes.slice(startIndex, endIndex);
-        const steps = routesForThisTime.flatMap(route => {
-          if (Array.isArray(route?.steps)) {
-            return route.steps;
-          } else if (route?.step) {
-            return [route.step];
-          }
-          return [];
-        });
+    // Simple 1:1 pairing: each route corresponds to one travel time
+    // This matches the web version approach
+    return routes.map((route, index) => {
+      const travelTime = Array.isArray(travelTimes) && travelTimes[index] ? travelTimes[index] : null;
+      
+      // Get steps from the route
+      const steps = Array.isArray(route?.steps) ? route.steps : [];
 
-        return {
-          id: `route-${index}`,
-          travelTime,
-          steps: steps.filter(step => step && step.mode) // Filter out invalid steps
-        };
-      });
-    }
-
-    return routes
-      .map((route, index) => {
-        const steps = [];
-        if (Array.isArray(route?.steps)) {
-          steps.push(...route.steps);
-        } else if (route?.step) {
-          steps.push(route.step);
-        }
-
-        return {
-          id: `route-${index}`,
-          travelTime: null,
-          steps: steps.filter(step => step && step.mode)
-        };
-      })
-      .filter(route => route.steps.length > 0); // Only include routes with valid steps
+      return {
+        id: route.id || `route-${index}`,
+        travelTime,
+        steps: steps.filter(step => step && step.mode) // Filter out invalid steps
+      };
+    }).filter(route => route.steps.length > 0); // Only include routes with valid steps
   }, [routes, travelTimes]);
 
   // Helper function to get vehicle icon

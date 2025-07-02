@@ -17,7 +17,7 @@ const RouteDetailsToggle = ({ routes, travelTimes }) => {
         <View style={styles.routeToggleLeft}>
           <MaterialIcons name="directions" size={20} color="#6366f1" />
           <Text style={styles.routeToggleText}>
-            Route Details ({routes.length} route{routes.length !== 1 ? 's' : ''})
+            Route Details 
           </Text>
         </View>
         <MaterialIcons 

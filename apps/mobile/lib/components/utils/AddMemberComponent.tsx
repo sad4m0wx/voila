@@ -237,12 +237,10 @@ export function AddMemberComponent({
     try {
       // If groupId is provided, save to database
       if (groupId) {
-        console.log('🔄 Saving custom location to group:', groupId, customAddressItem);
         const dbLocation = await addCustomLocationToGroup(groupId, customAddressItem);
         if (dbLocation) {
           // Update with database ID
           customAddressItem.id = dbLocation.id;
-          console.log('✅ Custom location saved to database:', dbLocation);
         } else {
           console.error('❌ Failed to save custom location to database');
         }

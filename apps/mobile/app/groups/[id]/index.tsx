@@ -43,10 +43,13 @@ interface GroupMember {
     created_by?: string;
 }
 
-function MapDisplay({ meetingPoint, routes, attendeeAddresses }: {
+function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onBackPress, onSettingsPress }: {
     meetingPoint: any,
     routes: any[],
-    attendeeAddresses: any[]
+    attendeeAddresses: any[],
+    currentGroup: any,
+    onBackPress: () => void,
+    onSettingsPress: () => void
 }) {
     const [mapReady, setMapReady] = useState(false);
     const [mapExpanded, setMapExpanded] = useState(false);
@@ -171,19 +174,40 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses }: {
     }, [meetingPoint, attendeeAddresses]);
 
     return (
-        <View style={[styles.mapContainer, { height: mapExpanded ? 320 : 200 }]}>
-            {/* Map Controls */}
-            <View style={styles.mapControls}>
+        <View style={[styles.mapContainer, { height: mapExpanded ? 400 : 320 }]}>
+            {/* Floating Header Controls */}
+            <View style={styles.headerControls}>
                 <TouchableOpacity
-                    style={styles.mapExpandButton}
-                    onPress={toggleMapExpanded}
+                    style={styles.headerButton}
+                    onPress={onBackPress}
                 >
-                    <MaterialIcons 
-                        name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                        size={16} 
-                        color="#6b7280" 
-                    />
+                    <MaterialIcons name="arrow-back" size={20} color="#111827" />
                 </TouchableOpacity>
+                
+                <View style={styles.groupTitleContainer}>
+                    <Text style={styles.floatingGroupTitle} numberOfLines={1}>
+                        {currentGroup?.name || 'Group'}
+                    </Text>
+                </View>
+                
+                <View style={styles.rightButtons}>
+                    <TouchableOpacity
+                        style={styles.headerButton}
+                        onPress={toggleMapExpanded}
+                    >
+                        <MaterialIcons 
+                            name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
+                            size={20} 
+                            color="#6b7280" 
+                        />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.headerButton}
+                        onPress={onSettingsPress}
+                    >
+                        <MaterialIcons name="settings" size={20} color="#6b7280" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <MapContainer
@@ -541,33 +565,25 @@ export default function GroupScreen() {
     const needsMoreAttendees = attendingMembers.length < 2;
 
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <MaterialIcons name="arrow-back" size={24} color="#111827" />
-                </TouchableOpacity>
-                <View style={styles.headerCenter}>
-                    <Text style={styles.groupTitle} numberOfLines={1}>
-                        {currentGroup?.name || 'Loading...'}
-                    </Text>
+        <View style={styles.container}>
+            {/* Full Screen Map with Floating Header */}
+            <MapDisplay
+                meetingPoint={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex] || meetingPoint) : null}
+                routes={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex]?.routes || meetingPoint.routes || []) : []}
+                attendeeAddresses={attendeeAddresses}
+                currentGroup={currentGroup}
+                onBackPress={() => router.back()}
+                onSettingsPress={handleSettingsPress}
+            />
 
-                </View>
-                <TouchableOpacity onPress={handleSettingsPress}>
-                    <MaterialIcons name="settings" size={24} color="#6b7280" />
-                </TouchableOpacity>
-            </View>
-
-            <ScrollView
-                style={styles.content}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                showsVerticalScrollIndicator={false}
-            >
-                {/* Map Display */}
-                <MapDisplay
-                    meetingPoint={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex] || meetingPoint) : null}
-                    routes={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex]?.routes || meetingPoint.routes || []) : []}
-                    attendeeAddresses={attendeeAddresses}
-                />
+            {/* Content Below Map */}
+            <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
+                <ScrollView
+                    style={styles.content}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                >
 
                 {/* Slide to Confirm */}
                 <View style={styles.slideContainer}>
@@ -598,55 +614,83 @@ export default function GroupScreen() {
                     isExpanded={attendeesExpanded}
                     onToggle={() => setAttendeesExpanded(!attendeesExpanded)}
                 />
-            </ScrollView>
-        </SafeAreaView>
+                </ScrollView>
+            </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#f8fafc',
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-    },
-    headerCenter: {
+    contentSafeArea: {
         flex: 1,
-        paddingHorizontal: 16,
-    },
-    groupTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#111827',
-        textAlign: 'center',
-    },
-    groupSubtitle: {
-        fontSize: 14,
-        color: '#6b7280',
-        textAlign: 'center',
-        marginTop: 2,
+        backgroundColor: '#f8fafc',
     },
     content: {
         flex: 1,
     },
-    mapContainer: {
-        marginHorizontal: 16,
-        marginVertical: 16,
-        borderRadius: 12,
-        overflow: 'hidden',
-        backgroundColor: '#f9fafb',
-        position: 'relative',
+    scrollContent: {
+        paddingBottom: 32,
+    },
+    headerControls: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 60 : 40,
+        left: 16,
+        right: 16,
+        zIndex: 30,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    headerButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: 16,
+        width: 42,
+        height: 42,
+        justifyContent: 'center',
+        alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
-        elevation: 3,
+        elevation: 4,
+    },
+    groupTitleContainer: {
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 4,
+        maxWidth: '60%',
+    },
+    floatingGroupTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#111827',
+        textAlign: 'center',
+    },
+    rightButtons: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    mapContainer: {
+        marginVertical: 0,
+        borderRadius: 0,
+        overflow: 'hidden',
+        backgroundColor: '#f8fafc',
+        position: 'relative',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
     },
     mapPlaceholder: {
         flex: 1,
@@ -671,56 +715,42 @@ const styles = StyleSheet.create({
     },
     slideContainer: {
         paddingHorizontal: 16,
-        marginBottom: 16,
+        paddingVertical: 20,
     },
     loadingContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
-        margin: 16,
-        backgroundColor: '#f8fafc',
-        borderRadius: 16,
+        padding: 32,
         gap: 12,
     },
     loadingText: {
-        fontSize: 16,
+        fontSize: 18,
         color: '#6366f1',
-        fontWeight: '500',
+        fontWeight: '600',
     },
     needMoreContainer: {
         alignItems: 'center',
-        padding: 24,
-        margin: 16,
-        backgroundColor: '#f9fafb',
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#e5e7eb',
+        paddingVertical: 40,
+        paddingHorizontal: 24,
     },
     needMoreTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#374151',
-        marginTop: 12,
-        marginBottom: 8,
+        fontSize: 22,
+        fontWeight: '700',
+        color: '#111827',
+        marginTop: 16,
+        marginBottom: 12,
+        textAlign: 'center',
     },
     needMoreText: {
-        fontSize: 14,
+        fontSize: 16,
         color: '#6b7280',
         textAlign: 'center',
-        lineHeight: 20,
+        lineHeight: 24,
     },
     resultsContainer: {
-        marginHorizontal: 16,
-        marginBottom: 16,
-        backgroundColor: '#ffffff',
-        borderRadius: 12,
-        padding: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        paddingVertical: 20,
+        paddingHorizontal: 16,
     },
     swipeableContainer: {
         marginBottom: 16,
@@ -786,18 +816,16 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
     },
     attendeesContainer: {
-        margin: 16,
-        marginTop: 8,
-        backgroundColor: '#ffffff',
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#e5e7eb',
+        marginTop: 24,
+        paddingHorizontal: 16,
+        paddingBottom: 32,
     },
     attendeesHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 16,
+        paddingVertical: 16,
+        paddingHorizontal: 4,
     },
     attendeesHeaderLeft: {
         flexDirection: 'row',
@@ -805,22 +833,24 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     attendeesTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#374151',
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#111827',
     },
     attendeesList: {
-        paddingHorizontal: 16,
-        paddingBottom: 16,
-        gap: 8,
+        paddingHorizontal: 4,
+        paddingBottom: 8,
+        gap: 12,
     },
     attendeeItem: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: '#f9fafb',
-        borderRadius: 12,
-        padding: 12,
+        backgroundColor: '#f8fafc',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
     },
     attendeeInfo: {
         flexDirection: 'row',
@@ -843,9 +873,9 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     attendeeName: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#374151',
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#111827',
         flex: 1,
     },
     attendeeType: {
@@ -868,23 +898,5 @@ const styles = StyleSheet.create({
         color: '#111827',
         marginTop: 16,
     },
-    mapControls: {
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        zIndex: 10,
-    },
-    mapExpandButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: 16,
-        width: 32,
-        height: 32,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 4,
-    },
+
 }); 

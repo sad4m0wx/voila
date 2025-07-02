@@ -66,7 +66,6 @@ export function AuthProvider({ children }) {
   // Auth state listener
   useEffect(() => {
     const { data: authListener } = supabaseAuthService.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id);
       
       if (session?.user) {
         const user = {
@@ -109,11 +108,8 @@ export function AuthProvider({ children }) {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No rows returned - new user, but don't set onboarding step yet
-          console.log('New user detected, profile will be created when they sign in');
           return;
         } else if (error.code === '42P01') {
-          // Table doesn't exist - database not set up
           console.warn('⚠️  Database tables not set up. See DATABASE_SETUP.md for instructions.');
           console.warn('User can still use the app without authentication features.');
           return;

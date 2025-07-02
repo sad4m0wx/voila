@@ -127,61 +127,20 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
             transitSummary: tt.transit_summary
           };
         }),
-                routes: (() => {
+        routes: (() => {
+          // Each route should correspond to one person's journey (and one travel time)
+          // Don't break routes into separate steps - keep them as complete journeys
           const processedRoutes = [];
           
           primaryRoutes.forEach((route, routeIndex) => {
-            // Process each step as a separate route segment - matching SvelteKit approach
             if (route.steps && route.steps.length > 0) {
-              route.steps.forEach((step, stepIndex) => {
-                if (!step.geometry || !step.geometry.coordinates || !Array.isArray(step.geometry.coordinates)) {
-                  return;
-                }
-                
-                const stepCoords = step.geometry.coordinates;
-                if (stepCoords.length < 2) {
-                  return;
-                }
-                
-                // Create path from the step's detailed coordinates
-                const validCoordinates = stepCoords
-                  .filter(coord => 
-                    Array.isArray(coord) && 
-                    coord.length >= 2 && 
-                    typeof coord[0] === 'number' && 
-                    typeof coord[1] === 'number' &&
-                    Math.abs(coord[0]) <= 180 && 
-                    Math.abs(coord[1]) <= 90
-                  );
-                
-                if (validCoordinates.length < 2) {
-                  return;
-                }
-                
-                // Remove duplicate consecutive coordinates
-                const dedupedCoordinates = [];
-                validCoordinates.forEach((coord, i) => {
-                  if (i === 0 || 
-                      Math.abs(coord[0] - validCoordinates[i-1][0]) > 0.000001 ||
-                      Math.abs(coord[1] - validCoordinates[i-1][1]) > 0.000001) {
-                    dedupedCoordinates.push([coord[0], coord[1]]);
-                  }
-                });
-                
-                if (dedupedCoordinates.length >= 2) {
-                  processedRoutes.push({
-                    id: `route-${routeIndex}-step-${stepIndex}`,
-                    geometry: {
-                      type: "LineString",
-                      coordinates: dedupedCoordinates
-                    },
-                    step: step,
-                    color: getStepColor(step),
-                    weight: step.mode === 'walking' ? 3 : 5,
-                    opacity: 0.8,
-                    mode: step.mode
-                  });
-                }
+              processedRoutes.push({
+                id: route.id || `route-${routeIndex}`,
+                geometry: route.geometry,
+                steps: route.steps, // Keep all steps together as one complete route
+                color: getRouteColor(routeIndex),
+                weight: 5,
+                opacity: 0.8
               });
             } else {
               // Fallback to main route geometry if no steps
@@ -203,7 +162,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
                     type: "LineString",
                     coordinates: allCoordinates
                   },
-                  steps: route.steps,
+                  steps: route.steps || [],
                   color: route.color || getRouteColor(routeIndex),
                   weight: route.stroke_width || 5,
                   opacity: route.opacity || 0.8,
@@ -231,59 +190,20 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
             transitSummary: tt.transit_summary
           })),
           routes: (() => {
+            // Each route should correspond to one person's journey (and one travel time)
+            // Don't break routes into separate steps - keep them as complete journeys
             const processedRoutes = [];
             const mpRoutes = allRoutes[mpIndex] || [];
             
             mpRoutes.forEach((route, routeIndex) => {
-              // Process each step as a separate route segment
               if (route.steps && route.steps.length > 0) {
-                route.steps.forEach((step, stepIndex) => {
-                  if (!step.geometry || !step.geometry.coordinates || !Array.isArray(step.geometry.coordinates)) {
-                    return;
-                  }
-                  
-                  const stepCoords = step.geometry.coordinates;
-                  if (stepCoords.length < 2) {
-                    return;
-                  }
-                  
-                  const validCoordinates = stepCoords
-                    .filter(coord => 
-                      Array.isArray(coord) && 
-                      coord.length >= 2 && 
-                      typeof coord[0] === 'number' && 
-                      typeof coord[1] === 'number' &&
-                      Math.abs(coord[0]) <= 180 && 
-                      Math.abs(coord[1]) <= 90
-                    );
-                  
-                  if (validCoordinates.length < 2) {
-                    return;
-                  }
-                  
-                  const dedupedCoordinates = [];
-                  validCoordinates.forEach((coord, i) => {
-                    if (i === 0 || 
-                        Math.abs(coord[0] - validCoordinates[i-1][0]) > 0.000001 ||
-                        Math.abs(coord[1] - validCoordinates[i-1][1]) > 0.000001) {
-                      dedupedCoordinates.push([coord[0], coord[1]]);
-                    }
-                  });
-                  
-                  if (dedupedCoordinates.length >= 2) {
-                    processedRoutes.push({
-                      id: `route-${mpIndex}-${routeIndex}-step-${stepIndex}`,
-                      geometry: {
-                        type: "LineString",
-                        coordinates: dedupedCoordinates
-                      },
-                      step: step,
-                      color: getStepColor(step),
-                      weight: step.mode === 'walking' ? 3 : 5,
-                      opacity: 0.8,
-                      mode: step.mode
-                    });
-                  }
+                processedRoutes.push({
+                  id: route.id || `route-${mpIndex}-${routeIndex}`,
+                  geometry: route.geometry,
+                  steps: route.steps, // Keep all steps together as one complete route
+                  color: getRouteColor(routeIndex),
+                  weight: 5,
+                  opacity: 0.8
                 });
               } else {
                 // Fallback to main route geometry
@@ -305,7 +225,7 @@ export async function findOptimalMeetingPoint(addresses, options = {}) {
                       type: "LineString",
                       coordinates: allCoordinates
                     },
-                    steps: route.steps,
+                    steps: route.steps || [],
                     color: route.color || getRouteColor(routeIndex),
                     weight: route.stroke_width || 5,
                     opacity: route.opacity || 0.8,
@@ -368,18 +288,7 @@ function getRouteColor(index) {
   return colors[index % colors.length];
 }
 
-function getStepColor(step) {
-  // Color based on transport mode - matching SvelteKit implementation
-  if (step.mode === 'walking') {
-    return '#059669'; // Darker emerald for walking
-  } else if (step.mode === 'transit') {
-    // Use transit line color if available, otherwise purple
-    return step.transit_details?.line?.color || '#7C3AED';
-  } else if (step.mode === 'driving') {
-    return '#2563EB'; // Darker blue for driving
-  }
-  return '#6366F1'; // Default indigo
-}
+
 
 /**
  * Find the geometric center of multiple coordinates

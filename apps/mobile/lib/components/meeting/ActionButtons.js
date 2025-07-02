@@ -49,6 +49,12 @@ const ActionButtons = ({ meetingPoint, onStartNewSearch, onCreateGroup }) => {
 
   return (
     <View style={styles.container}>
+      
+            {onStartNewSearch && (
+              <TouchableOpacity style={styles.primaryButton} onPress={onStartNewSearch}>
+                <Text style={styles.primaryButtonText}>New Search</Text>
+              </TouchableOpacity>
+            )}
       {/* Primary Actions */}
       <View style={styles.actionsContainer}>
         <TouchableOpacity style={styles.actionButton} onPress={handleOpenInMaps}>
@@ -58,16 +64,9 @@ const ActionButtons = ({ meetingPoint, onStartNewSearch, onCreateGroup }) => {
         
         <TouchableOpacity style={styles.actionButton} onPress={handleShareLocation}>
           <MaterialIcons name="share" size={18} color="#6366f1" />
-          <Text style={styles.actionButtonText}>Share Location</Text>
+          <Text style={styles.actionButtonText}>Share</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Secondary Actions */}
-      {onStartNewSearch && (
-        <TouchableOpacity style={styles.primaryButton} onPress={onStartNewSearch}>
-          <Text style={styles.primaryButtonText}>New Search</Text>
-        </TouchableOpacity>
-      )}
 
       {onCreateGroup && (
         <TouchableOpacity style={styles.groupButton} onPress={onCreateGroup}>

@@ -76,8 +76,8 @@ const AddressForm = ({
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Where would you like to meet?</Text>
-        <Text style={styles.subtitle}>Add at least 2 addresses to find the perfect meeting spot</Text>
+        <Text style={styles.title}>Where is everyone?</Text>
+        <Text style={styles.subtitle}>Add addresses and find your perfect meeting spot!</Text>
       </View>
       
       {/* Error Message */}
@@ -150,45 +150,35 @@ const AddressForm = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#8b5cf6',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.1)',
+    paddingVertical: 20,
+    paddingHorizontal: 0,
   },
   header: {
-    marginBottom: 16,
+    marginBottom: 24,
     alignItems: 'center',
+    paddingHorizontal: 16,
   },
   title: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b', // Darker slate
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 12,
-    color: '#64748b', // Slate
+    fontSize: 14,
+    color: '#6b7280',
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 20,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fef2f2',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    marginHorizontal: 16,
     borderLeftWidth: 4,
     borderLeftColor: '#f87171',
   },
@@ -202,16 +192,17 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   addressList: {
-    marginBottom: 16,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   addressItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   addressInputContainer: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 12,
   },
   removeButton: {
     backgroundColor: '#fef2f2',
@@ -232,48 +223,41 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   buttonContainer: {
-    gap: 10,
+    gap: 12,
+    paddingHorizontal: 16,
   },
   secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.15)',
-    shadowColor: '#8b5cf6',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderColor: '#e2e8f0',
   },
   buttonIcon: {
     marginRight: 6,
   },
   secondaryButtonText: {
-    color: '#475569', // Slate
-    fontSize: 14,
+    color: '#475569',
+    fontSize: 15,
     fontWeight: '600',
   },
   primaryButton: {
-    backgroundColor: '#6366f1', // Indigo
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    backgroundColor: '#6366f1',
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
     shadowColor: '#6366f1',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   primaryButtonContent: {
     flexDirection: 'row',
@@ -282,7 +266,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
   buttonDisabled: {
