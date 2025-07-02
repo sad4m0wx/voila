@@ -1,21 +1,58 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 
 const RouteDetails = ({ routes = [], travelTimes = [] }) => {
-  // Only log once for debugging (reduced noise)
-  if (routes.length > 0) {
-    console.log('🚗 RouteDetails received (condensed):', { 
-      routesCount: routes.length, 
-      travelTimesCount: travelTimes.length,
-      firstRouteStructure: routes[0] ? Object.keys(routes[0]) : [],
-      hasSteps: routes[0]?.steps ? 'yes' : 'no',
-      hasStep: routes[0]?.step ? 'yes' : 'no',
-      firstRouteKeys: routes[0] ? Object.keys(routes[0]) : [],
-      firstRouteSteps: routes[0]?.steps ? routes[0].steps.length : 'no steps',
-      firstRouteStep: routes[0]?.step ? 'has step' : 'no step'
-    });
-  }
+
+  const processedRoutes = useMemo(() => {
+    if (!Array.isArray(routes) || routes.length === 0) {
+      return [];
+    }
+
+    // If we have travel times, pair them with routes
+    if (Array.isArray(travelTimes) && travelTimes.length > 0) {
+      return travelTimes.map((travelTime, index) => {
+        // Calculate how many routes per travel time
+        const routesPerTravelTime = Math.ceil(routes.length / travelTimes.length);
+        const startIndex = index * routesPerTravelTime;
+        const endIndex = Math.min(startIndex + routesPerTravelTime, routes.length);
+        
+        // Get routes for this travel time
+        const routesForThisTime = routes.slice(startIndex, endIndex);
+        const steps = routesForThisTime.flatMap(route => {
+          if (Array.isArray(route?.steps)) {
+            return route.steps;
+          } else if (route?.step) {
+            return [route.step];
+          }
+          return [];
+        });
+
+        return {
+          id: `route-${index}`,
+          travelTime,
+          steps: steps.filter(step => step && step.mode) // Filter out invalid steps
+        };
+      });
+    }
+
+    return routes
+      .map((route, index) => {
+        const steps = [];
+        if (Array.isArray(route?.steps)) {
+          steps.push(...route.steps);
+        } else if (route?.step) {
+          steps.push(route.step);
+        }
+
+        return {
+          id: `route-${index}`,
+          travelTime: null,
+          steps: steps.filter(step => step && step.mode)
+        };
+      })
+      .filter(route => route.steps.length > 0); // Only include routes with valid steps
+  }, [routes, travelTimes]);
 
   // Helper function to get vehicle icon
   const getVehicleIcon = (vehicleType, mode) => {
@@ -24,20 +61,16 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
     }
     
     if (mode === 'transit') {
-      switch(vehicleType?.toLowerCase()) {
-        case 'subway':
-        case 'metro':
-          return <MaterialIcons name="subway" size={12} color="#334155" />;
-        case 'bus':
-          return <MaterialIcons name="directions-bus" size={12} color="#334155" />;
-        case 'tram':
-          return <MaterialIcons name="tram" size={12} color="#334155" />;
-        case 'train':
-        case 'rail':
-          return <MaterialIcons name="train" size={12} color="#334155" />;
-        default:
-          return <MaterialIcons name="directions-transit" size={12} color="#334155" />;
-      }
+      const iconMap = {
+        'subway': 'subway',
+        'metro': 'subway', 
+        'bus': 'directions-bus',
+        'tram': 'tram',
+        'train': 'train',
+        'rail': 'train'
+      };
+      const iconName = iconMap[vehicleType?.toLowerCase()] || 'directions-transit';
+      return <MaterialIcons name={iconName} size={12} color="#334155" />;
     }
     
     return <MaterialIcons name="directions" size={12} color="#334155" />;
@@ -45,6 +78,7 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
   
   // Helper function to format duration
   const formatDuration = (seconds) => {
+    if (!seconds || isNaN(seconds)) return '0 min';
     const minutes = Math.ceil(seconds / 60);
     return minutes === 1 ? '1 min' : `${minutes} mins`;
   };
@@ -53,72 +87,40 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
   const getModeColor = (mode, vehicleType) => {
     if (mode === 'walking') return { backgroundColor: '#dcfce7', color: '#166534', borderColor: '#bbf7d0' };
     if (mode === 'transit') {
-      switch(vehicleType?.toLowerCase()) {
-        case 'subway':
-        case 'metro':
-          return { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#bfdbfe' };
-        case 'bus':
-          return { backgroundColor: '#fed7aa', color: '#c2410c', borderColor: '#fdba74' };
-        case 'tram':
-          return { backgroundColor: '#e9d5ff', color: '#7c2d12', borderColor: '#d8b4fe' };
-        case 'train':
-        case 'rail':
-          return { backgroundColor: '#fecaca', color: '#b91c1c', borderColor: '#fca5a5' };
-        default:
-          return { backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#c7d2fe' };
-      }
+      const colorMap = {
+        'subway': { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#bfdbfe' },
+        'metro': { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#bfdbfe' },
+        'bus': { backgroundColor: '#fed7aa', color: '#c2410c', borderColor: '#fdba74' },
+        'tram': { backgroundColor: '#e9d5ff', color: '#7c2d12', borderColor: '#d8b4fe' },
+        'train': { backgroundColor: '#fecaca', color: '#b91c1c', borderColor: '#fca5a5' },
+        'rail': { backgroundColor: '#fecaca', color: '#b91c1c', borderColor: '#fca5a5' }
+      };
+      return colorMap[vehicleType?.toLowerCase()] || { backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#c7d2fe' };
     }
     return { backgroundColor: '#f3f4f6', color: '#374151', borderColor: '#d1d5db' };
   };
   
-  // Routes are already in the correct format, just map them to include travel times
-  const routesWithTravelTime = [];
-  
-  // Group steps into routes based on travel times
-  let currentRouteSteps = [];
-  let currentRouteIndex = 0;
-  
-  routes.forEach((route, index) => {
-    // If this route has steps, add them to current route
-    if (route.steps && route.steps.length > 0) {
-      currentRouteSteps.push(...route.steps);
-    } else if (route.step) {
-      // Handle single step format
-      currentRouteSteps.push(route.step);
-    }
-    
-    // Check if we should create a new route (every routesPerTravelTime items)
-    const routesPerTravelTime = Math.ceil(routes.length / travelTimes.length);
-    if ((index + 1) % routesPerTravelTime === 0 || index === routes.length - 1) {
-      if (currentRouteSteps.length > 0) {
-        routesWithTravelTime.push({
-          id: `route-${currentRouteIndex}`,
-          steps: currentRouteSteps,
-          travelTime: travelTimes[currentRouteIndex] || null
-        });
-        currentRouteSteps = [];
-        currentRouteIndex++;
-      }
-    }
-  });
-
-  if (routesWithTravelTime.length === 0) {
-    return null;
+  if (processedRoutes.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No route information available</Text>
+      </View>
+    );
   }
 
   return (
     <View style={styles.container}>
-      {routesWithTravelTime.map((route, index) => (
-        <View key={`route-${route.id || index}`} style={styles.routeContainer}>
+      {processedRoutes.map((route, routeIndex) => (
+        <View key={route.id} style={styles.routeContainer}>
           {/* Route Header */}
           <View style={styles.routeHeader}>
             <View style={styles.routeHeaderLeft}>
               <View style={styles.routeNumber}>
-                <Text style={styles.routeNumberText}>{index + 1}</Text>
+                <Text style={styles.routeNumberText}>{routeIndex + 1}</Text>
               </View>
               <View style={styles.routeInfo}>
                 <Text style={styles.routeAddress} numberOfLines={1}>
-                  {route.travelTime?.address || `Route ${index + 1}`}
+                  {route.travelTime?.address || `Route ${routeIndex + 1}`}
                 </Text>
               </View>
             </View>
@@ -133,86 +135,78 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
           </View>
           
           {/* Route Steps */}
-          {route.steps && route.steps.length > 0 && (
-            <View style={styles.stepsContainer}>
-              {route.steps.map((step, stepIndex) => {
-                const modeColors = getModeColor(step.mode, step.transit_details?.line?.vehicle_type);
-                
-                return (
-                  <View key={`step-${stepIndex}`} style={styles.stepContainer}>
-                    {/* Step Icon */}
-                    <View style={[styles.stepIcon, modeColors]}>
-                      {getVehicleIcon(step.transit_details?.line?.vehicle_type, step.mode)}
+          <View style={styles.stepsContainer}>
+            {route.steps.map((step, stepIndex) => {
+              const modeColors = getModeColor(step.mode, step.transit_details?.line?.vehicle_type);
+              
+              return (
+                <View key={`step-${stepIndex}`} style={styles.stepContainer}>
+                  {/* Step Icon */}
+                  <View style={[styles.stepIcon, modeColors]}>
+                    {getVehicleIcon(step.transit_details?.line?.vehicle_type, step.mode)}
+                  </View>
+                  
+                  {/* Step Details */}
+                  <View style={styles.stepDetails}>
+                    <View style={styles.stepHeader}>
+                      {step.mode === 'transit' && step.transit_details ? (
+                        <View style={styles.transitInfo}>
+                          <Text style={styles.transitLine}>
+                            {step.transit_details.line?.short_name || step.transit_details.line?.name || 'Transit'}
+                          </Text>
+                          <View style={styles.vehicleTypeBadge}>
+                            <Text style={styles.vehicleTypeText}>
+                              {step.transit_details.line?.vehicle_type || 'transit'}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.stepMode}>
+                          {step.mode.charAt(0).toUpperCase() + step.mode.slice(1)}
+                        </Text>
+                      )}
+                      <Text style={styles.stepDuration}>
+                        {formatDuration(step.duration)}
+                      </Text>
                     </View>
                     
-                    {/* Step Details */}
-                    <View style={styles.stepDetails}>
-                      <View style={styles.stepHeader}>
-                        {step.mode === 'transit' && step.transit_details ? (
-                          <View style={styles.transitInfo}>
-                            <Text style={styles.transitLine}>
-                              {step.transit_details.line.short_name || step.transit_details.line.name}
-                            </Text>
-                            <View style={styles.vehicleTypeBadge}>
-                              <Text style={styles.vehicleTypeText}>
-                                {step.transit_details.line.vehicle_type}
+                    {step.mode === 'transit' && step.transit_details && (
+                      <View style={styles.transitDetails}>
+                        {step.transit_details.departure_stop && step.transit_details.arrival_stop && (
+                          <>
+                            <View style={styles.stopInfo}>
+                              <View style={styles.stopDot} />
+                              <Text style={styles.stopLabel}>From:</Text>
+                              <Text style={styles.stopName} numberOfLines={1}>
+                                {step.transit_details.departure_stop}
                               </Text>
                             </View>
-                          </View>
-                        ) : (
-                          <Text style={styles.stepMode}>
-                            {step.mode.charAt(0).toUpperCase() + step.mode.slice(1)}
+                            <View style={styles.stopInfo}>
+                              <View style={[styles.stopDot, styles.stopDotRed]} />
+                              <Text style={styles.stopLabel}>To:</Text>
+                              <Text style={styles.stopName} numberOfLines={1}>
+                                {step.transit_details.arrival_stop}
+                              </Text>
+                            </View>
+                          </>
+                        )}
+                        {step.transit_details.num_stops > 0 && (
+                          <Text style={styles.stopsCount}>
+                            <Text style={styles.stopsCountNumber}>{step.transit_details.num_stops}</Text> stops
                           </Text>
                         )}
-                        <Text style={styles.stepDuration}>
-                          {formatDuration(step.duration)}
-                        </Text>
                       </View>
-                      
-                      {step.mode === 'transit' && step.transit_details && (
-                        <View style={styles.transitDetails}>
-                          {step.transit_details.departure_stop && step.transit_details.arrival_stop && (
-                            <>
-                              <View style={styles.stopInfo}>
-                                <View style={styles.stopDot} />
-                                <Text style={styles.stopLabel}>From:</Text>
-                                <Text style={styles.stopName} numberOfLines={1}>
-                                  {step.transit_details.departure_stop}
-                                </Text>
-                              </View>
-                              <View style={styles.stopInfo}>
-                                <View style={[styles.stopDot, styles.stopDotRed]} />
-                                <Text style={styles.stopLabel}>To:</Text>
-                                <Text style={styles.stopName} numberOfLines={1}>
-                                  {step.transit_details.arrival_stop}
-                                </Text>
-                              </View>
-                            </>
-                          )}
-                          {step.transit_details.num_stops > 0 && (
-                            <Text style={styles.stopsCount}>
-                              <Text style={styles.stopsCountNumber}>{step.transit_details.num_stops}</Text> stops
-                            </Text>
-                          )}
-                        </View>
-                      )}
-                    </View>
-                    
-                    {/* Connector line (except for last step) */}
-                    {stepIndex < route.steps.length - 1 && (
-                      <View style={styles.stepConnector} />
                     )}
                   </View>
-                );
-              })}
-            </View>
-          )}
-          
-          {(!route.steps || route.steps.length === 0) && (
-            <View style={styles.noStepsContainer}>
-              <Text style={styles.noStepsText}>No detailed route information available</Text>
-            </View>
-          )}
+                  
+                  {/* Connector line (except for last step) */}
+                  {stepIndex < route.steps.length - 1 && (
+                    <View style={styles.stepConnector} />
+                  )}
+                </View>
+              );
+            })}
+          </View>
         </View>
       ))}
     </View>
@@ -222,6 +216,15 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
 const styles = StyleSheet.create({
   container: {
     gap: 12,
+  },
+  emptyContainer: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
   },
   routeContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -382,24 +385,12 @@ const styles = StyleSheet.create({
   stopsCountNumber: {
     fontWeight: '600',
   },
-  stepDistance: {
-    fontSize: 10,
-    color: '#64748b', // Slate
-  },
   stepConnector: {
     width: 1,
     height: 12,
     backgroundColor: 'rgba(139, 92, 246, 0.2)',
     marginLeft: 14,
     marginVertical: -6,
-  },
-  noStepsContainer: {
-    padding: 12,
-    alignItems: 'center',
-  },
-  noStepsText: {
-    fontSize: 12,
-    color: '#64748b', // Slate
   },
 });
 

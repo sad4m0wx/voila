@@ -16,7 +16,7 @@ import {
   defaultMapCenter, 
   defaultMapZoom,
   AddressForm,
-  MeetingPointDisplay,
+  MeetingPointResults,
   MapContainer,
   MetroBackground,
   LoadingIndicator,
@@ -334,14 +334,14 @@ export default function HomeScreen() {
 
             {/* Results or Address Form */}
             {showResults && meetingPoint ? (
-              <MeetingPointDisplay
+              <MeetingPointResults
                 meetingPoint={meetingPoint}
-                routes={routes}
                 meetingPoints={meetingPoints}
                 currentMeetingPointIndex={currentMeetingPointIndex}
-                onMeetingPointChange={handleMeetingPointChange}
+                setCurrentMeetingPointIndex={handleMeetingPointChange}
                 onStartNewSearch={handleStartNewSearch}
                 onCreateGroup={handleSaveLocation}
+                mode="main"
               />
             ) : (
               <AddressForm

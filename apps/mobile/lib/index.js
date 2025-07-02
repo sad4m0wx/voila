@@ -26,4 +26,4 @@ export {
 export { LoadingIndicator } from './components/utils';
 export { MetroBackground } from './components/core';
 export { AddressInput, MapContainer } from './components/maps';
-export { AddressForm, MeetingPointDisplay } from './components/meeting'; 
+export { AddressForm, MeetingPointDisplay, MeetingPointResults } from './components/meeting'; 

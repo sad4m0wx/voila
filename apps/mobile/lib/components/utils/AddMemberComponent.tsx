@@ -387,7 +387,7 @@ export function AddMemberComponent({
         <MaterialIcons name="place" size={20} color="#6366f1" />
         <Text style={styles.customAddressToggleText}>Add Custom Location</Text>
         <MaterialIcons 
-          name={showCustomAddressInput ? "expand-less" : "expand-more"} 
+          name={showCustomAddressInput ? "expand-less" : "add"} 
           size={20} 
           color="#6366f1" 
         />
