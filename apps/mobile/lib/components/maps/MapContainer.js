@@ -109,14 +109,6 @@ const MapContainer = ({
   };
 
   const renderRoute = (route, index) => {
-    // Reduced logging to essential info only
-    if (index === 0) {
-      console.log(`🗺️ Map rendering ${routes.length} route segments. First segment:`, {
-        color: route.color,
-        mode: route.mode,
-        coordinatesLength: route.geometry?.coordinates?.length || 0
-      });
-    }
 
     if (!route.geometry || !route.geometry.coordinates || route.geometry.coordinates.length < 2) {
       return null;
@@ -145,16 +137,6 @@ const MapContainer = ({
     // Determine line style based on mode
     const strokeWidth = route.weight || (route.mode === 'walking' ? 3 : 5);
     const strokeColor = route.color || '#6366f1';
-    
-    // Debug map colors for first few routes
-    if (index < 3) {
-      console.log(`🎨 Map route ${index} color:`, {
-        routeColor: route.color,
-        finalColor: strokeColor,
-        mode: route.mode,
-        routeId: route.id
-      });
-    }
 
     return (
       <Polyline

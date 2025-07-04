@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,8 @@ import {
   ScrollView,
   Alert,
   Dimensions,
-  Platform
+  Platform,
+  Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
@@ -58,10 +59,72 @@ export default function HomeScreen() {
   const [mapExpanded, setMapExpanded] = useState(false);
   const [animateToResults, setAnimateToResults] = useState(false);
 
+  // Animated values for smooth map height transitions
+  const mapHeightAnim = useRef(new Animated.Value(320)).current;
+  const scrollOffset = useRef(0).current;
+
   // Venue options
   const [showVenues, setShowVenues] = useState(true);
   const [venueTypes, setVenueTypes] = useState(['restaurant']);
   const [venueRadius, setVenueRadius] = useState(500);
+
+  // Calculate base map height based on state
+  const getBaseMapHeight = () => {
+    if (mapExpanded) return 360;
+    if (showResults) return 280;
+    return 320;
+  };
+
+  // Animate map height to target value
+  const animateMapHeight = (targetHeight, duration = 300) => {
+    Animated.timing(mapHeightAnim, {
+      toValue: targetHeight,
+      duration: duration,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  // Handle scroll events to adjust map height smoothly
+  const handleScroll = (event) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    const scrollThreshold = 50;
+    const maxReduction = 120;
+    
+    // Don't reduce height if map is manually expanded
+    if (mapExpanded) return;
+    
+    const baseHeight = getBaseMapHeight();
+    let targetHeight = baseHeight;
+    
+    if (scrollY > scrollThreshold) {
+      const reduction = Math.min(scrollY - scrollThreshold, maxReduction);
+      targetHeight = Math.max(baseHeight - reduction, 160);
+    }
+    
+    // Use direct setValue for smooth scroll-based changes (no animation lag)
+    mapHeightAnim.setValue(targetHeight);
+  };
+
+  // Handle map expand/collapse with smooth animation
+  const toggleMapExpanded = () => {
+    setMapExpanded(!mapExpanded);
+    const newBaseHeight = !mapExpanded ? 360 : (showResults ? 280 : 320);
+    animateMapHeight(newBaseHeight);
+  };
+
+  // Update map height when showResults changes
+  useEffect(() => {
+    if (!mapExpanded) {
+      const newHeight = getBaseMapHeight();
+      animateMapHeight(newHeight);
+    }
+  }, [showResults, mapExpanded]);
+
+  // Initialize map height on component mount
+  useEffect(() => {
+    const initialHeight = getBaseMapHeight();
+    mapHeightAnim.setValue(initialHeight);
+  }, []);
 
   // Find meeting point with real API
   const handleFindMeetingPoint = async () => {
@@ -155,10 +218,6 @@ export default function HomeScreen() {
     setMapBounds(boundsData.bounds);
   };
 
-  const toggleMapExpanded = () => {
-    setMapExpanded(!mapExpanded);
-  };
-
   // Create map markers for all locations
   const createMapMarkers = () => {
     const markers = [];
@@ -218,6 +277,8 @@ export default function HomeScreen() {
     setShowResults(false);
     setAnimateToResults(false);
     setMapExpanded(false);
+    // Reset map height to default
+    animateMapHeight(320);
   };
 
   // Handle save location
@@ -238,10 +299,10 @@ export default function HomeScreen() {
 
       <View style={styles.mainContent}>
         {/* MAP AT TOP - Full Screen */}
-        <View 
+        <Animated.View 
           style={[
             styles.mapArea,
-            { height: mapExpanded ? 360 : showResults ? 280 : 320 }
+            { height: mapHeightAnim }
           ]}
         >
             {/* Map Header with Controls */}
@@ -289,7 +350,7 @@ export default function HomeScreen() {
                 onBoundsChange={handleMapBounds}
               />
             </View>
-          </View>
+          </Animated.View>
 
           {/* CONTENT BELOW MAP */}
           <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
@@ -297,6 +358,8 @@ export default function HomeScreen() {
               style={styles.contentScrollView} 
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
             >
             {/* Enhanced Mobile Loading State */}
             {isCalculating && (
