@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
-  Text,
   Animated,
   StyleSheet,
   PanResponder,
@@ -14,9 +13,8 @@ const SMALL_TRACK_HEIGHT = 44;
 const SMALL_THUMB_SIZE = 36;
 
 export default function SlideToConfirm({
-  text = "Slide to confirm attendance",
-  confirmText = "Confirmed!",
-  cancelText = "Slide to cancel attendance", 
+  confirmText = "Attending",
+  cancelText = "Not Attending", 
   onConfirm,
   onCancel,
   isConfirmed = false,
@@ -44,6 +42,18 @@ export default function SlideToConfirm({
   const actualOnCancel = onAttendanceChange ? () => onAttendanceChange(false) : onCancel;
   
   const maxTranslation = Math.max(0, trackWidth - thumbSize - 8); // 4px padding on each side
+
+  // Initialize position based on current state
+  useEffect(() => {
+    if (trackWidth > 0 && !isDragging && !completed) {
+      const targetPosition = actualIsConfirmed ? maxTranslation : 0;
+      Animated.timing(translateX, {
+        toValue: targetPosition,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [actualIsConfirmed, trackWidth, maxTranslation, isDragging, completed]);
 
   // Track velocity for inertia
   const updateVelocity = (gestureState) => {
@@ -84,11 +94,15 @@ export default function SlideToConfirm({
       // Update velocity for inertia calculation
       updateVelocity(gestureState);
       
-      const newValue = Math.max(0, Math.min(gestureState.dx, maxTranslation));
+      // Calculate new position based on current state and gesture
+      const startPosition = actualIsConfirmed ? maxTranslation : 0;
+      const newValue = Math.max(0, Math.min(startPosition + gestureState.dx, maxTranslation));
       translateX.setValue(newValue);
       
       // Check if we've reached the threshold for auto-completion
-      if (newValue >= maxTranslation * 0.9) {
+      const threshold = maxTranslation * 0.9;
+      if ((actualIsConfirmed && newValue <= maxTranslation * 0.1) || 
+          (!actualIsConfirmed && newValue >= threshold)) {
         handleComplete();
       }
     },
@@ -98,28 +112,31 @@ export default function SlideToConfirm({
       
       setIsDragging(false);
       
-      const currentValue = gestureState.dx;
+      const startPosition = actualIsConfirmed ? maxTranslation : 0;
+      const currentValue = startPosition + gestureState.dx;
       const clampedValue = Math.max(0, Math.min(currentValue, maxTranslation));
       
       // Calculate where we should end up based on position, velocity, and thresholds
-      let targetValue = 0;
+      let targetValue = startPosition; // Default to current state position
       
       // Check completion threshold
-      if (clampedValue >= maxTranslation * 0.7) {
-        targetValue = maxTranslation;
-      } else if (clampedValue >= maxTranslation * 0.3 && velocity.x > 500) {
-        // Fast swipe can trigger completion even if not at threshold
-        targetValue = maxTranslation;
-      } else {
-        // Return to start, with inertia
-        const inertiaDistance = velocity.x * 0.1; // Reduce inertia factor
-        targetValue = Math.max(0, Math.min(clampedValue + inertiaDistance, maxTranslation * 0.6));
-        
-        // If inertia would put us past the threshold, complete the action
-        if (targetValue >= maxTranslation * 0.7) {
-          targetValue = maxTranslation;
+      const midPoint = maxTranslation * 0.5;
+      
+      if (actualIsConfirmed) {
+        // Currently attending - check if sliding left to cancel
+        if (clampedValue <= maxTranslation * 0.3 || 
+            (clampedValue <= midPoint && velocity.x < -500)) {
+          targetValue = 0; // Cancel attendance
         } else {
-          targetValue = 0; // Otherwise return to start
+          targetValue = maxTranslation; // Stay attending
+        }
+      } else {
+        // Currently not attending - check if sliding right to confirm
+        if (clampedValue >= maxTranslation * 0.7 || 
+            (clampedValue >= midPoint && velocity.x > 500)) {
+          targetValue = maxTranslation; // Confirm attendance
+        } else {
+          targetValue = 0; // Stay not attending
         }
       }
       
@@ -132,7 +149,7 @@ export default function SlideToConfirm({
         duration,
         useNativeDriver: false,
       }).start(() => {
-        if (targetValue >= maxTranslation * 0.9) {
+        if (targetValue !== startPosition) {
           handleComplete();
         }
       });
@@ -146,9 +163,12 @@ export default function SlideToConfirm({
     
     setCompleted(true);
     
-    // Ensure we're at the end position
+    // Determine target position and action
+    const targetPosition = actualIsConfirmed ? 0 : maxTranslation;
+    
+    // Ensure we're at the target position
     Animated.timing(translateX, {
-      toValue: maxTranslation,
+      toValue: targetPosition,
       duration: 150,
       useNativeDriver: false,
     }).start(() => {
@@ -160,15 +180,10 @@ export default function SlideToConfirm({
           actualOnConfirm && actualOnConfirm();
         }
         
-        // Reset after action
+        // Reset completed state
         setTimeout(() => {
           setCompleted(false);
-          Animated.timing(translateX, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: false,
-          }).start();
-        }, 500);
+        }, 200);
       }, 200);
     });
   };
@@ -178,25 +193,15 @@ export default function SlideToConfirm({
     setTrackWidth(width);
   };
 
-  // Reset position when isConfirmed changes
-  useEffect(() => {
-    if (!isDragging && !completed) {
-      Animated.timing(translateX, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [actualIsConfirmed]);
-
-  const displayText = label || (actualIsConfirmed ? cancelText : text);
+  // Display current state instead of action
+  const displayText = label || (actualIsConfirmed ? confirmText : cancelText);
   const currentText = completed ? (actualIsConfirmed ? "Cancelling..." : "Confirming...") : displayText;
-  const currentIcon = actualIsConfirmed ? "close" : "chevron-right";
-  const trackColor = actualIsConfirmed ? "#fef2f2" : "#f8fafc";
-  const fillColor = actualIsConfirmed ? "#fee2e2" : "#e0e7ff";
-  const thumbBorderColor = actualIsConfirmed ? "#fecaca" : "#c7d2fe";
-  const iconColor = actualIsConfirmed ? "#ef4444" : "#6366f1";
-  const textColor = actualIsConfirmed ? "#991b1b" : "#6b7280";
+  const currentIcon = actualIsConfirmed ? "check" : "close";
+  const trackColor = actualIsConfirmed ? "#f0f9ff" : "#fef2f2";
+  const fillColor = actualIsConfirmed ? "#dbeafe" : "#fee2e2";
+  const thumbBorderColor = actualIsConfirmed ? "#93c5fd" : "#fecaca";
+  const iconColor = actualIsConfirmed ? "#2563eb" : "#ef4444";
+  const textColor = actualIsConfirmed ? "#1e40af" : "#991b1b";
 
   return (
     <View style={[styles.container, style]}>
@@ -268,7 +273,7 @@ const styles = StyleSheet.create({
   },
   track: {
     width: '100%',
-    maxWidth: 400, // Prevent it from being too wide on tablets
+    maxWidth: 300, 
     position: 'relative',
     overflow: 'hidden',
     borderWidth: 1,
