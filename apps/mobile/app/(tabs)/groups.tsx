@@ -38,8 +38,6 @@ interface GroupCardProps {
 }
 
 function GroupCard({ group, onPress }: GroupCardProps) {
-  const memberCount = 3; // This would come from the group data in a real implementation
-
   return (
     <TouchableOpacity style={styles.groupCard} onPress={onPress}>
       <View style={styles.groupCardHeader}>
@@ -50,15 +48,6 @@ function GroupCard({ group, onPress }: GroupCardProps) {
           <Text style={styles.groupName}>{group.name}</Text>
         </View>
         <MaterialIcons name="chevron-right" size={20} color="#9ca3af" />
-      </View>
-      <View style={styles.groupCardFooter}>
-        <View style={styles.memberInfo}>
-          <MaterialIcons name="people" size={16} color="#6b7280" />
-          <Text style={styles.memberCount}>{memberCount} members</Text>
-        </View>
-        <Text style={styles.groupDate}>
-          Created {new Date(group.created_at).toLocaleDateString()}
-        </Text>
       </View>
     </TouchableOpacity>
   );
