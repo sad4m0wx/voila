@@ -1,13 +1,21 @@
 import React from 'react';
 import { AuthProvider } from '../contexts/AuthContext';
 import { GroupsProvider } from '../contexts/GroupsContext';
+import { useAppInitialization } from '../hooks/useAppInitialization';
+
+const AppInitializer = ({ children }) => {
+  useAppInitialization();
+  return children;
+};
 
 const AppProviders = ({ children }) => {
   return (
     <AuthProvider>
-        <GroupsProvider>
+      <GroupsProvider>
+        <AppInitializer>
           {children}
-        </GroupsProvider>
+        </AppInitializer>
+      </GroupsProvider>
     </AuthProvider>
   );
 };

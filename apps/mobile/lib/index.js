@@ -11,6 +11,9 @@ export * from './components/auth';
 // Utils exports
 export * from './utils/phoneUtils';
 
+// Hooks exports
+export { useAppInitialization } from './hooks/useAppInitialization';
+
 // Services
 export { findOptimalMeetingPoint } from './services/meetingPointApi';
 export { googleMapsService } from './services/map';
