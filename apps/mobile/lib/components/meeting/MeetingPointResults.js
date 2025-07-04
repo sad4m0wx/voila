@@ -39,8 +39,7 @@ const MeetingPointResults = ({
   const venues = currentMP.venues || [];
 
   const renderMeetingPoint = ({ item, index }) => {
-    const actualIndex = index % allMeetingPoints.length;
-    const mp = allMeetingPoints[actualIndex];
+    const mp = allMeetingPoints[index];
     
     return (
       <View style={styles.meetingPointSlide}>
@@ -95,13 +94,13 @@ const MeetingPointResults = ({
 
           <FlatList
             ref={flatListRef}
-            data={hasMultiple ? [...allMeetingPoints, ...allMeetingPoints, ...allMeetingPoints] : allMeetingPoints}
+            data={allMeetingPoints}
             renderItem={renderMeetingPoint}
-            keyExtractor={(item, index) => `meeting-point-${index}-${index % allMeetingPoints.length}`}
+            keyExtractor={(item, index) => `meeting-point-${index}`}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            initialScrollIndex={hasMultiple ? allMeetingPoints.length + currentMeetingPointIndex : currentMeetingPointIndex}
+            initialScrollIndex={currentMeetingPointIndex}
             getItemLayout={(data, index) => ({
               length: screenWidth,
               offset: screenWidth * index,
@@ -111,18 +110,9 @@ const MeetingPointResults = ({
               if (!hasMultiple || !setCurrentMeetingPointIndex) return;
               
               const index = Math.round(event.nativeEvent.contentOffset.x / screenWidth);
-              const actualIndex = index % allMeetingPoints.length;
-              setCurrentMeetingPointIndex(actualIndex);
-              
-              // Reset to middle section if we're at the edges
-              setTimeout(() => {
-                if (index < allMeetingPoints.length || index >= allMeetingPoints.length * 2) {
-                  flatListRef.current?.scrollToIndex({
-                    index: allMeetingPoints.length + actualIndex,
-                    animated: false
-                  });
-                }
-              }, 100);
+              // Ensure index stays within bounds
+              const boundedIndex = Math.max(0, Math.min(index, allMeetingPoints.length - 1));
+              setCurrentMeetingPointIndex(boundedIndex);
             }}
             style={styles.meetingPointsList}
             snapToAlignment="start"
