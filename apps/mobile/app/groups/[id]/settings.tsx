@@ -41,6 +41,7 @@ export default function GroupSettingsScreen() {
   const [groupName, setGroupName] = useState(currentGroup?.name || '');
   const [groupDescription, setGroupDescription] = useState('');
   const [showAddMember, setShowAddMember] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Load group data when component mounts
   useEffect(() => {
@@ -210,7 +211,9 @@ export default function GroupSettingsScreen() {
             try {
               const success = await resetGroupAttendance(currentGroup.id);
               if (success) {
-                Alert.alert('Success', 'All attendance has been reset');
+                setSuccessMessage('All attendance has been reset');
+                // Clear success message after 3 seconds
+                setTimeout(() => setSuccessMessage(''), 3000);
               }
             } catch (error) {
               console.error('Error resetting attendance:', error);
@@ -290,6 +293,15 @@ export default function GroupSettingsScreen() {
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={clearError}>
             <MaterialIcons name="close" size={20} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {successMessage && (
+        <View style={styles.successContainer}>
+          <Text style={styles.successText}>{successMessage}</Text>
+          <TouchableOpacity onPress={() => setSuccessMessage('')}>
+            <MaterialIcons name="close" size={20} color="#10b981" />
           </TouchableOpacity>
         </View>
       )}
@@ -434,6 +446,24 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#ef4444',
+    fontSize: 14,
+    flex: 1,
+  },
+  successContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  successText: {
+    color: '#10b981',
     fontSize: 14,
     flex: 1,
   },
