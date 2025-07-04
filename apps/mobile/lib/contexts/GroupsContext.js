@@ -385,8 +385,8 @@ export function GroupsProvider({ children }) {
     }
   }, [user]);
 
-  // Update attendance
-  const updateMyAttendance = useCallback(async (groupId, isAttending, location = null) => {
+  // Update attendance for any user (requires user ID)
+  const updateUserAttendance = useCallback(async (groupId, userId, isAttending, location = null) => {
     if (!user) {
       dispatch({
         type: GroupsActionTypes.SET_ERROR,
@@ -396,14 +396,14 @@ export function GroupsProvider({ children }) {
     }
 
     try {
-      await groupsService.updateAttendance(groupId, user.uid, isAttending, location);
+      await groupsService.updateAttendance(groupId, userId, isAttending, location);
       
       // Reload group members to get updated attendance data
       await loadGroupMembers(groupId);
       
       return true;
     } catch (error) {
-      console.error('Error updating attendance:', error);
+      console.error('Error updating user attendance:', error);
       dispatch({
         type: GroupsActionTypes.SET_ERROR,
         payload: error.message
@@ -411,6 +411,19 @@ export function GroupsProvider({ children }) {
       return false;
     }
   }, [user, loadGroupMembers]);
+
+  // Update attendance for current user (convenience function)
+  const updateMyAttendance = useCallback(async (groupId, isAttending, location = null) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    return updateUserAttendance(groupId, user.uid, isAttending, location);
+  }, [user, updateUserAttendance]);
 
   // Get current user's attendance for a group
   const getMyAttendance = useCallback(async (groupId) => {
@@ -637,6 +650,7 @@ export function GroupsProvider({ children }) {
     acceptInvite,
     declineInvite,
     updateMyAttendance,
+    updateUserAttendance,
     getMyAttendance,
     resetGroupAttendance,
     searchUsers,

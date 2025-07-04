@@ -14,6 +14,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth } from '../../../lib/contexts/AuthContext';
 import { useGroups } from '../../../lib/contexts/GroupsContext';
 import { AddressInput } from '../../../lib/components/maps';
+import SlideToConfirm from '../../../lib/components/utils/SlideToConfirm';
 
 
 
@@ -30,10 +31,13 @@ export default function GroupSettingsScreen() {
     updateGroupInfo,
     addGroupMember,
     removeGroupMember,
-    removeCustomLocationFromGroup,
     resetGroupAttendance,
     clearError,
     addCustomLocationToGroup,
+    updateMyAttendance,
+    updateUserAttendance,
+    updateCustomLocationAttendance,
+    removeCustomLocationFromGroup,
   } = useGroups();
 
 
@@ -345,7 +349,6 @@ export default function GroupSettingsScreen() {
                   } else {
                     // Handle address selection - add as custom location
                     const customAddress = {
-                      id: `custom-address-${Date.now()}`,
                       display_name: selectedPlace.address.split(',')[0] || 'Custom Location',
                       address: selectedPlace.address,
                       coordinates: [selectedPlace.location.lng, selectedPlace.location.lat],
@@ -357,8 +360,9 @@ export default function GroupSettingsScreen() {
                     // Add custom address to group
                     try {
                       if (currentGroup) {
-                        await addCustomLocationToGroup(currentGroup.id, customAddress);
-                        console.log('Custom address added:', customAddress);
+                        const dbLocation = await addCustomLocationToGroup(currentGroup.id, customAddress);
+                        console.log('Custom address added:', dbLocation);
+                        // Reload members to get the proper database ID and updated list
                         await loadGroupMembers(currentGroup.id);
                       }
                     } catch (error) {
@@ -401,22 +405,104 @@ export default function GroupSettingsScreen() {
                       {member.display_name || 'Unknown User'}
                       {member.is_me && ' (You)'}
                     </Text>
-                    <Text style={styles.memberRole}>
-                      {(member as any).type === 'custom_location' 
-                        ? `Custom Location${(member as any).created_by ? ` • Added by ${(member as any).created_by}` : ''}`
-                        : 'Member'
-                      }
-                    </Text>
+                    
+                    
+                    {/* Attendance Control */}
+                    <View style={styles.attendanceContainer}>
+                      <SlideToConfirm
+                        isAttending={member.attendance?.isAttending || false}
+                        onAttendanceChange={async (isAttending) => {
+                          try {
+                            console.log('Updating attendance for member:', {
+                              id: member.id,
+                              type: (member as any).type,
+                              isAttending
+                            });
+                            
+                            if ((member as any).type === 'custom_location') {
+                              // Handle custom location attendance
+                              // Extract the actual database ID from the prefixed ID
+                              const actualId = member.id.startsWith('custom_location_') 
+                                ? member.id.replace('custom_location_', '') 
+                                : member.id;
+                              
+                              console.log('Custom location ID mapping:', {
+                                displayId: member.id,
+                                actualId: actualId
+                              });
+                              
+                              await updateCustomLocationAttendance(actualId, isAttending);
+                            } else {
+                              // Handle user attendance - allow updating any user's attendance
+                              await updateUserAttendance(currentGroup.id, member.user_id, isAttending);
+                            }
+                            // Reload members to get updated attendance
+                            if (currentGroup) {
+                              await loadGroupMembers(currentGroup.id);
+                            }
+                          } catch (error) {
+                            console.error('Error updating attendance:', error);
+                            Alert.alert('Error', 'Failed to update attendance');
+                          }
+                        }}
+                        size="small"
+                        confirmText="Attending"
+                        cancelText="Not Attending"
+                      />
+                    </View>
                   </View>
                 </View>
 
+                {/* Delete Button */}
                 {(canManageGroup || member.is_me) && (
                   <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() => handleRemoveMember(member)}
+                    style={styles.deleteButton}
+                    onPress={() => {
+                      const isCustomLocation = (member as any).type === 'custom_location';
+                      const itemName = member.display_name || 'this item';
+                      const action = member.is_me ? 'leave' : 'remove';
+                      
+                      Alert.alert(
+                        `${action === 'leave' ? 'Leave' : 'Remove'} ${isCustomLocation ? 'Location' : 'Member'}`,
+                        `Are you sure you want to ${action} ${itemName}${member.is_me ? '' : ` from this group`}?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: action === 'leave' ? 'Leave' : 'Remove',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                if (isCustomLocation) {
+                                  // Extract the actual database ID from the prefixed ID
+                                  const actualId = member.id.startsWith('custom_location_') 
+                                    ? member.id.replace('custom_location_', '') 
+                                    : member.id;
+                                  
+                                  console.log('Deleting custom location ID mapping:', {
+                                    displayId: member.id,
+                                    actualId: actualId
+                                  });
+                                  
+                                  await removeCustomLocationFromGroup(actualId);
+                                } else {
+                                  await handleRemoveMember(member);
+                                }
+                                // Reload members list
+                                if (currentGroup) {
+                                  await loadGroupMembers(currentGroup.id);
+                                }
+                              } catch (error) {
+                                console.error('Error removing item:', error);
+                                Alert.alert('Error', `Failed to ${action} ${isCustomLocation ? 'location' : 'member'}`);
+                              }
+                            }
+                          }
+                        ]
+                      );
+                    }}
                   >
                     <MaterialIcons 
-                      name={member.is_me ? "exit-to-app" : "remove-circle"} 
+                      name={member.is_me ? "exit-to-app" : "delete"} 
                       size={20} 
                       color="#ef4444" 
                     />
@@ -587,12 +673,13 @@ const styles = StyleSheet.create({
   memberItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: '#f9fafb',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: '#f3f4f6',
+    marginBottom: 8,
   },
   memberInfo: {
     flexDirection: 'row',
@@ -683,7 +770,7 @@ const styles = StyleSheet.create({
   },
 
   membersList: {
-    gap: 8,
+    // Individual items now have marginBottom instead of gap
   },
 
   headerEditContainer: {
@@ -732,5 +819,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#6366f1',
+  },
+  attendanceContainer: {
+    marginTop: 8,
+  },
+  deleteButton: {
+    padding: 8,
   },
 }); 
