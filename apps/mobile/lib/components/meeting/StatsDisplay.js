@@ -9,7 +9,6 @@ const StatsDisplay = ({ travelTimes }) => {
 
   const stats = {
     avgDuration: Math.round(durations.reduce((a, b) => a + b, 0) / durations.length),
-    maxDuration: Math.max(...durations),
     totalDistance: distances.reduce((a, b) => a + b, 0),
     attendeeCount: durations.length
   };
@@ -20,19 +19,16 @@ const StatsDisplay = ({ travelTimes }) => {
         <Text style={styles.statValue}>{stats.avgDuration} min</Text>
         <Text style={styles.statLabel}>Avg Travel</Text>
       </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{stats.maxDuration} min</Text>
-        <Text style={styles.statLabel}>Max Travel</Text>
-      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   statsContainer: {
+    width: '50%',
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: '#f8fafc',
     borderRadius: 12,
     padding: 16,
