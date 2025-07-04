@@ -8,7 +8,10 @@ import {
   StyleSheet
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import AddressInput from '../maps/AddressInput';
+import { useAuth } from '../../contexts/AuthContext';
+import { useGroups } from '../../contexts/GroupsContext';
 
 const AddressForm = ({
   addresses = [],
@@ -18,6 +21,14 @@ const AddressForm = ({
   mapBounds = null,
   error = null
 }) => {
+  const { user, addresses: userAddresses } = useAuth();
+  const { createNewGroup } = useGroups();
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const router = useRouter();
+
+  // Get user's default address
+  const defaultAddress = userAddresses?.find(addr => addr.is_default) || userAddresses?.[0];
+
   const addAddress = () => {
     if (addresses.length >= 5) {
       // Don't add more than 5 addresses
@@ -32,11 +43,148 @@ const AddressForm = ({
     onAddressesChange && onAddressesChange(newAddresses);
   };
 
-  const createGroup = () => {
+  const addMyAddress = () => {
+    if (!defaultAddress) {
+      Alert.alert(
+        'No Address Found',
+        'Please add your home address in your profile first.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Add Address', onPress: () => {
+            // Navigate to profile or address setup
+            Alert.alert('Info', 'Please go to your profile to add your home address.');
+          }}
+        ]
+      );
+      return;
+    }
+
+    // Check if user's address is already added
+    const isAlreadyAdded = addresses.some(addr => 
+      addr.value === defaultAddress.formatted_address ||
+      (addr.coordinates && 
+       Math.abs(addr.coordinates[1] - defaultAddress.latitude) < 0.001 &&
+       Math.abs(addr.coordinates[0] - defaultAddress.longitude) < 0.001)
+    );
+
+    if (isAlreadyAdded) {
+      Alert.alert('Already Added', 'Your address is already in the list.');
+      return;
+    }
+
+    // Find the first empty address field
+    const firstEmptyIndex = addresses.findIndex(addr => !addr.value.trim());
+    
+    if (firstEmptyIndex !== -1) {
+      // Fill the first empty address field
+      const newAddresses = addresses.map((addr, index) => 
+        index === firstEmptyIndex ? {
+          ...addr,
+          value: defaultAddress.formatted_address,
+          coordinates: [defaultAddress.longitude, defaultAddress.latitude]
+        } : addr
+      );
+      onAddressesChange && onAddressesChange(newAddresses);
+    } else {
+      // No empty fields, add a new one if under limit
+      if (addresses.length >= 5) {
+        Alert.alert('Maximum Addresses', 'You can only add up to 5 addresses.');
+        return;
+      }
+
+      const maxId = addresses.length > 0 ? Math.max(...addresses.map(addr => addr.id)) : 0;
+      const nextId = maxId + 1;
+      
+      const newAddresses = [...addresses, { 
+        id: nextId, 
+        value: defaultAddress.formatted_address,
+        coordinates: [defaultAddress.longitude, defaultAddress.latitude]
+      }];
+      onAddressesChange && onAddressesChange(newAddresses);
+    }
+  };
+
+  const createGroup = async () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please sign in to create a group.');
+      return;
+    }
+
+    // Check if we have at least 2 addresses
+    const filledAddresses = addresses.filter(addr => addr.value.trim() && addr.coordinates);
+    if (filledAddresses.length < 2) {
+      Alert.alert('More Addresses Needed', 'Please add at least 2 addresses to create a group.');
+      return;
+    }
+
     Alert.alert(
       'Create Group',
-      'Group creation will be implemented in the next phase.',
-      [{ text: 'OK' }]
+      `Create a group with ${filledAddresses.length} location${filledAddresses.length > 1 ? 's' : ''}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Create', 
+          onPress: async () => {
+            setIsCreatingGroup(true);
+            try {
+              // Convert addresses to custom addresses format for the group
+              // Exclude the user's own address from custom addresses since they're already a member
+              const customAddresses = filledAddresses
+                .filter(addr => {
+                  // Only exclude if it's exactly the user's default address
+                  if (!defaultAddress) return true;
+                  
+                  return !(
+                    addr.value === defaultAddress.formatted_address ||
+                    (addr.coordinates && 
+                     Math.abs(addr.coordinates[1] - defaultAddress.latitude) < 0.001 &&
+                     Math.abs(addr.coordinates[0] - defaultAddress.longitude) < 0.001)
+                  );
+                })
+                .map((addr, index) => ({
+                  id: `custom-address-${Date.now()}-${index}`,
+                  display_name: addr.value.split(',')[0] || `Location ${index + 1}`,
+                  address: addr.value,
+                  coordinates: addr.coordinates,
+                  placeId: null,
+                  type: 'custom_address',
+                  isAttending: true
+                }));
+
+              // Create group with custom addresses
+              const newGroup = await createNewGroup(
+                { 
+                  name: `Meeting Group - ${new Date().toLocaleDateString()}`,
+                  description: 'Created from meeting point search'
+                },
+                [], // No initial members (just the creator)
+                customAddresses
+              );
+
+              if (newGroup) {
+                Alert.alert(
+                  'Group Created!',
+                  `Your group "${newGroup.name}" has been created with ${filledAddresses.length} location${filledAddresses.length > 1 ? 's' : ''}.`,
+                  [{ 
+                    text: 'View Group', 
+                    onPress: () => {
+                      // Navigate to the group page
+                      router.push(`/groups/${newGroup.id}`);
+                    }
+                  }]
+                );
+              } else {
+                Alert.alert('Error', 'Failed to create group. Please try again.');
+              }
+            } catch (error) {
+              console.error('Error creating group:', error);
+              Alert.alert('Error', 'Failed to create group. Please try again.');
+            } finally {
+              setIsCreatingGroup(false);
+            }
+          }
+        }
+      ]
     );
   };
 
@@ -87,6 +235,19 @@ const AddressForm = ({
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
+
+      {/* Add My Address Button */}
+      {user && defaultAddress && (
+        <View style={styles.myAddressSection}>
+          <TouchableOpacity style={styles.myAddressButton} onPress={addMyAddress}>
+            <MaterialIcons name="my-location" size={16} color="#6366f1" style={styles.buttonIcon} />
+            <Text style={styles.myAddressButtonText}>Add My Address</Text>
+          </TouchableOpacity>
+          <Text style={styles.myAddressPreview} numberOfLines={1}>
+            {defaultAddress.formatted_address}
+          </Text>
+        </View>
+      )}
       
       {/* Address List */}
       <View style={styles.addressList}>
@@ -113,19 +274,34 @@ const AddressForm = ({
         ))}
       </View>
 
+      {/* Add Address Button */}
+      {addresses.length < 5 && (
+        <View style={styles.addAddressContainer}>
+          <TouchableOpacity style={styles.addAddressButton} onPress={addAddress}>
+            <MaterialIcons name="add" size={16} color="#6366f1" style={styles.buttonIcon} />
+            <Text style={styles.addAddressButtonText}>Add Address</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>
-        {addresses.length >= 5 ? (
-          <TouchableOpacity style={styles.secondaryButton} onPress={createGroup}>
-            <FontAwesome5 name="users" size={14} color="#475569" style={styles.buttonIcon} />
-            <Text style={styles.secondaryButtonText}>Create a Group</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.secondaryButton} onPress={addAddress}>
-            <MaterialIcons name="add" size={16} color="#6366f1" style={styles.buttonIcon} />
-            <Text style={styles.secondaryButtonText}>Add Address</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={[styles.secondaryButton, isCreatingGroup && styles.buttonDisabled]}
+          onPress={createGroup}
+          disabled={isCreatingGroup}
+        >
+          <View style={styles.buttonContent}>
+            {isCreatingGroup ? (
+              <MaterialIcons name="hourglass-empty" size={14} color="#475569" style={styles.buttonIcon} />
+            ) : (
+              <FontAwesome5 name="users" size={14} color="#475569" style={styles.buttonIcon} />
+            )}
+            <Text style={styles.secondaryButtonText}>
+              {isCreatingGroup ? 'Creating...' : 'Create Group'}
+            </Text>
+          </View>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.primaryButton, isCalculating && styles.buttonDisabled]}
@@ -191,6 +367,33 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     fontWeight: '500',
   },
+  myAddressSection: {
+    marginBottom: 20,
+    paddingHorizontal: 16,
+  },
+  myAddressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8faff',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+    marginBottom: 8,
+  },
+  myAddressButtonText: {
+    color: '#6366f1',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  myAddressPreview: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   addressList: {
     marginBottom: 12,
     paddingHorizontal: 16,
@@ -222,20 +425,42 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
+  addAddressContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  addAddressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  addAddressButtonText: {
+    color: '#6366f1',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   buttonContainer: {
     gap: 12,
     paddingHorizontal: 16,
   },
   secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#f8fafc',
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonIcon: {
     marginRight: 6,
