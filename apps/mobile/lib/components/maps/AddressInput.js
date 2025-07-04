@@ -15,6 +15,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { googleMapsService } from '../../services/map/GoogleMapsService';
 import { preloadIsochroneForAddress } from '../../services/preloadApi';
+import { useGroups } from '../../contexts/GroupsContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { contactService } from '../../services/contactService';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -30,10 +33,21 @@ const AddressInput = ({
 }) => {
   const [inputValue, setInputValue] = useState(value);
   const [predictions, setPredictions] = useState([]);
+  const [friends, setFriends] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  
+  // Get context functions
+  const { findUsersByPhoneNumbers, getUserAddresses } = useGroups();
+  const { user } = useAuth();
+  
+  // Defensive check for context functions
+  if (!findUsersByPhoneNumbers || !getUserAddresses) {
+    console.warn('AddressInput: Groups context functions not available');
+  }
   
   // Debounce function for API calls
   const debounce = useCallback((func, delay) => {
@@ -44,28 +58,224 @@ const AddressInput = ({
     };
   }, []);
 
+  // Load contacts when component mounts (same as AddMemberComponent)
+  useEffect(() => {
+    loadContacts();
+  }, []);
+
+  const loadContacts = async () => {
+    try {
+      // Check permission status
+      const permissionStatus = await contactService.getPermissionStatus();
+      
+      if (permissionStatus !== 'granted') {
+        const granted = await contactService.showPermissionDialog();
+        if (!granted) {
+          console.warn('AddressInput: Contact permission not granted');
+          return;
+        }
+      }
+
+      // Load contacts
+      await contactService.loadContacts();
+      setContactsLoaded(true);
+      console.log('AddressInput: Contacts loaded successfully', contactService.contacts.length);
+      
+    } catch (error) {
+      console.error('AddressInput: Error loading contacts:', error);
+    }
+  };
+
+  // Search friends by name (using the same approach as AddMemberComponent)
+  const searchFriends = useCallback(async (input) => {
+    if (!input || input.trim().length < 2) {
+      return [];
+    }
+
+    if (!user || !user.uid) {
+      console.warn('AddressInput: User not authenticated, skipping friend search');
+      return [];
+    }
+
+    if (!findUsersByPhoneNumbers || !getUserAddresses) {
+      console.warn('AddressInput: Context functions not available, skipping friend search');
+      return [];
+    }
+
+    if (!contactsLoaded || !contactService.contacts || contactService.contacts.length === 0) {
+      console.warn('AddressInput: Contacts not loaded yet, skipping friend search. Loaded:', contactsLoaded, 'Count:', contactService.contacts?.length || 0);
+      return [];
+    }
+
+    try {
+      // First, search through device contacts by name (same as AddMemberComponent)
+      const term = input.toLowerCase().trim();
+      const filteredContacts = contactService.contacts.filter(contact =>
+        contact.name.toLowerCase().includes(term) ||
+        contact.firstName.toLowerCase().includes(term) ||
+        contact.lastName.toLowerCase().includes(term)
+      );
+
+      if (filteredContacts.length === 0) {
+        return [];
+      }
+
+      // Extract phone numbers from filtered contacts
+      const phoneNumbers = filteredContacts.flatMap(contact => 
+        contact.phoneNumbers.map(phone => phone.normalized)
+      ).filter(phone => phone);
+
+      if (phoneNumbers.length === 0) {
+        return [];
+      }
+
+      // Query database for these specific phone numbers
+      const registeredData = await findUsersByPhoneNumbers(phoneNumbers);
+
+      if (registeredData.length === 0) {
+        return [];
+      }
+
+      // Create map of registered phone numbers to user data
+      const registeredPhoneMap = new Map();
+      registeredData.forEach(user => {
+        const dbPhone = user.phone_number;
+        registeredPhoneMap.set(dbPhone, user);
+        
+        // Also store with/without + variations
+        if (dbPhone.startsWith('+')) {
+          registeredPhoneMap.set(dbPhone.substring(1), user);
+        } else {
+          registeredPhoneMap.set('+' + dbPhone, user);
+        }
+      });
+
+      // Find registered contacts and get their addresses
+      const registeredContacts = [];
+      
+      filteredContacts.forEach(contact => {
+        let matchedUserData = null;
+        
+        // Check each phone number in the contact
+        for (const phoneObj of contact.phoneNumbers) {
+          const contactNormalized = phoneObj.normalized;
+          
+          if (registeredPhoneMap.has(contactNormalized)) {
+            matchedUserData = registeredPhoneMap.get(contactNormalized);
+            break;
+          }
+          
+          // Try without + prefix
+          if (contactNormalized.startsWith('+')) {
+            const withoutPlus = contactNormalized.substring(1);
+            if (registeredPhoneMap.has(withoutPlus)) {
+              matchedUserData = registeredPhoneMap.get(withoutPlus);
+              break;
+            }
+          }
+          
+          // Try with + prefix
+          if (!contactNormalized.startsWith('+')) {
+            const withPlus = '+' + contactNormalized;
+            if (registeredPhoneMap.has(withPlus)) {
+              matchedUserData = registeredPhoneMap.get(withPlus);
+              break;
+            }
+          }
+        }
+
+        if (matchedUserData) {
+          registeredContacts.push({
+            ...contact,
+            userData: matchedUserData,
+            type: 'friend',
+            isRegistered: true,
+          });
+        }
+      });
+
+      if (registeredContacts.length === 0) {
+        console.log('AddressInput: No registered contacts found');
+        return [];
+      }
+
+      // Get addresses for the registered users
+      const userIds = registeredContacts.map(contact => contact.userData.id);
+      
+      // Debug: Check if getUserAddresses function exists
+      if (!getUserAddresses) {
+        console.error('AddressInput: getUserAddresses function not available');
+        return [];
+      }
+      
+      const addressesMap = await getUserAddresses(userIds);
+      
+      // Combine contacts with their addresses
+      const friendsWithAddresses = registeredContacts.map(contact => {
+        const userAddress = addressesMap[contact.userData.id];
+        
+        return {
+          ...contact,
+          address: userAddress ? (
+            userAddress.formatted_address || 
+            userAddress.name || 
+            `${userAddress.latitude}, ${userAddress.longitude}`
+          ) : null,
+          location: userAddress ? {
+            lat: userAddress.latitude,
+            lng: userAddress.longitude
+          } : null,
+          placeId: userAddress?.place_id || null,
+          display_name: contact.name, // Use contact name instead of user display_name
+          id: contact.userData.id // Use user ID
+        };
+      });
+      
+      const filteredFriends = friendsWithAddresses.filter(friend => friend.address);
+      
+      return filteredFriends;
+    } catch (error) {
+      console.error('AddressInput: Error searching friends:', error);
+      return [];
+    }
+  }, [findUsersByPhoneNumbers, getUserAddresses, user, contactsLoaded]);
+
   // Get place predictions from Google Places API
   const fetchPredictions = useCallback(async (input) => {
     if (!input || input.trim().length < 2) {
       setPredictions([]);
+      setFriends([]);
       setShowPredictions(false);
       return;
     }
 
     setIsLoading(true);
     try {
-      const results = await googleMapsService.getPlacePredictions(input, bounds);
-      setPredictions(results);
-      setShowPredictions(results.length > 0);
+      // Search both friends and places in parallel
+      const [friendResults, placeResults] = await Promise.all([
+        searchFriends(input),
+        googleMapsService.getPlacePredictions(input, bounds)
+      ]);
+
+      // Format place results
+      const formattedPlaces = placeResults.map(place => ({
+        ...place,
+        type: 'place'
+      }));
+
+      setFriends(friendResults);
+      setPredictions(formattedPlaces);
+      setShowPredictions(friendResults.length > 0 || formattedPlaces.length > 0);
     } catch (error) {
       console.error('Error fetching predictions:', error);
       onError && onError({ error: error.message });
+      setFriends([]);
       setPredictions([]);
       setShowPredictions(false);
     } finally {
       setIsLoading(false);
     }
-  }, [bounds, onError]);
+  }, [bounds, onError, searchFriends]);
 
   // Debounced version of fetchPredictions
   const debouncedFetchPredictions = useCallback(
@@ -81,40 +291,60 @@ const AddressInput = ({
     if (text.trim()) {
       debouncedFetchPredictions(text);
     } else {
+      setFriends([]);
       setPredictions([]);
       setShowPredictions(false);
     }
   };
 
-  // Handle place selection
-  const handlePlaceSelection = async (prediction) => {
+  // Handle place selection (both friends and places)
+  const handlePlaceSelection = async (selection) => {
     setIsLoading(true);
     setShowPredictions(false);
     
     try {
-      const placeDetails = await googleMapsService.getPlaceDetails(prediction.place_id);
+      let selectedPlace;
       
-      const selectedPlace = {
-        address: placeDetails.address,
-        location: placeDetails.location,
-        placeId: placeDetails.placeId
-      };
+      if (selection.type === 'friend') {
+        // Handle friend selection
+        selectedPlace = {
+          address: selection.address,
+          location: selection.location,
+          placeId: selection.placeId,
+          friendName: selection.display_name,
+          friendId: selection.id,
+          type: 'friend' // Mark as friend selection
+        };
+        
+        // Show friend's name in the input field instead of their address
+        setInputValue(selection.display_name);
+      } else {
+        // Handle Google place selection
+        const placeDetails = await googleMapsService.getPlaceDetails(selection.place_id);
+        
+        selectedPlace = {
+          address: placeDetails.address,
+          location: placeDetails.location,
+          placeId: placeDetails.placeId
+        };
+        
+        setInputValue(placeDetails.address);
+      }
 
-      setInputValue(placeDetails.address);
       onPlaceSelected && onPlaceSelected(selectedPlace);
 
       // Close modal and reset state
       setShowModal(false);
       setIsFocused(false);
 
-      // Trigger preload if enabled
-      if (enablePreload) {
-        preloadIsochroneForAddress(placeDetails.location).catch(error => {
+      // Trigger preload if enabled and we have location
+      if (enablePreload && selectedPlace.location) {
+        preloadIsochroneForAddress(selectedPlace.location).catch(error => {
           console.warn('Preload failed (non-critical):', error);
         });
       }
     } catch (error) {
-      console.error('Error getting place details:', error);
+      console.error('Error handling place selection:', error);
       onError && onError({ error: error.message });
     } finally {
       setIsLoading(false);
@@ -124,6 +354,7 @@ const AddressInput = ({
   // Clear input
   const handleClear = () => {
     setInputValue('');
+    setFriends([]);
     setPredictions([]);
     setShowPredictions(false);
     onInput && onInput({ value: '' });
@@ -133,6 +364,9 @@ const AddressInput = ({
   const handleFocus = () => {
     setIsFocused(true);
     setShowModal(true);
+    
+    // Debug: Check if contacts are loaded when modal opens
+    console.log('AddressInput: Modal opened. Contacts loaded:', contactsLoaded, 'Count:', contactService.contacts?.length || 0);
   };
 
   // Handle modal close
@@ -140,6 +374,7 @@ const AddressInput = ({
     setShowModal(false);
     setIsFocused(false);
     setShowPredictions(false);
+    setFriends([]);
     setPredictions([]);
   };
 
@@ -147,6 +382,32 @@ const AddressInput = ({
   useEffect(() => {
     setInputValue(value);
   }, [value]);
+
+  // Render friend item
+  const renderFriend = (item, index) => (
+    <TouchableOpacity
+      key={`friend-${item.id}`}
+      style={[
+        styles.predictionItem,
+        styles.friendItem,
+        index === friends.length - 1 && predictions.length === 0 && styles.predictionItemLast
+      ]}
+      onPress={() => handlePlaceSelection(item)}
+    >
+      <View style={styles.predictionIcon}>
+        <Text style={styles.friendIcon}>👤</Text>
+      </View>
+      <View style={styles.predictionText}>
+        <Text style={styles.primaryText}>
+          {item.display_name}
+        </Text>
+        <Text style={styles.secondaryText}>
+          {item.address}
+        </Text>
+        <Text style={styles.friendLabel}>Friend</Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   // Render prediction item
   const renderPrediction = (item, index) => (
@@ -233,7 +494,6 @@ const AddressInput = ({
                 onPress={handleModalClose}
               >
                 <Text style={styles.backIcon}>←</Text>
-                <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Enter Address</Text>
               <View style={styles.headerSpacer} />
@@ -272,21 +532,40 @@ const AddressInput = ({
               </View>
             </View>
 
-            {/* Predictions List */}
+            {/* Results List */}
             <ScrollView 
               style={styles.predictionsContainer}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {showPredictions && predictions.length > 0 ? (
+              {showPredictions && (friends.length > 0 || predictions.length > 0) ? (
                 <View style={styles.predictionsList}>
-                  {predictions.map((item, index) => renderPrediction(item, index))}
+                  {/* Friends Section */}
+                  {friends.length > 0 && (
+                    <>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Friends</Text>
+                      </View>
+                      {friends.map((item, index) => renderFriend(item, index))}
+                    </>
+                  )}
+                  
+                  {/* Places Section */}
+                  {predictions.length > 0 && (
+                    <>
+                      {friends.length > 0 && <View style={styles.sectionDivider} />}
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Places</Text>
+                      </View>
+                      {predictions.map((item, index) => renderPrediction(item, index))}
+                    </>
+                  )}
                 </View>
               ) : (
                 inputValue.length >= 2 && !isLoading && (
                   <View style={styles.noPredictions}>
                     <Text style={styles.noPredictionsText}>
-                      No addresses found. Try a different search.
+                      No addresses or friends found. Try a different search.
                     </Text>
                   </View>
                 )
@@ -428,6 +707,24 @@ const styles = {
   predictionsList: {
     paddingVertical: 8,
   },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f9fafb',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  sectionDivider: {
+    height: 8,
+    backgroundColor: '#f3f4f6',
+  },
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -436,6 +733,11 @@ const styles = {
     borderBottomColor: '#f3f4f6',
     backgroundColor: 'white',
   },
+  friendItem: {
+    backgroundColor: '#fefefe',
+    borderLeftWidth: 3,
+    borderLeftColor: '#3b82f6',
+  },
   predictionItemLast: {
     borderBottomWidth: 0,
   },
@@ -443,6 +745,10 @@ const styles = {
     marginRight: 12,
     width: 24,
     alignItems: 'center',
+  },
+  friendIcon: {
+    fontSize: 16,
+    color: '#3b82f6',
   },
   predictionText: {
     flex: 1,
@@ -456,6 +762,12 @@ const styles = {
   secondaryText: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  friendLabel: {
+    fontSize: 12,
+    color: '#3b82f6',
+    fontWeight: '500',
+    marginTop: 2,
   },
   noPredictions: {
     padding: 20,

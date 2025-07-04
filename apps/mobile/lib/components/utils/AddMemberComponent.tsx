@@ -453,7 +453,7 @@ export function AddMemberComponent({
         onPress={() => setShowCustomAddressInput(!showCustomAddressInput)}
       >
         <MaterialIcons name="place" size={20} color="#6366f1" />
-        <Text style={styles.customAddressToggleText}>Add Custom Location</Text>
+        <Text style={styles.customAddressToggleText}>Add Friend or Location</Text>
         <MaterialIcons 
           name={showCustomAddressInput ? "expand-less" : "add"} 
           size={20} 
@@ -464,11 +464,31 @@ export function AddMemberComponent({
       {/* Custom Address Input */}
       {showCustomAddressInput && (
         <View style={styles.customAddressContainer}>
-          <Text style={styles.customAddressLabel}>Add Custom Location</Text>
+          <Text style={styles.customAddressLabel}>Add Friend or Custom Location</Text>
           <AddressInput
             value={selectedCustomAddress?.address || ''}
-            placeholder="Search for an address..."
-            onPlaceSelected={setSelectedCustomAddress}
+            placeholder="Search for an address or friend..."
+            onPlaceSelected={(selectedPlace) => {
+              if (selectedPlace.type === 'friend') {
+                // Handle friend selection - add them as a group member instead of custom address
+                const friendMember = {
+                  id: selectedPlace.friendId,
+                  user_id: selectedPlace.friendId,
+                  display_name: selectedPlace.friendName,
+                  type: 'user',
+                };
+                onAddMember?.(friendMember);
+                
+                // Reset and close
+                setSelectedCustomAddress(null);
+                setShowCustomAddressInput(false);
+                
+                Alert.alert('Friend Added', `${selectedPlace.friendName} has been added to the group.`);
+              } else {
+                // Handle regular address selection
+                setSelectedCustomAddress(selectedPlace);
+              }
+            }}
           />
           <View style={styles.customAddressActions}>
             <TouchableOpacity

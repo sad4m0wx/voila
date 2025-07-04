@@ -110,8 +110,8 @@ const AddressForm = ({
       return;
     }
 
-    // Check if we have at least 2 addresses
-    const filledAddresses = addresses.filter(addr => addr.value.trim() && addr.coordinates);
+    // Check if we have at least 2 addresses/friends
+    const filledAddresses = addresses.filter(addr => addr.value.trim() && (addr.coordinates || addr.friendData));
     if (filledAddresses.length < 2) {
       Alert.alert('More Addresses Needed', 'Please add at least 2 addresses to create a group.');
       return;
@@ -127,9 +127,13 @@ const AddressForm = ({
           onPress: async () => {
             setIsCreatingGroup(true);
             try {
-              // Convert addresses to custom addresses format for the group
+              // Separate friends from regular addresses
+              const friends = filledAddresses.filter(addr => addr.friendData);
+              const regularAddresses = filledAddresses.filter(addr => addr.coordinates && !addr.friendData);
+              
+              // Convert regular addresses to custom addresses format for the group
               // Exclude the user's own address from custom addresses since they're already a member
-              const customAddresses = filledAddresses
+              const customAddresses = regularAddresses
                 .filter(addr => {
                   // Only exclude if it's exactly the user's default address
                   if (!defaultAddress) return true;
@@ -151,20 +155,30 @@ const AddressForm = ({
                   isAttending: true
                 }));
 
-              // Create group with custom addresses
+              // Get friend user IDs for initial members
+              const friendUserIds = friends.map(friend => friend.friendData.id);
+
+              // Create group with friends as initial members and custom addresses
               const newGroup = await createNewGroup(
                 { 
-                  name: `Meeting Group - ${new Date().toLocaleDateString()}`,
+                  name: `${new Date().toLocaleDateString()} Meeting`,
                   description: 'Created from meeting point search'
                 },
-                [], // No initial members (just the creator)
+                friendUserIds, // Add friends as initial members
                 customAddresses
               );
 
               if (newGroup) {
+                const totalItems = friends.length + customAddresses.length;
+                const itemDescription = friends.length > 0 && customAddresses.length > 0 
+                  ? `${friends.length} friend${friends.length > 1 ? 's' : ''} and ${customAddresses.length} location${customAddresses.length > 1 ? 's' : ''}`
+                  : friends.length > 0 
+                    ? `${friends.length} friend${friends.length > 1 ? 's' : ''}`
+                    : `${customAddresses.length} location${customAddresses.length > 1 ? 's' : ''}`;
+                    
                 Alert.alert(
                   'Group Created!',
-                  `Your group "${newGroup.name}" has been created with ${filledAddresses.length} location${filledAddresses.length > 1 ? 's' : ''}.`,
+                  `Your group "${newGroup.name}" has been created with ${itemDescription}.`,
                   [{ 
                     text: 'View Group', 
                     onPress: () => {
@@ -212,8 +226,27 @@ const AddressForm = ({
   };
 
   const handlePlaceSelected = (addressId, selectedPlace) => {
-    const coordinates = [selectedPlace.location.lng, selectedPlace.location.lat];
-    updateAddressWithCoordinates(addressId, selectedPlace.address, coordinates);
+    if (selectedPlace.type === 'friend') {
+      // Handle friend selection - store friend data instead of coordinates
+      const newAddresses = addresses.map(addr => 
+        addr.id === addressId ? { 
+          ...addr, 
+          value: selectedPlace.friendName, 
+          coordinates: null, // Don't store coordinates for friends
+          friendData: {
+            id: selectedPlace.friendId,
+            name: selectedPlace.friendName,
+            address: selectedPlace.address,
+            location: selectedPlace.location
+          }
+        } : addr
+      );
+      onAddressesChange && onAddressesChange(newAddresses);
+    } else {
+      // Handle regular place selection
+      const coordinates = [selectedPlace.location.lng, selectedPlace.location.lat];
+      updateAddressWithCoordinates(addressId, selectedPlace.address, coordinates);
+    }
   };
 
   const handleFindMeetingPoint = () => {

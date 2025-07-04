@@ -21,7 +21,6 @@ import { useGroups } from '../../lib/contexts/GroupsContext';
 import { router } from 'expo-router';
 import { contactService } from '../../lib/services/contactService';
 import { AddressInput } from '../../lib/components/maps';
-import { AddMemberComponent } from '../../lib/components/utils';
 
 interface Group {
   id: string;
@@ -208,12 +207,35 @@ function CreateGroupModal({ visible, onClose, onCreateGroup, isLoading }: Create
 
             {/* Add Members Component */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Add friends</Text>
-              <AddMemberComponent
-                onAddMember={handleAddMember}
-                onAddCustomAddress={handleAddCustomAddress}
-                existingMembers={selectedMembers}
-                style={styles.addMemberComponent}
+              <Text style={styles.inputLabel}>Add friends and locations</Text>
+              <AddressInput
+                key={`address-input-${selectedMembers.length + customAddresses.length}`}
+                placeholder="Search for friends or addresses..."
+                onPlaceSelected={(selectedPlace) => {
+                  if (selectedPlace.type === 'friend') {
+                    // Handle friend selection
+                    const friendMember = {
+                      id: selectedPlace.friendId,
+                      user_id: selectedPlace.friendId,
+                      display_name: selectedPlace.friendName,
+                      type: 'user',
+                    };
+                    handleAddMember(friendMember);
+                  } else {
+                    // Handle address selection
+                    const customAddress = {
+                      id: `custom-address-${Date.now()}`,
+                      display_name: selectedPlace.address.split(',')[0] || 'Custom Location',
+                      address: selectedPlace.address,
+                      coordinates: [selectedPlace.location.lng, selectedPlace.location.lat],
+                      placeId: selectedPlace.placeId,
+                      type: 'custom_address',
+                      isAttending: true,
+                    };
+                    handleAddCustomAddress(customAddress);
+                  }
+                }}
+                style={styles.addMemberInput}
               />
             </View>
           </ScrollView>
@@ -769,7 +791,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#ffffff',
   },
-  addMemberComponent: {
-    marginTop: 8,
+  addMemberInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#ffffff',
   },
 }); 

@@ -139,19 +139,37 @@ export default function HomeScreen() {
     setCurrentMeetingPointIndex(0);
 
     try {
-      // Validate inputs
-      const filledAddresses = addresses.filter(addr => addr.value.trim());
+      // Validate inputs - include both regular addresses and friends
+      const filledAddresses = addresses.filter(addr => addr.value.trim() && (addr.coordinates || addr.friendData));
       if (filledAddresses.length < 2) {
         throw new Error("Please enter at least 2 addresses");
       }
 
+      // Convert addresses to API format, handling both regular addresses and friends
+      const apiAddresses = filledAddresses.map((addr, index) => {
+        if (addr.friendData) {
+          // Use friend's address coordinates
+          return {
+            id: `addr-${index}`,
+            value: addr.friendData.address,
+            coordinates: [addr.friendData.location.lng, addr.friendData.location.lat]
+          };
+        } else {
+          // Regular address
+          return {
+            id: `addr-${index}`,
+            value: addr.value,
+            coordinates: addr.coordinates
+          };
+        }
+      });
+
       // Calculate meeting point with venue options
-      const result = await findOptimalMeetingPoint(filledAddresses, {
+      const result = await findOptimalMeetingPoint(apiAddresses, {
         venueTypes: showVenues ? venueTypes : null,
         venueRadius: venueRadius,
         showVenues: showVenues
       });
-
 
       // Handle multiple meeting points
       const meetingPointsData = result.allMeetingPoints || [{

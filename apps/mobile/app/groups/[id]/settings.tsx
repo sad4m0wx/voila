@@ -13,7 +13,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth } from '../../../lib/contexts/AuthContext';
 import { useGroups } from '../../../lib/contexts/GroupsContext';
-import { AddMemberComponent } from '../../../lib/components/utils';
+import { AddressInput } from '../../../lib/components/maps';
 
 
 
@@ -33,6 +33,7 @@ export default function GroupSettingsScreen() {
     removeCustomLocationFromGroup,
     resetGroupAttendance,
     clearError,
+    addCustomLocationToGroup,
   } = useGroups();
 
 
@@ -41,6 +42,7 @@ export default function GroupSettingsScreen() {
   const [groupName, setGroupName] = useState(currentGroup?.name || '');
   const [groupDescription, setGroupDescription] = useState('');
   const [showAddMember, setShowAddMember] = useState(false);
+  const [memberAddCount, setMemberAddCount] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
 
   // Load group data when component mounts
@@ -325,20 +327,58 @@ export default function GroupSettingsScreen() {
 
           {/* Add Member Interface */}
           {showAddMember && (
-            <AddMemberComponent
-              onAddMember={handleAddMember}
-              onAddCustomAddress={async (address) => {
-                // Custom address is already handled by AddMemberComponent
-                // Just reload the members list to show the new location
-                console.log('Custom address added:', address);
-                if (currentGroup) {
-                  await loadGroupMembers(currentGroup.id);
-                }
-              }}
-              existingMembers={currentGroupMembers}
-              groupId={id}
-              style={styles.addMemberContainer}
-            />
+            <View style={styles.addMemberContainer}>
+              <Text style={styles.addMemberLabel}>Add friend or location</Text>
+              <AddressInput
+                key={`member-add-${memberAddCount}`}
+                placeholder="Search for friends or addresses..."
+                onPlaceSelected={async (selectedPlace) => {
+                  if (selectedPlace.type === 'friend') {
+                    // Handle friend selection - add them as a group member
+                    const friendMember = {
+                      id: selectedPlace.friendId,
+                      user_id: selectedPlace.friendId,
+                      display_name: selectedPlace.friendName,
+                      type: 'user',
+                    };
+                    await handleAddMember(friendMember);
+                  } else {
+                    // Handle address selection - add as custom location
+                    const customAddress = {
+                      id: `custom-address-${Date.now()}`,
+                      display_name: selectedPlace.address.split(',')[0] || 'Custom Location',
+                      address: selectedPlace.address,
+                      coordinates: [selectedPlace.location.lng, selectedPlace.location.lat],
+                      placeId: selectedPlace.placeId,
+                      type: 'custom_address',
+                      isAttending: true,
+                    };
+                    
+                    // Add custom address to group
+                    try {
+                      if (currentGroup) {
+                        await addCustomLocationToGroup(currentGroup.id, customAddress);
+                        console.log('Custom address added:', customAddress);
+                        await loadGroupMembers(currentGroup.id);
+                      }
+                    } catch (error) {
+                      console.error('Error adding custom location:', error);
+                      Alert.alert('Error', 'Failed to add custom location');
+                    }
+                  }
+                  
+                  // Increment counter to reset the input
+                  setMemberAddCount(prev => prev + 1);
+                }}
+                style={styles.addMemberInput}
+              />
+              <TouchableOpacity
+                style={styles.cancelAddButton}
+                onPress={() => setShowAddMember(false)}
+              >
+                <Text style={styles.cancelAddButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Current Members List */}
@@ -668,5 +708,29 @@ const styles = StyleSheet.create({
   },
   headerEditIcon: {
     marginLeft: 4,
+  },
+  addMemberLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  addMemberInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    padding: 12,
+  },
+  cancelAddButton: {
+    padding: 12,
+    backgroundColor: '#f0f4ff',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelAddButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366f1',
   },
 }); 

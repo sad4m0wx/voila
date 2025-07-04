@@ -59,10 +59,10 @@ BEGIN
     DROP POLICY IF EXISTS "profiles_own_data" ON public.profiles;
     DROP POLICY IF EXISTS "profiles_read_all" ON public.profiles;
 
-    -- User addresses policies
-    DROP POLICY IF EXISTS "Users can manage own addresses" ON public.user_addresses;
-    DROP POLICY IF EXISTS "addresses_manage_own" ON public.user_addresses;
-    DROP POLICY IF EXISTS "addresses_own_only" ON public.user_addresses;
+    -- User addresses policies (RLS disabled)
+    -- DROP POLICY IF EXISTS "Users can manage own addresses" ON public.user_addresses;
+    -- DROP POLICY IF EXISTS "addresses_manage_own" ON public.user_addresses;
+    -- DROP POLICY IF EXISTS "addresses_own_only" ON public.user_addresses;
 
     -- User contacts policies
     DROP POLICY IF EXISTS "Users can manage own contacts" ON public.user_contacts;
@@ -144,10 +144,11 @@ CREATE TABLE public.user_addresses (
     CONSTRAINT user_addresses_unique_tag_per_user UNIQUE (user_id, tag)
 );
 
-ALTER TABLE public.user_addresses ENABLE ROW LEVEL SECURITY;
+-- Remove RLS to allow friend address search
+-- ALTER TABLE public.user_addresses ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "addresses_own_only" ON public.user_addresses
-    FOR ALL USING (auth.uid() = user_id);
+-- CREATE POLICY "addresses_own_only" ON public.user_addresses
+--     FOR ALL USING (auth.uid() = user_id);
 
 CREATE INDEX user_addresses_user_id_idx ON public.user_addresses(user_id);
 CREATE INDEX user_addresses_is_default_idx ON public.user_addresses(user_id, is_default);
@@ -281,6 +282,8 @@ FOREIGN KEY (created_by) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 -- Disable RLS for simplicity (same as other group tables)
 ALTER TABLE public.group_custom_locations DISABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.user_addresses DISABLE ROW LEVEL SECURITY;
 
 -- Create indexes
 CREATE INDEX group_custom_locations_group_id_idx ON public.group_custom_locations(group_id);
@@ -483,74 +486,6 @@ BEGIN
 EXCEPTION
     WHEN others THEN
         RAISE WARNING 'Failed to sync phone numbers: %', SQLERRM;
-END $$;
-
--- =====================================================
--- 11. SAMPLE DATA FOR TESTING
--- =====================================================
-
--- Insert sample users (if they don't exist in auth.users, this won't work)
--- You'll need to create these users through your app's auth flow first
-
--- Sample addresses (will be inserted after users are created)
-DO $$
-DECLARE
-    toma_id UUID;
-    solal_id UUID;
-    test_group_id UUID;
-BEGIN
-    -- Try to find existing users by phone number
-    SELECT id INTO toma_id FROM public.profiles WHERE phone_number = '+33123456789' LIMIT 1;
-    SELECT id INTO solal_id FROM public.profiles WHERE phone_number = '+33987654321' LIMIT 1;
-    
-    -- If users exist, add their addresses
-    IF toma_id IS NOT NULL THEN
-        INSERT INTO public.user_addresses (user_id, name, formatted_address, latitude, longitude, is_default)
-        VALUES (
-            toma_id,
-            'Home',
-            '16 Rue Jean Mermoz, 75008 Paris, France',
-            48.8707015,
-            2.3116166,
-            true
-        ) ON CONFLICT (user_id, tag) DO NOTHING;
-        
-        RAISE NOTICE 'Added address for Toma';
-    END IF;
-    
-    IF solal_id IS NOT NULL THEN
-        INSERT INTO public.user_addresses (user_id, name, formatted_address, latitude, longitude, is_default)
-        VALUES (
-            solal_id,
-            'Home',
-            '8 Imp. de la Baleine, 75011 Paris, France',
-            48.8669615,
-            2.3777408,
-            true
-        ) ON CONFLICT (user_id, tag) DO NOTHING;
-        
-        RAISE NOTICE 'Added address for Solal';
-    END IF;
-    
-    -- Create a test group if both users exist
-    IF toma_id IS NOT NULL AND solal_id IS NOT NULL THEN
-        INSERT INTO public.groups (name, description, created_by)
-        VALUES ('Test Group', 'A test group for development', toma_id)
-        RETURNING id INTO test_group_id;
-        
-        -- Add both users to the group
-        INSERT INTO public.group_members (group_id, user_id, role)
-        VALUES 
-            (test_group_id, toma_id, 'admin'),
-            (test_group_id, solal_id, 'member')
-        ON CONFLICT (group_id, user_id) DO NOTHING;
-        
-        RAISE NOTICE 'Created test group with ID: %', test_group_id;
-    END IF;
-    
-EXCEPTION
-    WHEN others THEN
-        RAISE WARNING 'Failed to insert sample data: %', SQLERRM;
 END $$;
 
 -- =====================================================
