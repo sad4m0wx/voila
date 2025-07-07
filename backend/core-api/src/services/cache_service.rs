@@ -173,6 +173,57 @@ impl CacheService {
     }
 
     // =============================================================================
+    // SHARE MAPPING CACHING
+    // =============================================================================
+
+    pub async fn create_share_mapping(
+        &self,
+        share_id: &str,
+        locations_hash: &str,
+        ttl: Option<u32>,
+    ) -> Result<()> {
+        if !self.is_available().await {
+            return Err(anyhow!("Cache not available"));
+        }
+
+        let cache_key = format!("share:{}", share_id);
+        let mut conn = self.redis.get_multiplexed_async_connection().await?;
+        
+        let _: RedisResult<()> = redis::cmd("SETEX")
+            .arg(&cache_key)
+            .arg(ttl.unwrap_or(CACHE_TTL_SECONDS))
+            .arg(locations_hash)
+            .query_async(&mut conn).await;
+        
+        info!("💾 Created share mapping: {} -> {}", share_id, locations_hash);
+        Ok(())
+    }
+
+    pub async fn get_share_mapping(&self, share_id: &str) -> Option<String> {
+        if !self.is_available().await {
+            return None;
+        }
+
+        let cache_key = format!("share:{}", share_id);
+        let mut conn = self.redis.get_multiplexed_async_connection().await.ok()?;
+        
+        match redis::cmd("GET").arg(&cache_key).query_async::<_, String>(&mut conn).await {
+            Ok(locations_hash) => {
+                debug!("🔗 Found share mapping: {} -> {}", share_id, locations_hash);
+                Some(locations_hash)
+            }
+            Err(_) => {
+                debug!("🔗 Share mapping not found: {}", share_id);
+                None
+            }
+        }
+    }
+
+
+
+
+
+    // =============================================================================
     // ROUTE CACHING
     // =============================================================================
 
