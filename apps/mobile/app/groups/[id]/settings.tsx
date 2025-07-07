@@ -419,6 +419,31 @@ export default function GroupSettingsScreen() {
                               isAttending
                             });
                             
+                            // Check if this is another user (not current user and not custom location)
+                            const isAnotherUser = (member as any).type !== 'custom_location' && !member.is_me;
+                            
+                            if (isAnotherUser) {
+                              // Show confirmation alert for other users
+                              Alert.alert(
+                                'Update Attendance',
+                                `Are you sure you want to mark ${member.display_name} as ${isAttending ? 'attending' : 'not attending'}?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Update',
+                                    onPress: async () => {
+                                      await updateUserAttendance(currentGroup.id, member.user_id, isAttending);
+                                      // Reload members to get updated attendance
+                                      if (currentGroup) {
+                                        await loadGroupMembers(currentGroup.id);
+                                      }
+                                    }
+                                  }
+                                ]
+                              );
+                              return;
+                            }
+                            
                             if ((member as any).type === 'custom_location') {
                               // Handle custom location attendance
                               // Extract the actual database ID from the prefixed ID
