@@ -35,7 +35,6 @@ function AuthButton() {
   if (user && isFullyOnboarded) {
     return <ProfileButton />;
   } else {
-    // Show sign in button for non-authenticated users or users in onboarding
     return <SignInButton />;
   }
 }
@@ -61,7 +60,6 @@ export default function HomeScreen() {
 
   // Animated values for smooth map height transitions
   const mapHeightAnim = useRef(new Animated.Value(320)).current;
-  const scrollOffset = useRef(0).current;
 
   // Venue options
   const [showVenues, setShowVenues] = useState(true);
@@ -71,144 +69,100 @@ export default function HomeScreen() {
   // Calculate base map height based on state
   const getBaseMapHeight = () => {
     if (mapExpanded) return 360;
-    if (showResults) return 280;
+    if (showResults) return 340;
     return 320;
   };
 
-  // Animate map height to target value
-  const animateMapHeight = (targetHeight, duration = 300) => {
+  // Animate map height changes
+  const animateMapHeight = (targetHeight) => {
     Animated.timing(mapHeightAnim, {
       toValue: targetHeight,
-      duration: duration,
+      duration: 300,
       useNativeDriver: false,
     }).start();
   };
 
-  // Handle scroll events to adjust map height smoothly
-  const handleScroll = (event) => {
-    const scrollY = event.nativeEvent.contentOffset.y;
-    const scrollThreshold = 50;
-    const maxReduction = 120;
-    
-    // Don't reduce height if map is manually expanded
-    if (mapExpanded) return;
-    
-    const baseHeight = getBaseMapHeight();
-    let targetHeight = baseHeight;
-    
-    if (scrollY > scrollThreshold) {
-      const reduction = Math.min(scrollY - scrollThreshold, maxReduction);
-      targetHeight = Math.max(baseHeight - reduction, 160);
-    }
-    
-    // Use direct setValue for smooth scroll-based changes (no animation lag)
-    mapHeightAnim.setValue(targetHeight);
-  };
-
-  // Handle map expand/collapse with smooth animation
-  const toggleMapExpanded = () => {
-    setMapExpanded(!mapExpanded);
-    const newBaseHeight = !mapExpanded ? 360 : (showResults ? 280 : 320);
-    animateMapHeight(newBaseHeight);
-  };
-
-  // Update map height when showResults changes
+  // Update map height when state changes
   useEffect(() => {
-    if (!mapExpanded) {
-      const newHeight = getBaseMapHeight();
-      animateMapHeight(newHeight);
-    }
-  }, [showResults, mapExpanded]);
+    const targetHeight = getBaseMapHeight();
+    animateMapHeight(targetHeight);
+  }, [mapExpanded, showResults]);
 
-  // Initialize map height on component mount
-  useEffect(() => {
-    const initialHeight = getBaseMapHeight();
-    mapHeightAnim.setValue(initialHeight);
-  }, []);
-
-  // Find meeting point with real API
   const handleFindMeetingPoint = async () => {
-    // Reset state
-    setError(null);
-    setIsCalculating(true);
-    setShowResults(false);
-    setVenues([]);
-    setAnimateToResults(false);
-    setMeetingPoints([]);
-    setAllRoutes([]);
-    setCurrentMeetingPointIndex(0);
-
     try {
-      // Validate inputs - include both regular addresses and friends
-      const filledAddresses = addresses.filter(addr => addr.value.trim() && (addr.coordinates || addr.friendData));
-      if (filledAddresses.length < 2) {
-        throw new Error("Please enter at least 2 addresses");
-      }
-
-      // Convert addresses to API format, handling both regular addresses and friends
-      const apiAddresses = filledAddresses.map((addr, index) => {
-        if (addr.friendData) {
-          // Use friend's address coordinates
+      // Process addresses to include both regular addresses and friend addresses
+      const processedAddresses = addresses.map(addr => {
+        // For friend addresses, extract coordinates from friendData
+        if (addr.friendData && addr.friendData.location) {
           return {
-            id: `addr-${index}`,
-            value: addr.friendData.address,
-            coordinates: [addr.friendData.location.lng, addr.friendData.location.lat]
-          };
-        } else {
-          // Regular address
-          return {
-            id: `addr-${index}`,
-            value: addr.value,
-            coordinates: addr.coordinates
+            ...addr,
+            coordinates: [addr.friendData.location.lng, addr.friendData.location.lat],
+            value: addr.friendData.address || addr.value
           };
         }
+        // For regular addresses, use as-is
+        return addr;
       });
 
-      // Calculate meeting point with venue options
-      const result = await findOptimalMeetingPoint(apiAddresses, {
-        venueTypes: showVenues ? venueTypes : null,
-        venueRadius: venueRadius,
-        showVenues: showVenues
+      // Check if we have at least 2 addresses with coordinates (including friends)
+      const validAddresses = processedAddresses.filter(addr => 
+        addr.value && addr.value.trim() !== '' && addr.coordinates
+      );
+
+      if (validAddresses.length < 2) {
+        Alert.alert(
+          'Not enough addresses',
+          'Please enter at least 2 valid addresses or select friends with addresses to calculate a meeting point.'
+        );
+        return;
+      }
+
+      setIsCalculating(true);
+      setError(null);
+      setAnimateToResults(false);
+
+      const result = await findOptimalMeetingPoint(validAddresses, {
+        venueTypes,
+        venueRadius,
+        showVenues
       });
 
-      // Handle multiple meeting points
-      const meetingPointsData = result.allMeetingPoints || [{
-        name: result.name,
-        coordinates: result.coordinates,
-        travel_times: result.travelTimes?.map(tt => ({
-          id: tt.id,
-          address: tt.address,
-          duration: tt.duration,
-          distance: tt.distance,
-          estimated: tt.estimated,
-          transit_summary: tt.transitSummary
-        })) || []
-      }];
+      if (result) {
+        // Handle allRoutes properly - if it's empty, create it from routes
+        let processedAllRoutes = result.allRoutes;
+        
+        if (!processedAllRoutes || processedAllRoutes.length === 0) {
+          processedAllRoutes = [];
+          const meetingPointsCount = result.allMeetingPoints?.length || 1;
+          
+          for (let i = 0; i < meetingPointsCount; i++) {
+            if (i === 0) {
+              processedAllRoutes.push(result.routes || []);
+            } else {
+              processedAllRoutes.push([]);
+            }
+          }
+        }
 
-      setMeetingPoints(meetingPointsData);
-      const routesData = result.allRoutes || [result.routes || []];
-      setAllRoutes(routesData);
-
-      // Set current meeting point (first one by default) with initial routes
-      const currentPoint = meetingPointsData[0];
-      setMeetingPoint({
-        name: currentPoint.name,
-        coordinates: currentPoint.coordinates,
-        travelTimes: currentPoint.travel_times || currentPoint.travelTimes
-      });
-      setRoutes(routesData[0] || result.routes || []);
-      setCurrentMeetingPointIndex(0);
-
-      setVenues(result.venues || []);
-
-      // Trigger animation to results
-      setAnimateToResults(true);
-
-      // Show results
-      setShowResults(true);
-      
+        // Store all meeting points and routes
+        setMeetingPoints(result.allMeetingPoints || [result]);
+        setAllRoutes(processedAllRoutes);
+        
+        // Set the first meeting point as current
+        setMeetingPoint(result);
+        setRoutes(result.routes || []);
+        setVenues(result.venues || []);
+        setCurrentMeetingPointIndex(0);
+        
+        setShowResults(true);
+        
+        // Trigger animation to results after a short delay
+        setTimeout(() => {
+          setAnimateToResults(true);
+        }, 500);
+      }
     } catch (err) {
-      console.error("Error finding meeting point:", err);
+      console.error('Meeting point calculation error:', err);
       setError(err.message || "Failed to calculate meeting point. Please try again.");
     } finally {
       setIsCalculating(false);
@@ -218,13 +172,19 @@ export default function HomeScreen() {
   const updateCurrentMeetingPoint = (index, meetingPointsData = meetingPoints) => {
     if (meetingPointsData.length > 0 && index < meetingPointsData.length) {
       const currentPoint = meetingPointsData[index];
+      const newRoutes = allRoutes[index] || [];
+      
       setMeetingPoint({
         name: currentPoint.name,
         coordinates: currentPoint.coordinates,
         travelTimes: currentPoint.travel_times || currentPoint.travelTimes
       });
-      setRoutes(allRoutes[index] || []);
+      setRoutes(newRoutes);
       setCurrentMeetingPointIndex(index);
+      
+      // Trigger animation to new meeting point
+      setAnimateToResults(true);
+      setTimeout(() => setAnimateToResults(false), 1000);
     }
   };
 
@@ -236,16 +196,34 @@ export default function HomeScreen() {
     setMapBounds(boundsData.bounds);
   };
 
+  const toggleMapExpanded = () => {
+    setMapExpanded(!mapExpanded);
+  };
+
   // Create map markers for all locations
   const createMapMarkers = () => {
     const markers = [];
 
-    // Add markers for addresses
+    // Add markers for addresses (including friends)
     addresses.forEach((address, index) => {
-      if (address.coordinates) {
+      let coordinates = null;
+      let title = null;
+      
+      // Handle friend addresses
+      if (address.friendData && address.friendData.location) {
+        coordinates = [address.friendData.location.lng, address.friendData.location.lat];
+        title = `${address.friendData.name} (${address.friendData.address})`;
+      }
+      // Handle regular addresses
+      else if (address.coordinates) {
+        coordinates = address.coordinates;
+        title = address.value || `Location ${index + 1}`;
+      }
+
+      if (coordinates) {
         markers.push({
-          position: address.coordinates,
-          title: address.value || `Location ${index + 1}`,
+          position: coordinates,
+          title: title,
           type: 'location',
           number: index + 1
         });
@@ -280,7 +258,6 @@ export default function HomeScreen() {
   };
 
   const mapMarkers = createMapMarkers();
-  const meetingZoneRadius = meetingPoint && venueRadius ? venueRadius : 0;
 
   // Start new search
   const handleStartNewSearch = () => {
@@ -295,7 +272,6 @@ export default function HomeScreen() {
     setShowResults(false);
     setAnimateToResults(false);
     setMapExpanded(false);
-    // Reset map height to default
     animateMapHeight(320);
   };
 
@@ -327,9 +303,7 @@ export default function HomeScreen() {
             <View style={styles.headerControls}>
               {/* Floating Logo */}
               <View style={styles.logoContainer}>
-                <Text style={styles.logoIcon}>
-                📍
-                </Text>
+                <Text style={styles.logoIcon}>📍</Text>
                 <Text style={styles.logoText}>Voilà!</Text>
               </View>
               
@@ -356,60 +330,48 @@ export default function HomeScreen() {
             {/* Map Container */}
             <View style={styles.mapContainer}>
               <MapContainer
-                key={`map-${currentMeetingPointIndex}-${routes.length}`}
                 center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
-                zoom={meetingPoint ? undefined : defaultMapZoom}
                 markers={mapMarkers}
                 routes={routes}
-                meetingZoneRadius={meetingZoneRadius}
+                meetingPoint={meetingPoint}
+                venueRadius={venueRadius}
                 animateToResults={animateToResults}
-                zoomToFitMarkers={false}
                 height="100%"
                 onBoundsChange={handleMapBounds}
               />
             </View>
-          </Animated.View>
+        </Animated.View>
 
-          {/* CONTENT BELOW MAP */}
-          <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
-            <ScrollView 
-              style={styles.contentScrollView} 
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-            >
-            {/* Enhanced Mobile Loading State */}
+        {/* CONTENT BELOW MAP */}
+        <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
+          <ScrollView 
+            style={styles.contentScrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Loading Indicator */}
             {isCalculating && (
               <View style={styles.loadingContainer}>
-                <LoadingIndicator 
-                  size="large" 
-                  text="Finding the perfect meeting spot..." 
-                />
+                <LoadingIndicator message="Calculating optimal meeting point..." />
               </View>
             )}
 
-            {/* Error State */}
+            {/* Error Display */}
             {error && (
               <View style={styles.errorContainer}>
-                <View style={styles.errorIcon}>
-                  <MaterialIcons name="error-outline" size={20} color="#f87171" />
-                </View>
+                <MaterialIcons name="error" size={24} color="#ef4444" style={styles.errorIcon} />
                 <View style={styles.errorContent}>
-                  <Text style={styles.errorTitle}>Oops!</Text>
+                  <Text style={styles.errorTitle}>Calculation Error</Text>
                   <Text style={styles.errorMessage}>{error}</Text>
-                  <TouchableOpacity
-                    onPress={() => setError(null)}
-                    style={styles.errorButton}
-                  >
-                    <Text style={styles.errorButtonText}>Dismiss</Text>
+                  <TouchableOpacity style={styles.errorButton} onPress={handleFindMeetingPoint}>
+                    <Text style={styles.errorButtonText}>TRY AGAIN</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
 
-            {/* Results or Address Form */}
-            {showResults && meetingPoint ? (
+            {/* Address Form or Results */}
+            {showResults && meetingPoint && !isCalculating ? (
               <View style={styles.resultsContainer}>
                 <MeetingPointResults
                   meetingPoint={meetingPoint}
