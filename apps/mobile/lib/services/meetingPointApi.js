@@ -1,340 +1,191 @@
-import { googleMapsService } from './map';
 import { CORE_API_URL } from '../config';
 
-/**
- * Find the optimal meeting point using the Rust backend API
- * @param {Array} addresses - Array of address objects with id, value, and coordinates
- * @param {Object} options - Options for the meeting point calculation
- * @param {Array} options.venueTypes - Array of venue types to search for
- * @param {Number} options.venueRadius - Radius in meters to search for venues
- * @param {Boolean} options.showVenues - Whether to include venues in the result
- * @returns {Promise} - Promise resolving to the meeting point result
- */
-export async function findOptimalMeetingPoint(addresses, options = {}) {
+const DEBUG = false;
+
+export async function findOptimalMeetingPoint(
+  addressesWithCoordinates,
+  options = {}
+) {
+  
+  console.log('[MeetingPointAPI] Starting with:', {
+    addressCount: addressesWithCoordinates.length,
+    addresses: addressesWithCoordinates.map(a => ({ id: a.id, value: a.value })),
+    options
+  });
+
+  const { 
+    transportation_mode = 'transit',
+    venue_types = ['restaurant'],
+    search_radius = 500,
+    showVenues = true
+  } = options;
+
+  if (!addressesWithCoordinates || addressesWithCoordinates.length < 2) {
+    throw new Error('At least 2 addresses are required');
+  }
+
   try {
-    if (!addresses || addresses.length < 2) {
-      throw new Error('At least two addresses are required');
-    }
-
-    // Set default options
-    const { 
-      venueTypes = ["restaurant"], 
-      venueRadius = 500, 
-      showVenues = true 
-    } = options;
-
-    // Make sure all addresses have coordinates
-    const addressesWithCoordinates = await Promise.all(
-      addresses.map(async (addr) => {
-        if (addr.coordinates) {
-          return addr;
-        }
-
-        // Geocode addresses without coordinates
-        try {
-          const geocodeResult = await googleMapsService.geocodeAddress(addr.value);
-          return {
-            ...addr,
-            coordinates: geocodeResult.coordinates
-          };
-        } catch (err) {
-          console.error(`Failed to geocode address: ${addr.value}`, err);
-          return addr;
-        }
-      })
-    );
-
-    // Format the request body for the API
     const requestBody = {
       addresses: addressesWithCoordinates.map(addr => ({
-        id: String(addr.id), // Ensure id is a string
-        address: addr.value || null,
+        id: addr.id,
+        address: addr.value,
         coordinates: addr.coordinates ? [addr.coordinates[0], addr.coordinates[1]] : null
-      })),
-      departure_time: Math.floor(Date.now() / 1000), // Current time as Unix timestamp
-      include_venues: showVenues,
-      venue_options: {
-        types: venueTypes,
-        radius: venueRadius
-      }
+      }))
     };
 
-    try {
-      const response = await fetch(CORE_API_URL + '/api/meeting-point', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
+    const response = await fetch(`${CORE_API_URL}/api/meeting-point`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point'}`);
+    }
+
+    const rustResponse = await response.json();
+
+    // Handle the new multiple meeting points structure
+    const meetingPoints = rustResponse.meeting_points || [];
+    const allRoutes = rustResponse.routes || [];
+
+    if (!meetingPoints.length) {
+      throw new Error('No meeting points returned from API');
+    }
+
+    // Use the first meeting point as the primary one
+    const primaryMeetingPoint = meetingPoints[0];
+    const primaryRoutes = allRoutes[0] || [];
+
+    // Process routes to ensure step details are preserved
+    const processRoutes = (routes) => {
+      return routes.map((route, routeIndex) => {
+        if (route.steps && route.steps.length > 0) {
+          // Process each step to ensure transit_details are preserved
+          const processedSteps = route.steps.map(step => ({
+            ...step,
+            mode: step.mode || step.travel_mode,
+            geometry: step.geometry,
+            transit_details: step.transit_details ? {
+              ...step.transit_details,
+              line: step.transit_details.line ? {
+                ...step.transit_details.line,
+                color: step.transit_details.line.color || null,
+                vehicle_type: step.transit_details.line.vehicle_type || step.transit_details.line.vehicle?.type || null
+              } : null
+            } : null
+          }));
+
+          return {
+            id: route.id || `route-${routeIndex}`,
+            geometry: route.geometry,
+            steps: processedSteps,
+            color: route.color || getRouteColor(routeIndex),
+            weight: 5,
+            opacity: 0.8
+          };
+        } else {
+          // Fallback to main route geometry if no steps
+          return {
+            id: route.id || `route-${routeIndex}`,
+            geometry: route.geometry,
+            steps: [],
+            color: route.color || getRouteColor(routeIndex),
+            weight: 5,
+            opacity: 0.8
+          };
+        }
       });
+    };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error (${response.status}): ${errorText || 'Failed to calculate meeting point API'}`);
-      }
-
-      const rustResponse = await response.json();
-
-      // Handle the new multiple meeting points structure
-      const meetingPoints = rustResponse.meeting_points || [];
-      const allRoutes = rustResponse.routes || [];
-
-      if (!meetingPoints.length) {
-        throw new Error('No meeting points returned from API');
-      }
-
-      // Use the first meeting point as the primary one for backward compatibility
-      const primaryMeetingPoint = meetingPoints[0];
-      const primaryRoutes = allRoutes[0] || [];
-
-      // Transform the Rust API response to match what our frontend expects
-      const transformedResult = {
-        name: primaryMeetingPoint.name,
-        coordinates: primaryMeetingPoint.coordinates,
-        travelTimes: primaryMeetingPoint.travel_times.map(tt => {
-          // The API returns duration in minutes - RouteDetails expects minutes
-          let durationInMinutes = tt.duration;
-          
-          // If duration is a string with format "XX min", parse it
-          if (typeof tt.duration === 'string') {
-            const match = tt.duration.match(/(\d+)\s*(min|minutes|sec|seconds)/i);
-            if (match) {
-              const value = parseInt(match[1]);
-              const unit = match[2].toLowerCase();
-              durationInMinutes = unit.startsWith('min') ? value : Math.round(value / 60);
-            } else {
-              // Try to parse as a number - if it's a number, assume it's minutes from the API
-              durationInMinutes = parseInt(tt.duration) || 0;
-            }
+    return {
+      name: primaryMeetingPoint.name,
+      coordinates: primaryMeetingPoint.coordinates,
+      travelTimes: primaryMeetingPoint.travel_times.map(tt => {
+        let durationInMinutes = 0;
+        
+        if (tt.duration !== undefined && tt.duration !== null) {
+          if (typeof tt.duration === 'object' && tt.duration.value !== undefined) {
+            durationInMinutes = tt.duration.unit === 'seconds' ? 
+              Math.round(tt.duration.value / 60) : tt.duration.value;
+          } else if (typeof tt.duration === 'string') {
+            durationInMinutes = parseInt(tt.duration) || 0;
           } else if (typeof tt.duration === 'number') {
-            // API returns duration in minutes, use as-is
             durationInMinutes = tt.duration;
           }
-          
-          // Ensure duration is a reasonable number (not negative, not too huge)
-          if (!durationInMinutes || durationInMinutes < 0 || durationInMinutes > 120) { // Max 2 hours
-            durationInMinutes = 0;
-          }
-          
-          console.log(`Travel time for ${tt.address}: ${tt.duration} minutes -> ${durationInMinutes} minutes (for RouteDetails)`);
-          
-          return {
-            id: tt.id,
-            address: tt.address,
-            duration: durationInMinutes, // Keep in minutes for RouteDetails component
-            distance: tt.distance,
-            estimated: tt.estimated || false,
-            transitSummary: tt.transit_summary
-          };
-        }),
-        routes: (() => {
-          // Each route should correspond to one person's journey (and one travel time)
-          // Don't break routes into separate steps - keep them as complete journeys
-          const processedRoutes = [];
-          
-          primaryRoutes.forEach((route, routeIndex) => {
-            if (route.steps && route.steps.length > 0) {
-              processedRoutes.push({
-                id: route.id || `route-${routeIndex}`,
-                geometry: route.geometry,
-                steps: route.steps, // Keep all steps together as one complete route
-                color: getRouteColor(routeIndex),
-                weight: 5,
-                opacity: 0.8
-              });
-            } else {
-              // Fallback to main route geometry if no steps
-              const allCoordinates = [];
-              
-              if (route.geometry && route.geometry.coordinates) {
-                route.geometry.coordinates.forEach(coord => {
-                  if (Array.isArray(coord) && coord.length >= 2 && 
-                      typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-                    allCoordinates.push([coord[0], coord[1]]);
-                  }
-                });
-              }
-              
-              if (allCoordinates.length >= 2) {
-                processedRoutes.push({
-                  id: route.id || `route-${routeIndex}`,
-                  geometry: {
-                    type: "LineString",
-                    coordinates: allCoordinates
-                  },
-                  steps: route.steps || [],
-                  color: route.color || getRouteColor(routeIndex),
-                  weight: route.stroke_width || 5,
-                  opacity: route.opacity || 0.8,
-                  mode: route.travel_mode || route.mode
-                });
-              }
-            }
-          });
-          
-          return processedRoutes;
-        })(),
-        venues: rustResponse.venues || [],
-        // Include debug data for visualization
-        debug: rustResponse.debug_data || null,
-        // Include all meeting points for swipeable interface
-        allMeetingPoints: meetingPoints.map((mp, mpIndex) => ({
-          name: mp.name,
-          coordinates: mp.coordinates,
-          travelTimes: mp.travel_times.map(tt => ({
-            id: tt.id,
-            address: tt.address,
-            duration: typeof tt.duration === 'number' ? tt.duration : parseInt(tt.duration) || 0,
-            distance: tt.distance,
-            estimated: tt.estimated || false,
-            transitSummary: tt.transit_summary
-          })),
-          routes: (() => {
-            // Each route should correspond to one person's journey (and one travel time)
-            // Don't break routes into separate steps - keep them as complete journeys
-            const processedRoutes = [];
-            const mpRoutes = allRoutes[mpIndex] || [];
-            
-            mpRoutes.forEach((route, routeIndex) => {
-              if (route.steps && route.steps.length > 0) {
-                processedRoutes.push({
-                  id: route.id || `route-${mpIndex}-${routeIndex}`,
-                  geometry: route.geometry,
-                  steps: route.steps, // Keep all steps together as one complete route
-                  color: getRouteColor(routeIndex),
-                  weight: 5,
-                  opacity: 0.8
-                });
-              } else {
-                // Fallback to main route geometry
-                const allCoordinates = [];
-                
-                if (route.geometry && route.geometry.coordinates) {
-                  route.geometry.coordinates.forEach(coord => {
-                    if (Array.isArray(coord) && coord.length >= 2 && 
-                        typeof coord[0] === 'number' && typeof coord[1] === 'number') {
-                      allCoordinates.push([coord[0], coord[1]]);
-                    }
-                  });
-                }
-                
-                if (allCoordinates.length >= 2) {
-                  processedRoutes.push({
-                    id: route.id || `route-${mpIndex}-${routeIndex}`,
-                    geometry: {
-                      type: "LineString",
-                      coordinates: allCoordinates
-                    },
-                    steps: route.steps || [],
-                    color: route.color || getRouteColor(routeIndex),
-                    weight: route.stroke_width || 5,
-                    opacity: route.opacity || 0.8,
-                    mode: route.travel_mode || route.mode
-                  });
-                }
-              }
-            });
-            
-            return processedRoutes;
-          })(),
-          venues: rustResponse.venues || []
-        }))
-      };
-
-      return transformedResult;
-    } catch (apiError) {
-      console.error('Error from Rust API, falling back to centroid calculation:', apiError);
-
-      // Fall back to simple centroid calculation with better travel time estimates
-      const centroid = findCentroid(addressesWithCoordinates.map(addr => addr.coordinates));
-      
-      // Calculate approximate travel times based on distance (rough estimate)
-      const travelTimes = addressesWithCoordinates.map(addr => {
-        const distance = calculateDistance(addr.coordinates, centroid);
-        // Rough estimate: 30 km/h average speed in city traffic
-        const estimatedDurationMinutes = Math.max(5, Math.round((distance / 30) * 60));
+        }
         
-        console.log(`Fallback travel time for ${addr.value}: ${distance.toFixed(2)}km -> ${estimatedDurationMinutes} minutes`);
+        // Ensure duration is reasonable
+        if (!durationInMinutes || durationInMinutes < 0 || durationInMinutes > 120) {
+          durationInMinutes = 0;
+        }
         
         return {
-          id: addr.id,
-          address: addr.value,
-          duration: estimatedDurationMinutes, // Keep in minutes for RouteDetails component
-          distance: distance * 1000, // Convert to meters
-          estimated: true
+          id: tt.id,
+          address: tt.address,
+          duration: durationInMinutes,
+          distance: tt.distance,
+          estimated: tt.estimated || false,
+          transitSummary: tt.transit_summary
         };
-      });
+      }),
+      routes: processRoutes(primaryRoutes),
+      venues: rustResponse.venues || [],
+      debug: rustResponse.debug_data || null,
+      allMeetingPoints: meetingPoints.map((mp, mpIndex) => ({
+        name: mp.name,
+        coordinates: mp.coordinates,
+        travelTimes: mp.travel_times.map(tt => ({
+          id: tt.id,
+          address: tt.address,
+          duration: typeof tt.duration === 'number' ? tt.duration : parseInt(tt.duration) || 0,
+          distance: tt.distance,
+          estimated: tt.estimated || false,
+          transitSummary: tt.transit_summary
+        })),
+        routes: processRoutes(allRoutes[mpIndex] || [])
+      })),
+      allRoutes: allRoutes.map(routeSet => processRoutes(routeSet))
+    };
 
-      return {
-        name: "Geographic Center",
-        coordinates: centroid,
-        travelTimes: travelTimes,
-        routes: [],
-        venues: [],
-        debug: {
-          fallbackReason: apiError.message,
-          calculationMethod: "centroid"
-        }
-      };
-    }
-  } catch (error) {
-    console.error('Error finding optimal meeting point:', error);
-    throw error;
+  } catch (apiError) {
+    console.error('Error from Rust API:', apiError);
+    
+    // Fallback to simple centroid calculation
+    return {
+      name: "Simple Meeting Point",
+      coordinates: findCentroid(addressesWithCoordinates.map(addr => addr.coordinates)),
+      travelTimes: addressesWithCoordinates.map(addr => ({
+        id: addr.id,
+        address: addr.value,
+        duration: 10,
+        estimated: true
+      })),
+      routes: [],
+      venues: [],
+      debug: null
+    };
   }
 }
 
 function getRouteColor(index) {
-  const colors = ['#1a73e8', '#e53935', '#43a047', '#fb8c00', '#8e24aa']; // Match SvelteKit colors
+  const colors = ['#1a73e8', '#e53935', '#43a047', '#fb8c00', '#8e24aa'];
   return colors[index % colors.length];
 }
 
-
-
-/**
- * Find the geometric center of multiple coordinates
- */
 function findCentroid(coordinates) {
   if (!coordinates || coordinates.length === 0) {
-    return [0, 0]; // Default fallback
+    return [0, 0];
   }
   
   const n = coordinates.length;
-  
-  // Sum all coordinates
   const sum = coordinates.reduce(
-    (acc, coord) => {
-      return [acc[0] + coord[0], acc[1] + coord[1]];
-    },
+    (acc, coord) => [acc[0] + coord[0], acc[1] + coord[1]],
     [0, 0]
   );
   
-  // Divide by number of points to get average
   return [sum[0] / n, sum[1] / n];
 }
-
-/**
- * Calculate distance between two coordinates using Haversine formula
- * @param {Array} coord1 - [lng, lat]
- * @param {Array} coord2 - [lng, lat]
- * @returns {Number} - Distance in kilometers
- */
-function calculateDistance(coord1, coord2) {
-  const R = 6371; // Earth's radius in kilometers
-  const dLat = toRadians(coord2[1] - coord1[1]);
-  const dLng = toRadians(coord2[0] - coord1[0]);
-  
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(coord1[1])) * Math.cos(toRadians(coord2[1])) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-/**
- * Convert degrees to radians
- */
-function toRadians(degrees) {
-  return degrees * (Math.PI / 180);
-} 
