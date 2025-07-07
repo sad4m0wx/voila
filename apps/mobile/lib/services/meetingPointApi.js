@@ -27,7 +27,7 @@ export async function findOptimalMeetingPoint(
   try {
     const requestBody = {
       addresses: addressesWithCoordinates.map(addr => ({
-        id: addr.id,
+        id: String(addr.id),
         address: addr.value,
         coordinates: addr.coordinates ? [addr.coordinates[0], addr.coordinates[1]] : null
       }))
