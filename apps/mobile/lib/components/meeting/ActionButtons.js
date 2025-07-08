@@ -41,48 +41,22 @@ const ActionButtons = ({ meetingPoint, onStartNewSearch, onCreateGroup, addresse
         throw new Error(shareResult.error);
       }
 
-      // Show sharing options
-      Alert.alert(
-        'Share Meeting Point',
-        'How would you like to share this meeting point?',
-        [
-          {
-            text: 'Copy Link',
-            onPress: async () => {
-              const success = await copyToClipboard(shareResult.shareUrl);
-              if (success) {
-                Alert.alert('Success', 'Link copied to clipboard!');
-              } else {
-                Alert.alert('Error', 'Failed to copy link');
-              }
-            }
-          },
-          {
-            text: 'Share',
-            onPress: async () => {
-              const coords = meetingPoint.coordinates;
-              const shareData = {
-                title: `Meeting Point: ${meetingPoint.name}`,
-                message: `I found the perfect place for us to meet! Check out this meeting point:\n\n${shareResult.shareUrl}`,
-                url: shareResult.shareUrl
-              };
+      // Share the meeting point
+      const coords = meetingPoint.coordinates;
+      const shareData = {
+        title: `Meeting Point: ${meetingPoint.name}`,
+        message: `I found the perfect place for us to meet! Check out this meeting point:\n\n${shareResult.shareUrl}`,
+        url: shareResult.shareUrl
+      };
 
-              const shared = await shareNatively(shareData);
-              if (!shared) {
-                // Fallback to copying the link
-                const success = await copyToClipboard(shareResult.shareUrl);
-                if (success) {
-                  Alert.alert('Link Copied', 'Meeting point link copied to clipboard');
-                }
-              }
-            }
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          }
-        ]
-      );
+      const shared = await shareNatively(shareData);
+      if (!shared) {
+        // Fallback to copying the link
+        const success = await copyToClipboard(shareResult.shareUrl);
+        if (success) {
+          Alert.alert('Link Copied', 'Meeting point link copied to clipboard');
+        }
+      }
 
     } catch (error) {
       console.error('Error creating share link:', error);
