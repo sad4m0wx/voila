@@ -22,7 +22,8 @@ const MeetingPointResults = ({
   setCurrentMeetingPointIndex,
   onStartNewSearch,
   onCreateGroup,
-  mode = 'main' // 'main' or 'group'
+  mode = 'main', // 'main' or 'group'
+  addresses = [] // Addresses used to generate the meeting point (for sharing)
 }) => {
   const flatListRef = useRef(null);
 
@@ -52,6 +53,7 @@ const MeetingPointResults = ({
             meetingPoint={mp}
             onStartNewSearch={mode === 'main' ? onStartNewSearch : null}
             onCreateGroup={mode === 'main' ? onCreateGroup : null}
+            addresses={addresses}
           />
 
           {/* Route Details */}

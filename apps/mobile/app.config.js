@@ -26,7 +26,12 @@ export default {
         backgroundColor: '#ffffff'
       },
       package: 'com.voila.mobile',
-      minSdkVersion: 24
+      minSdkVersion: 24,
+      config: {
+        googleMaps: {
+          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY
+        }
+      }
     },
     web: {
       bundler: 'metro',
@@ -34,7 +39,17 @@ export default {
       favicon: './assets/images/favicon.png'
     },
     plugins: [
-      'expo-router'
+      'expo-router',
+      'expo-dev-client',
+      [
+        'expo-splash-screen',
+        {
+          image: './assets/images/splash-icon.png',
+          imageWidth: 200,
+          resizeMode: 'contain',
+          backgroundColor: '#ffffff'
+        }
+      ]
     ],
     experiments: {
       typedRoutes: true

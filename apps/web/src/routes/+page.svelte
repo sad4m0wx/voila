@@ -67,11 +67,78 @@
     window.addEventListener('resize', handleResize);
     handleResize(); // Initial call
 
+    // Check for shared meeting point parameter
+    checkForSharedMeetingPoint();
+
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleResize);
     };
   });
+
+  async function checkForSharedMeetingPoint() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const shareId = urlParams.get('share');
+    
+    if (shareId) {
+      try {
+        isCalculating = true;
+        showResults = false;
+        
+        // Import the share service
+        const { getSharedMeetingPoint } = await import('$lib/services/shareService.js');
+        const result = await getSharedMeetingPoint(shareId);
+        
+        if (result.success && result.meetingPointResult) {
+          const data = result.meetingPointResult;
+          
+          // Extract meeting point (use first one if multiple)
+          if (data.meeting_points && data.meeting_points.length > 0) {
+            const mp = data.meeting_points[0];
+            meetingPoint = {
+              name: mp.name,
+              coordinates: mp.coordinates,
+              travelTimes: mp.travel_times || []
+            };
+            
+            meetingPoints = [meetingPoint];
+            currentMeetingPointIndex = 0;
+          }
+          
+          // Extract venues and routes
+          venues = data.venues || [];
+          routes = (data.routes && data.routes.length > 0) ? data.routes[0] : [];
+          allRoutes = [routes];
+          
+          // Create addresses from travel times for display
+          if (meetingPoint && meetingPoint.travelTimes) {
+            addresses = meetingPoint.travelTimes.map((tt, index) => ({
+              id: tt.id || index + 1,
+              value: tt.address,
+              coordinates: null // We don't need coordinates for display
+            }));
+          }
+          
+          // Show results and trigger animation
+          showResults = true;
+          animateToResults = true;
+          
+          // Clean up URL (remove share parameter)
+          const newUrl = new URL(window.location);
+          newUrl.searchParams.delete('share');
+          window.history.replaceState({}, '', newUrl);
+          
+        } else {
+          error = result.error || 'Failed to load shared meeting point';
+        }
+      } catch (err) {
+        console.error('Error loading shared meeting point:', err);
+        error = 'Failed to load shared meeting point';
+      } finally {
+        isCalculating = false;
+      }
+    }
+  }
 
   async function findMeetingPoint() {
     // Reset state

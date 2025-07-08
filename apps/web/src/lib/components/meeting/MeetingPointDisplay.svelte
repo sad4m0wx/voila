@@ -4,6 +4,7 @@
   import VenueList from "$components/venues/VenueList.svelte";
   import RouteDetails from "./RouteDetails.svelte";
   import LoadingIndicator from "$components/utils/LoadingIndicator.svelte";
+  import { createShareLink, shareNatively, showNotification } from "$lib/services/shareService.js";
 
   const dispatch = createEventDispatcher();
 
@@ -25,6 +26,7 @@
   let currentX = 0;
   let translateX = 0;
   let initialTranslateX = 0;
+  let isSharing = false;
 
   // Reactive variables
   $: hasMultipleMeetingPoints = meetingPoints && meetingPoints.length > 1;
@@ -130,6 +132,43 @@
   // Helper function to format coordinates for Google Maps
   function getGoogleMapsUrl(coordinates) {
     return `https://www.google.com/maps/search/?api=1&query=${coordinates[1]},${coordinates[0]}`;
+  }
+
+  // Share meeting point functionality
+  async function handleShareMeetingPoint() {
+    if (!addresses || addresses.length < 2) {
+      showNotification('Cannot share this meeting point - missing location data', 'error');
+      return;
+    }
+
+    isSharing = true;
+
+    try {
+      const shareResult = await createShareLink(addresses);
+      
+      if (!shareResult.success) {
+        throw new Error(shareResult.error);
+      }
+
+      const shareData = {
+        title: `Meeting Point: ${meetingPoint.name}`,
+        message: `I found the perfect place for us to meet! Check out this meeting point: ${shareResult.shareUrl}`,
+        url: shareResult.shareUrl
+      };
+
+      const shared = await shareNatively(shareData);
+      if (shared) {
+        showNotification('Meeting point shared successfully!', 'success');
+      } else {
+        showNotification('Link copied to clipboard', 'success');
+      }
+
+    } catch (error) {
+      console.error('Error creating share link:', error);
+      showNotification('Failed to create share link. Please try again.', 'error');
+    } finally {
+      isSharing = false;
+    }
   }
 
   function getTravelTimeColor(duration) {
@@ -335,22 +374,48 @@
           </div>
         {/if}
 
-        <!-- Google Maps Link -->
-        <a
-          href={getGoogleMapsUrl(meetingPoint.coordinates)}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn btn-outline btn-sm mb-4 inline-flex items-center text-xs"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-            <circle cx="12" cy="10" r="3"></circle>
-          </svg>
-          Open in Google Maps
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-2 h-2 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M7 17L17 7M17 7H7M17 7V17"/>
-          </svg>
-        </a>
+        <!-- Action Buttons -->
+        <div class="flex flex-wrap gap-2 mb-4">
+          <!-- Google Maps Link -->
+          <a
+            href={getGoogleMapsUrl(meetingPoint.coordinates)}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-outline btn-sm inline-flex items-center text-xs"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            Open in Maps
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-2 h-2 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M7 17L17 7M17 7H7M17 7V17"/>
+            </svg>
+          </a>
+
+          <!-- Share Meeting Point Button -->
+          {#if addresses && addresses.length >= 2}
+            <button
+              on:click={handleShareMeetingPoint}
+              disabled={isSharing}
+              class="btn btn-primary btn-sm inline-flex items-center text-xs {isSharing ? 'opacity-70 cursor-not-allowed' : ''}"
+            >
+              {#if isSharing}
+                <svg class="w-3 h-3 mr-1 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Creating Link...
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+                Share Meeting Point
+              {/if}
+            </button>
+          {/if}
+        </div>
 
         <!-- Stats Summary -->
         {#if variant !== 'card' && meetingPoint.travelTimes}

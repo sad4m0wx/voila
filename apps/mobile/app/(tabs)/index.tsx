@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import {
   findOptimalMeetingPoint,
   defaultMapCenter, 
@@ -40,6 +41,8 @@ function AuthButton() {
 }
 
 export default function HomeScreen() {
+  const { share } = useLocalSearchParams();
+  
   // State
   const [addresses, setAddresses] = useState([
     { id: 1, value: '', coordinates: null }, 
@@ -68,9 +71,9 @@ export default function HomeScreen() {
 
   // Calculate base map height based on state
   const getBaseMapHeight = () => {
-    if (mapExpanded) return 360;
-    if (showResults) return 340;
-    return 320;
+    if (mapExpanded) return 380;
+    if (showResults) return 300;
+    return 280;
   };
 
   // Animate map height changes
@@ -87,6 +90,73 @@ export default function HomeScreen() {
     const targetHeight = getBaseMapHeight();
     animateMapHeight(targetHeight);
   }, [mapExpanded, showResults]);
+
+  // Check for shared meeting point parameter
+  useEffect(() => {
+    if (share) {
+      loadSharedMeetingPoint(share);
+    }
+  }, [share]);
+
+  const loadSharedMeetingPoint = async (shareId) => {
+    try {
+      setIsCalculating(true);
+      setError(null);
+      setShowResults(false);
+      
+      // Import the share service
+      const { getSharedMeetingPoint } = await import('../../lib/services/shareService');
+      const result = await getSharedMeetingPoint(shareId);
+      
+      if (result.success && result.meetingPointResult) {
+        const data = result.meetingPointResult;
+        
+        // Extract meeting point (use first one if multiple)
+        if (data.meeting_points && data.meeting_points.length > 0) {
+          const mp = data.meeting_points[0];
+          const meetingPointData = {
+            name: mp.name,
+            coordinates: mp.coordinates,
+            travelTimes: mp.travel_times || []
+          };
+          
+          setMeetingPoint(meetingPointData);
+          setMeetingPoints([meetingPointData]);
+          setCurrentMeetingPointIndex(0);
+        }
+        
+        // Extract venues and routes
+        setVenues(data.venues || []);
+        const routesData = (data.routes && data.routes.length > 0) ? data.routes[0] : [];
+        setRoutes(routesData);
+        setAllRoutes([routesData]);
+        
+        // Create addresses from travel times for display
+        if (data.meeting_points?.[0]?.travel_times) {
+          const addressList = data.meeting_points[0].travel_times.map((tt, index) => ({
+            id: tt.id || index + 1,
+            value: tt.address,
+            coordinates: null // We don't need coordinates for display
+          }));
+          setAddresses(addressList);
+        }
+        
+        // Show results and trigger animation
+        setShowResults(true);
+        setTimeout(() => {
+          setAnimateToResults(true);
+        }, 500);
+        
+      } else {
+        setError(result.error || 'Failed to load shared meeting point');
+      }
+    } catch (err) {
+      console.error('Error loading shared meeting point:', err);
+      setError('Failed to load shared meeting point');
+    } finally {
+      setIsCalculating(false);
+    }
+  };
 
   const handleFindMeetingPoint = async () => {
     try {
@@ -381,6 +451,7 @@ export default function HomeScreen() {
                   onStartNewSearch={handleStartNewSearch}
                   onCreateGroup={handleSaveLocation}
                   mode="main"
+                  addresses={addresses}
                 />
               </View>
             ) : (
