@@ -104,11 +104,6 @@ const ActionButtons = ({ meetingPoint, onStartNewSearch, onCreateGroup, addresse
           <MaterialIcons name="map" size={18} color="#6366f1" />
           <Text style={styles.actionButtonText}>Open in Maps</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handleShareLocation}>
-          <MaterialIcons name="share" size={18} color="#6366f1" />
-          <Text style={styles.actionButtonText}>Share Location</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Share Meeting Point (if available) */}
