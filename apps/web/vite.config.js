@@ -19,7 +19,7 @@ export default defineConfig({
 		}
 	},
 	build: {
-		outDir: 'dist',
+		outDir: 'build',
 		// Ensure assets use relative paths
 		assetsInlineLimit: 0,
 		cssCodeSplit: false,
