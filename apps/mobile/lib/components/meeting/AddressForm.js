@@ -104,116 +104,17 @@ const AddressForm = ({
     }
   };
 
-  const createGroup = async () => {
-    if (!user) {
-      Alert.alert('Authentication Required', 'Please sign in to create a group.');
-      return;
-    }
-
-    // Check if we have at least 2 addresses/friends
-    const filledAddresses = addresses.filter(addr => addr.value.trim() && (addr.coordinates || addr.friendData));
-    if (filledAddresses.length < 2) {
-      Alert.alert('More Addresses Needed', 'Please add at least 2 addresses to create a group.');
-      return;
-    }
-
-    Alert.alert(
-      'Create Group',
-      `Create a group with ${filledAddresses.length} location${filledAddresses.length > 1 ? 's' : ''}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Create', 
-          onPress: async () => {
-            setIsCreatingGroup(true);
-            try {
-              // Separate friends from regular addresses
-              const friends = filledAddresses.filter(addr => addr.friendData);
-              const regularAddresses = filledAddresses.filter(addr => addr.coordinates && !addr.friendData);
-              
-              // Convert regular addresses to custom addresses format for the group
-              // Exclude the user's own address from custom addresses since they're already a member
-              const customAddresses = regularAddresses
-                .filter(addr => {
-                  // Only exclude if it's exactly the user's default address
-                  if (!defaultAddress) return true;
-                  
-                  return !(
-                    addr.value === defaultAddress.formatted_address ||
-                    (addr.coordinates && 
-                     Math.abs(addr.coordinates[1] - defaultAddress.latitude) < 0.001 &&
-                     Math.abs(addr.coordinates[0] - defaultAddress.longitude) < 0.001)
-                  );
-                })
-                .map((addr, index) => ({
-                  id: `custom-address-${Date.now()}-${index}`,
-                  display_name: addr.value.split(',')[0] || `Location ${index + 1}`,
-                  address: addr.value,
-                  coordinates: addr.coordinates,
-                  placeId: null,
-                  type: 'custom_address',
-                  isAttending: true
-                }));
-
-              // Get friend user IDs for initial members
-              const friendUserIds = friends.map(friend => friend.friendData.id);
-
-              // Create group with friends as initial members and custom addresses
-              const newGroup = await createNewGroup(
-                { 
-                  name: `${new Date().toLocaleDateString()} Meeting`,
-                  description: 'Created from meeting point search'
-                },
-                friendUserIds, // Add friends as initial members
-                customAddresses
-              );
-
-              if (newGroup) {
-                const totalItems = friends.length + customAddresses.length;
-                const itemDescription = friends.length > 0 && customAddresses.length > 0 
-                  ? `${friends.length} friend${friends.length > 1 ? 's' : ''} and ${customAddresses.length} location${customAddresses.length > 1 ? 's' : ''}`
-                  : friends.length > 0 
-                    ? `${friends.length} friend${friends.length > 1 ? 's' : ''}`
-                    : `${customAddresses.length} location${customAddresses.length > 1 ? 's' : ''}`;
-                    
-                Alert.alert(
-                  'Group Created!',
-                  `Your group "${newGroup.name}" has been created with ${itemDescription}.`,
-                  [{ 
-                    text: 'View Group', 
-                    onPress: () => {
-                      // Navigate to the group page
-                      router.push(`/groups/${newGroup.id}`);
-                    }
-                  }]
-                );
-              } else {
-                Alert.alert('Error', 'Failed to create group. Please try again.');
-              }
-            } catch (error) {
-              console.error('Error creating group:', error);
-              Alert.alert('Error', 'Failed to create group. Please try again.');
-            } finally {
-              setIsCreatingGroup(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
   const removeAddress = (id) => {
-    if (addresses.length <= 2) {
-      Alert.alert('Error', 'You need at least two addresses');
-      return;
-    }
+    // Don't allow removing if less than 2 addresses would remain
+    if (addresses.length <= 2) return;
+    
     const newAddresses = addresses.filter(addr => addr.id !== id);
     onAddressesChange && onAddressesChange(newAddresses);
   };
 
   const updateAddress = (id, value) => {
     const newAddresses = addresses.map(addr => 
-      addr.id === id ? { ...addr, value, coordinates: null } : addr
+      addr.id === id ? { ...addr, value } : addr
     );
     onAddressesChange && onAddressesChange(newAddresses);
   };
@@ -227,29 +128,45 @@ const AddressForm = ({
 
   const handlePlaceSelected = (addressId, selectedPlace) => {
     if (selectedPlace.type === 'friend') {
-      // Handle friend selection - store friend data instead of coordinates
+      // Handle friend selection
       const newAddresses = addresses.map(addr => 
         addr.id === addressId ? { 
           ...addr, 
           value: selectedPlace.friendName, 
-          coordinates: null, // Don't store coordinates for friends
+          coordinates: null, // Will be handled by the parent component
           friendData: {
             id: selectedPlace.friendId,
             name: selectedPlace.friendName,
-            address: selectedPlace.address,
-            location: selectedPlace.location
+            address: selectedPlace.friendAddress,
+            location: selectedPlace.friendLocation
           }
         } : addr
       );
       onAddressesChange && onAddressesChange(newAddresses);
     } else {
-      // Handle regular place selection
-      const coordinates = [selectedPlace.location.lng, selectedPlace.location.lat];
-      updateAddressWithCoordinates(addressId, selectedPlace.address, coordinates);
+      // Handle regular address selection
+      updateAddressWithCoordinates(
+        addressId, 
+        selectedPlace.address, 
+        [selectedPlace.location.lng, selectedPlace.location.lat]
+      );
     }
   };
 
   const handleFindMeetingPoint = () => {
+    // Check if we have at least 2 valid addresses
+    const validAddresses = addresses.filter(addr => 
+      addr.value && addr.value.trim() !== '' && (addr.coordinates || addr.friendData)
+    );
+
+    if (validAddresses.length < 2) {
+      Alert.alert(
+        'Not enough addresses',
+        'Please enter at least 2 valid addresses to find a meeting point.'
+      );
+      return;
+    }
+
     onFindMeetingPoint && onFindMeetingPoint();
   };
 
@@ -269,18 +186,7 @@ const AddressForm = ({
         </View>
       )}
 
-      {/* Add My Address Button */}
-      {user && defaultAddress && (
-        <View style={styles.myAddressSection}>
-          <TouchableOpacity style={styles.myAddressButton} onPress={addMyAddress}>
-            <MaterialIcons name="my-location" size={16} color="#6366f1" style={styles.buttonIcon} />
-            <Text style={styles.myAddressButtonText}>Add My Address</Text>
-          </TouchableOpacity>
-          <Text style={styles.myAddressPreview} numberOfLines={1}>
-            {defaultAddress.formatted_address}
-          </Text>
-        </View>
-      )}
+      
       
       {/* Address List */}
       <View style={styles.addressList}>
@@ -306,48 +212,40 @@ const AddressForm = ({
           </View>
         ))}
       </View>
-
-      {/* Add Address Button */}
-      {addresses.length < 5 && (
-        <View style={styles.addAddressContainer}>
-          <TouchableOpacity style={styles.addAddressButton} onPress={addAddress}>
-            <MaterialIcons name="add" size={16} color="#6366f1" style={styles.buttonIcon} />
-            <Text style={styles.addAddressButtonText}>Add Address</Text>
+        {/* Add My Address Button */}
+      {user && defaultAddress && (
+        <View style={styles.myAddressSection}>
+          <TouchableOpacity style={styles.myAddressButton} onPress={addMyAddress}>
+            <MaterialIcons name="my-location" size={16} color="#8b5cf6" style={styles.buttonIcon} />
+            <Text style={styles.myAddressButtonText}>Add My Address</Text>
           </TouchableOpacity>
+          <Text style={styles.myAddressPreview} numberOfLines={1}>
+            {defaultAddress.formatted_address}
+          </Text>
         </View>
       )}
+      {/* Action Buttons - Add Address + Find Meeting Point side by side */}
+      <View style={styles.actionButtonsContainer}>
+        {/* Add Address Button (Plus Icon Only) */}
+              {addresses.length < 5 && (
+          <TouchableOpacity style={styles.addAddressIconButton} onPress={addAddress}>
+            <MaterialIcons name="add" size={24} color="#8b5cf6" />
+          </TouchableOpacity>
+      )}
 
-      {/* Action Buttons */}
-      <View style={styles.buttonContainer}>
+        {/* Find Meeting Point Button */}
         <TouchableOpacity
-          style={[styles.secondaryButton, isCreatingGroup && styles.buttonDisabled]}
-          onPress={createGroup}
-          disabled={isCreatingGroup}
-        >
-          <View style={styles.buttonContent}>
-            {isCreatingGroup ? (
-              <MaterialIcons name="hourglass-empty" size={14} color="#475569" style={styles.buttonIcon} />
-            ) : (
-              <FontAwesome5 name="users" size={14} color="#475569" style={styles.buttonIcon} />
-            )}
-            <Text style={styles.secondaryButtonText}>
-              {isCreatingGroup ? 'Creating...' : 'Create Group'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.primaryButton, isCalculating && styles.buttonDisabled]}
+          style={[styles.findMeetingButton, isCalculating && styles.buttonDisabled]}
           onPress={handleFindMeetingPoint}
           disabled={isCalculating}
         >
-          <View style={styles.primaryButtonContent}>
+          <View style={styles.findMeetingButtonContent}>
             {isCalculating ? (
-              <MaterialIcons name="hourglass-empty" size={14} color="white" style={styles.buttonIcon} />
+              <MaterialIcons name="hourglass-empty" size={18} color="white" style={styles.buttonIcon} />
             ) : (
-              <MaterialIcons name="place" size={14} color="white" style={styles.buttonIcon} />
+              <MaterialIcons name="place" size={18} color="white" style={styles.buttonIcon} />
             )}
-            <Text style={styles.primaryButtonText}>
+            <Text style={styles.findMeetingButtonText}>
               {isCalculating ? 'Finding...' : 'Find Meeting Point'}
             </Text>
           </View>
@@ -408,16 +306,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8faff',
+    backgroundColor: '#f3f4f6',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#c7d2fe',
+    borderColor: '#d8b4fe', // More vivid purple border
     marginBottom: 8,
   },
   myAddressButtonText: {
-    color: '#6366f1',
+    color: '#8b5cf6', // More vivid purple
     fontSize: 14,
     fontWeight: '600',
   },
@@ -428,7 +326,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   addressList: {
-    marginBottom: 12,
+    marginBottom: 24,
     paddingHorizontal: 16,
   },
   addressItem: {
@@ -458,57 +356,37 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  addAddressContainer: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  addAddressButton: {
+  actionButtonsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  addAddressButtonText: {
-    color: '#6366f1',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  buttonContainer: {
     gap: 12,
     paddingHorizontal: 16,
   },
-  secondaryButton: {
-    backgroundColor: '#f8fafc',
+  addAddressIconButton: {
+    backgroundColor: 'rgba(139, 92, 246, 0.15)', // More vivid purple background
     borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: 56,
+    height: 56,
     justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)', // More vivid purple border
+    shadowColor: '#8b5cf6', // More vivid purple shadow
+    shadowOffset: {
+      width: 0,
+      height: 4,
   },
-  buttonIcon: {
-    marginRight: 6,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  secondaryButtonText: {
-    color: '#475569',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    backgroundColor: '#6366f1',
+  findMeetingButton: {
+    flex: 1,
+    backgroundColor: '#8b5cf6', // More vivid purple
     borderRadius: 16,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    shadowColor: '#6366f1',
+    shadowColor: '#8b5cf6', // More vivid purple shadow
     shadowOffset: {
       width: 0,
       height: 4,
@@ -517,15 +395,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  primaryButtonContent: {
+  findMeetingButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButtonText: {
+  findMeetingButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '700',
+  },
+  buttonIcon: {
+    marginRight: 6,
   },
   buttonDisabled: {
     opacity: 0.7,

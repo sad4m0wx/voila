@@ -8,8 +8,7 @@ import {
   TouchableOpacity
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import StatsDisplay from './StatsDisplay';
-import ActionButtons from './ActionButtons';
+import CompactActionsCard from './CompactActionsCard';
 import RouteDetailsToggle from './RouteDetailsToggle';
 import VenuesDisplay from './VenuesDisplay';
 
@@ -45,25 +44,26 @@ const MeetingPointResults = ({
     return (
       <View style={styles.meetingPointSlide}>
         <View style={styles.meetingPointContent}>          
-          {/* Statistics */}
-          <StatsDisplay travelTimes={mp.travelTimes || mp.travel_times || []} />
-
-          {/* Action Buttons */}
-          <ActionButtons
+          {/* Compact Actions Card with Stats and Buttons */}
+          <CompactActionsCard
             meetingPoint={mp}
-            onStartNewSearch={mode === 'main' ? onStartNewSearch : null}
+            travelTimes={mp.travelTimes || mp.travel_times || []}
+            onStartNewSearch={null} // Remove new search button from here since it's now in header
             onCreateGroup={mode === 'main' ? onCreateGroup : null}
             addresses={addresses}
+            mode={mode}
           />
 
-          {/* Route Details */}
+          {/* Route Details - No container box */}
           <RouteDetailsToggle
             routes={mp.routes || []}
             travelTimes={mp.travelTimes || mp.travel_times || []}
           />
 
-          {/* Venues */}
-          <VenuesDisplay venues={mp.venues || []} />
+          {/* Venues - No container box */}
+          {(mp.venues || []).length > 0 && (
+            <VenuesDisplay venues={mp.venues || []} />
+          )}
 
           {/* Fallback notice */}
           {mp.name === "Geographic Center" && (
@@ -81,17 +81,33 @@ const MeetingPointResults = ({
     <View style={styles.container}>
       {hasMultiple ? (
         <View style={styles.swipeableContainer}>
-          {/* Pagination dots */}
-          <View style={styles.paginationContainer}>
-            {allMeetingPoints.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.paginationDot,
-                  index === currentMeetingPointIndex && styles.paginationDotActive
-                ]}
-              />
-            ))}
+          {/* Header with New Search Button and Pagination dots */}
+          <View style={styles.headerContainer}>
+            {/* New Search Button */}
+            {mode === 'main' && onStartNewSearch && (
+              <TouchableOpacity
+                style={styles.newSearchButton}
+                onPress={onStartNewSearch}
+              >
+                <MaterialIcons name="rotate-left" size={22} color="#8b5cf6" />
+                <Text style={styles.newSearchButtonText}>New Search</Text>
+              </TouchableOpacity>
+            )}
+            
+            <View style={styles.spacer} />
+            
+            {/* Pagination dots */}
+            <View style={styles.paginationContainer}>
+              {allMeetingPoints.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.paginationDot,
+                    index === currentMeetingPointIndex && styles.paginationDotActive
+                  ]}
+                />
+              ))}
+            </View>
           </View>
 
           <FlatList
@@ -126,6 +142,18 @@ const MeetingPointResults = ({
       ) : (
         // Single meeting point
         <View style={styles.singleContainer}>
+          {/* Header with New Search Button for single meeting point */}
+          {mode === 'main' && onStartNewSearch && (
+            <View style={styles.singleHeaderContainer}>
+              <TouchableOpacity
+                style={styles.newSearchButton}
+                onPress={onStartNewSearch}
+              >
+                <MaterialIcons name="rotate-left" size={22} color="#8b5cf6" />
+                <Text style={styles.newSearchButtonText}>New Search</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {renderMeetingPoint({ item: currentMP, index: 0 })}
         </View>
       )}
@@ -143,21 +171,44 @@ const styles = StyleSheet.create({
   singleContainer: {
     paddingHorizontal: 16,
   },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+  },
+  newSearchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  newSearchButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8b5cf6',
+  },
+  spacer: {
+    width: 16, // Space between button and dots
+  },
   paginationContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
     gap: 8,
   },
   paginationDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#d1d5db',
+    backgroundColor: '#e5e7eb', // Lighter gray for inactive dots
   },
   paginationDotActive: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#8b5cf6', // More vivid purple instead of blue
     width: 24,
   },
   meetingPointsList: {
@@ -168,15 +219,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   meetingPointContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
     marginHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
   },
   locationName: {
     fontSize: 24,
@@ -198,6 +241,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#d97706',
     fontStyle: 'italic',
+  },
+  singleHeaderContainer: {
+    marginBottom: 16,
   },
 });
 

@@ -17,10 +17,6 @@ const MapContainer = (props = {}) => {
     style = {}
   } = props;
 
-  console.log(`🗺️ MapContainer received props:`, {
-    markersLength: Array.isArray(markers) ? markers.length : 'not array',
-    routesLength: Array.isArray(routes) ? routes.length : 'not array',
-  });
 
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
@@ -231,7 +227,6 @@ const MapContainer = (props = {}) => {
 
         // Get color for this step
         const stepColor = getStepColor(step, route.color);
-        console.log(`🎨 Route ${routeIndex}, Step ${stepIndex} (${step.mode}): Color ${stepColor}`);
 
         // Simple, stable key generation
         const uniqueKey = `route-${routeIndex}-step-${stepIndex}`;

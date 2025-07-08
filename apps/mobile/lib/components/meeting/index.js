@@ -4,5 +4,6 @@ export { default as RouteDetails } from './RouteDetails';
 export { default as MeetingPointResults } from './MeetingPointResults';
 export { default as StatsDisplay } from './StatsDisplay';
 export { default as ActionButtons } from './ActionButtons';
+export { default as CompactActionsCard } from './CompactActionsCard';
 export { default as RouteDetailsToggle } from './RouteDetailsToggle';
-export { default as VenuesDisplay } from './VenuesDisplay'; 
+export { default as VenuesDisplay } from './VenuesDisplay';

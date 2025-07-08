@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
   },
   contentSafeArea: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)', // Changed from gray to semi-transparent white to show metro background
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#374151',
+    color: '#8b5cf6', // More vivid purple instead of gray
   },
   mapControls: {
     flexDirection: 'row',
@@ -581,13 +581,13 @@ const styles = StyleSheet.create({
     marginVertical: 16,
     marginHorizontal: 16,
     alignItems: 'center',
-    shadowColor: '#8b5cf6',
+    shadowColor: '#8b5cf6', // More vivid purple shadow
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.1)',
+    borderColor: 'rgba(139, 92, 246, 0.1)', // More vivid purple border
   },
   errorContainer: {
     backgroundColor: 'white',
@@ -597,13 +597,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    shadowColor: '#ef4444',
+    shadowColor: '#ef4444', // More vivid red
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.1)', // More vivid red border
   },
   errorIcon: {
     marginRight: 12,
@@ -614,12 +614,12 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#dc2626',
+    color: '#ef4444', // More vivid red
     marginBottom: 4,
   },
   errorMessage: {
     fontSize: 14,
-    color: '#7f1d1d',
+    color: '#dc2626', // More vivid red but darker for text
     marginBottom: 12,
     lineHeight: 20,
   },
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   errorButtonText: {
-    color: '#dc2626',
+    color: '#ef4444', // More vivid red
     fontSize: 12,
     fontWeight: '600',
   },
