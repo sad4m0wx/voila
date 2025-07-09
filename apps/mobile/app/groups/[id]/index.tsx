@@ -97,25 +97,12 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
             
             return validatedRoute;
         }).filter(route => route !== null);
-
-        console.log(`🎨 Route validation completed: ${inputRoutes.length} input -> ${validatedRoutes.length} output routes`);
-        
-        // Log color information for debugging
-        if (validatedRoutes.length > 0) {
-            validatedRoutes.slice(0, 3).forEach((route, index) => {
-                console.log(`🎨 Route ${index} color preserved: ${route.color}, mode: ${route.mode}, id: ${route.id}`);
-            });
-            
-            // Store as last valid routes
-            lastValidRoutesRef.current = validatedRoutes;
-        }
         
         return validatedRoutes;
     }, []);
 
     // Simplified route update logic - only one useEffect to handle all updates
     useEffect(() => {
-        console.log(`🔄 MapDisplay received new routes: ${routes.length} routes`);
         
         // Clear existing timeout
         if (routeUpdateTimeoutRef.current) {
@@ -133,7 +120,6 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         
         // For subsequent updates, use a short debounce to prevent rapid changes during swiping
         routeUpdateTimeoutRef.current = setTimeout(() => {
-            console.log(`🗺️ MapDisplay updating routes: ${routes.length} input -> ${validatedRoutes.length} validated routes`);
             setStableRoutes(validatedRoutes);
         }, 150); // Slightly longer debounce for stability
 
@@ -439,15 +425,6 @@ export default function GroupScreen() {
                 transportation_mode: 'transit',
                 venue_types: ['restaurant', 'cafe', 'bar'],
                 search_radius: 1000
-            });
-
-            console.log('🎯 Meeting point API result:', {
-                hasResult: !!result,
-                routesCount: result?.routes?.length || 0,
-                allMeetingPointsCount: result?.allMeetingPoints?.length || 0,
-                travelTimesCount: result?.travelTimes?.length || 0,
-                sampleRoutes: result?.routes?.slice(0, 2),
-                resultKeys: result ? Object.keys(result) : []
             });
 
             setMeetingPoint(result);

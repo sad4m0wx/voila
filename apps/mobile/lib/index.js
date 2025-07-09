@@ -8,6 +8,9 @@ export * from './components/utils';
 export * from './contexts/AuthContext';
 export * from './components/auth';
 
+// Groups exports
+export * from './contexts/GroupsContext';
+
 // Utils exports
 export * from './utils/phoneUtils';
 

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   findOptimalMeetingPoint,
   defaultMapCenter, 
@@ -24,7 +24,8 @@ import {
   LoadingIndicator,
   SignInButton,
   ProfileButton,
-  useAuth
+  useAuth,
+  useGroups
 } from '../../lib';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -42,6 +43,9 @@ function AuthButton() {
 
 export default function HomeScreen() {
   const { share } = useLocalSearchParams();
+  const router = useRouter();
+  const { user, isFullyOnboarded, addresses: userAddresses } = useAuth();
+  const { createNewGroup } = useGroups();
   
   // State
   const [addresses, setAddresses] = useState([
@@ -345,13 +349,113 @@ export default function HomeScreen() {
     animateMapHeight(320);
   };
 
-  // Handle save location
-  const handleSaveLocation = () => {
-    Alert.alert(
-      'Save Location',
-      'Location saving feature will be implemented in the next phase.',
-      [{ text: 'OK' }]
-    );
+  // Helper function to check if an address belongs to the current user
+  const isUserOwnAddress = (address) => {
+    if (!userAddresses || !userAddresses.length) return false;
+    
+    // Check if the address matches any of the user's saved addresses
+    return userAddresses.some(userAddr => {
+      // Compare coordinates if available (within small tolerance for floating point)
+      if (address.coordinates && userAddr.latitude && userAddr.longitude) {
+        const latDiff = Math.abs(address.coordinates[1] - userAddr.latitude);
+        const lngDiff = Math.abs(address.coordinates[0] - userAddr.longitude);
+        return latDiff < 0.0001 && lngDiff < 0.0001; // Very small tolerance
+      }
+      
+      // Fallback: compare formatted addresses (basic string matching)
+      if (address.value && userAddr.formatted_address) {
+        return address.value.toLowerCase().includes(userAddr.formatted_address.toLowerCase()) ||
+               userAddr.formatted_address.toLowerCase().includes(address.value.toLowerCase());
+      }
+      
+      return false;
+    });
+  };
+
+  // Handle save location - Create group with current addresses
+  const handleSaveLocation = async () => {
+    if (!user || !isFullyOnboarded) {
+      Alert.alert(
+        'Authentication Required',
+        'Please sign in to create a group.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign In', onPress: () => router.push('/profile') }
+        ]
+      );
+      return;
+    }
+
+    if (!meetingPoint) {
+      Alert.alert('Error', 'No meeting point to save. Please calculate a meeting point first.');
+      return;
+    }
+
+    try {
+      // Create a descriptive group name
+      const groupName = `Meeting at ${meetingPoint.name || 'Selected Location'}`;
+      
+      // Separate friends, user's own addresses, and custom addresses
+      const friendMembers = [];
+      const customAddresses = [];
+      let hasUserAddress = false;
+      
+      addresses.forEach((addr, index) => {
+        if (addr.friendData) {
+          // This is a friend - add them as a group member
+          friendMembers.push(addr.friendData.id);
+        } else if (addr.coordinates && addr.value) {
+          // Check if this is the user's own address
+          if (isUserOwnAddress(addr)) {
+            // This is the user's own address - don't add as custom location
+            // The user will be automatically added as a group member
+            hasUserAddress = true;
+            console.log('Detected user own address, skipping custom location creation');
+          } else {
+            // This is a custom address - add as custom location
+            customAddresses.push({
+              id: `address-${index}`,
+              display_name: addr.value.split(',')[0] || `Location ${index + 1}`,
+              address: addr.value,
+              coordinates: addr.coordinates,
+              type: 'custom_address',
+              isAttending: true,
+            });
+          }
+        }
+      });
+
+      console.log('Creating group with:', {
+        groupName,
+        friendMembers,
+        customAddresses: customAddresses.length
+      });
+
+      const newGroup = await createNewGroup(
+        { name: groupName },
+        friendMembers,
+        customAddresses
+      );
+
+      if (newGroup) {
+        const totalMembers = friendMembers.length + 1; // +1 for the current user
+        const locationText = customAddresses.length > 0 ? ` and ${customAddresses.length} custom locations` : '';
+        
+        Alert.alert(
+          'Group Created!',
+          `Group "${newGroup.name}" created successfully with ${totalMembers} members${locationText}.`,
+          [
+            { text: 'Stay Here', style: 'cancel' },
+            { text: 'Go to Group', onPress: () => router.push(`/groups/${newGroup.id}`) }
+          ]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to create group. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error creating group:', err);
+      Alert.alert('Error', 'Failed to create group. Please try again.');
+    }
   };
 
   return (
