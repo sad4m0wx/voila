@@ -6,12 +6,6 @@ export async function findOptimalMeetingPoint(
   addressesWithCoordinates,
   options = {}
 ) {
-  
-  console.log('[MeetingPointAPI] Starting with:', {
-    addressCount: addressesWithCoordinates.length,
-    addresses: addressesWithCoordinates.map(a => ({ id: a.id, value: a.value })),
-    options
-  });
 
   const { 
     transportation_mode = 'transit',
@@ -172,7 +166,8 @@ export async function findOptimalMeetingPoint(
 }
 
 function getRouteColor(index) {
-  const colors = ['#1a73e8', '#e53935', '#43a047', '#fb8c00', '#8e24aa'];
+  // Use gradient colors for routes
+  const colors = ['#3b82f6', '#dc2626', '#059669', '#f59e0b', '#8b5cf6'];
   return colors[index % colors.length];
 }
 

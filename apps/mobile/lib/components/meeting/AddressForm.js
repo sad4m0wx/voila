@@ -216,7 +216,7 @@ const AddressForm = ({
       {user && defaultAddress && (
         <View style={styles.myAddressSection}>
           <TouchableOpacity style={styles.myAddressButton} onPress={addMyAddress}>
-            <MaterialIcons name="my-location" size={16} color="#8b5cf6" style={styles.buttonIcon} />
+            <MaterialIcons name="my-location" size={16} color="#a855f7" style={styles.buttonIcon} />
             <Text style={styles.myAddressButtonText}>Add My Address</Text>
           </TouchableOpacity>
           <Text style={styles.myAddressPreview} numberOfLines={1}>
@@ -229,7 +229,7 @@ const AddressForm = ({
         {/* Add Address Button (Plus Icon Only) */}
               {addresses.length < 5 && (
           <TouchableOpacity style={styles.addAddressIconButton} onPress={addAddress}>
-            <MaterialIcons name="add" size={24} color="#8b5cf6" />
+            <MaterialIcons name="add" size={24} color="#a855f7" />
           </TouchableOpacity>
       )}
 

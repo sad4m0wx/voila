@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Linking, Platform, Share } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { createShareLink, shareNatively, copyToClipboard } from '../../services/shareService';
+import { GradientView } from '../core';
+import { getGradientColors } from '../../theme/gradients';
 
 const CompactActionsCard = ({ 
   meetingPoint, 
@@ -111,8 +113,8 @@ const CompactActionsCard = ({
       icon: 'map',
       label: 'Open Maps',
       onPress: handleOpenInMaps,
-      color: '#10b981', // More vivid green
-      background: '#ecfdf5'
+      gradientName: 'greenEmerald',
+      background: getGradientColors('lightGreen')
     },
     ...(addresses && addresses.length >= 2 ? [{
       id: 'share',
@@ -120,8 +122,8 @@ const CompactActionsCard = ({
       label: isSharing ? 'Sharing...' : 'Share',
       onPress: handleShareMeetingPoint,
       disabled: isSharing,
-      color: '#8b5cf6', // More vivid purple
-      background: '#f3f4f6'
+      gradientName: 'blueToMagenta',
+      background: getGradientColors('lightBlue')
     }] : [])
   ];
 
@@ -130,8 +132,8 @@ const CompactActionsCard = ({
     icon: 'group-add',
     label: 'Create Group',
     onPress: onCreateGroup,
-    color: '#ef4444', // More vivid red
-    background: '#fef2f2'
+    gradientName: 'sunsetOrange',
+    background: getGradientColors('lightPurple')
   } : null;
 
   return (
@@ -148,52 +150,64 @@ const CompactActionsCard = ({
       {/* Action Buttons Grid */}
       <View style={styles.actionsGrid}>
         {actions.map((action) => (
-          <TouchableOpacity
+          <GradientView
             key={action.id}
+            colors={action.background}
             style={[
               styles.actionButton,
-              { backgroundColor: action.background },
               action.disabled && styles.actionButtonDisabled
             ]}
-            onPress={action.onPress}
-            disabled={action.disabled}
           >
-            <View style={[styles.actionIconContainer, { backgroundColor: action.color }]}>
-              <MaterialIcons 
-                name={action.icon} 
-                size={20} 
-                color="white"
-              />
-            </View>
-            <Text style={[styles.actionLabel, { color: action.color }]}>
-              {action.label}
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButtonContent}
+              onPress={action.onPress}
+              disabled={action.disabled}
+            >
+              <GradientView
+                gradientName={action.gradientName}
+                style={styles.actionIconContainer}
+              >
+                <MaterialIcons 
+                  name={action.icon} 
+                  size={20} 
+                  color="white"
+                />
+              </GradientView>
+              <Text style={[styles.actionLabel, { color: getGradientColors(action.gradientName)[0] }]}>
+                {action.label}
+              </Text>
+            </TouchableOpacity>
+          </GradientView>
         ))}
       </View>
 
       {/* Create Group Button */}
       {createGroupAction && (
-        <TouchableOpacity
+        <GradientView
           key={createGroupAction.id}
-          style={[
-            styles.actionButton,
-            { backgroundColor: createGroupAction.background }
-          ]}
-          onPress={createGroupAction.onPress}
-          disabled={createGroupAction.disabled}
+          colors={createGroupAction.background}
+          style={styles.actionButton}
         >
-          <View style={[styles.actionIconContainer, { backgroundColor: createGroupAction.color }]}>
-            <MaterialIcons 
-              name={createGroupAction.icon} 
-              size={20} 
-              color="white"
-            />
-          </View>
-          <Text style={[styles.actionLabel, { color: createGroupAction.color }]}>
-            {createGroupAction.label}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButtonContent}
+            onPress={createGroupAction.onPress}
+            disabled={createGroupAction.disabled}
+          >
+            <GradientView
+              gradientName={createGroupAction.gradientName}
+              style={styles.actionIconContainer}
+            >
+              <MaterialIcons 
+                name={createGroupAction.icon} 
+                size={20} 
+                color="white"
+              />
+            </GradientView>
+            <Text style={[styles.actionLabel, { color: getGradientColors(createGroupAction.gradientName)[0] }]}>
+              {createGroupAction.label}
+            </Text>
+          </TouchableOpacity>
+        </GradientView>
       )}
     </View>
   );
@@ -252,13 +266,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   actionButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
     borderRadius: 16,
     minWidth: '22%',
     flex: 1,
     marginHorizontal: 2,
+  },
+  actionButtonContent: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
   },
   actionButtonDisabled: {
     opacity: 0.6,

@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
+import { getGradientColors } from '../../theme/gradients';
 
 const MapContainer = (props = {}) => {
   const {
@@ -103,18 +104,24 @@ const MapContainer = (props = {}) => {
     }, 500);
   }, [animateToResults, meetingPoint, meetingZoneRadius, mapReady]);
 
-  // Get marker color based on type and index
+  // Get marker color based on type and index using gradient colors
   const getMarkerColor = useCallback((type, index = 0) => {
-    const colors = ['#3B82F6', '#F59E0B', '#8B5CF6', '#10B981', '#EF4444'];
+    const gradientColorSets = [
+      getGradientColors('blueToMagenta')[0],
+      getGradientColors('sunsetOrange')[0],
+      getGradientColors('purpleToViolet')[0],
+      getGradientColors('greenEmerald')[0],
+      getGradientColors('crimsonRed')[0]
+    ];
     
     switch (type) {
       case 'meeting-point':
-        return '#EF4444';
+        return getGradientColors('crimsonRed')[0];
       case 'venue':
-        return '#F59E0B';
+        return getGradientColors('sunsetOrange')[0];
       case 'location':
       default:
-        return colors[index % colors.length];
+        return gradientColorSets[index % gradientColorSets.length];
     }
   }, []);
 
@@ -189,8 +196,8 @@ const MapContainer = (props = {}) => {
       return '#2563EB'; // Darker blue
     }
     
-    // Default to route color or indigo
-    const defaultColor = routeColor || '#6366f1';
+    // Default to route color or blue
+    const defaultColor = routeColor || '#3b82f6';
     return defaultColor;
   }, []);
 
@@ -260,7 +267,7 @@ const MapContainer = (props = {}) => {
           <Polyline
             key={uniqueKey}
             coordinates={coordinates}
-            strokeColor={route.color || '#6366f1'}
+            strokeColor={route.color || '#3b82f6'}
             strokeWidth={6}
             geodesic={true}
             tappable={false}
@@ -284,8 +291,8 @@ const MapContainer = (props = {}) => {
           longitude: meetingPoint.coordinates[0],
         }}
         radius={meetingZoneRadius}
-        strokeColor="rgba(59, 130, 246, 0.5)"
-        fillColor="rgba(59, 130, 246, 0.15)"
+        strokeColor="rgba(168, 85, 247, 0.5)"
+        fillColor="rgba(168, 85, 247, 0.15)"
         strokeWidth={2}
       />
     );
@@ -323,7 +330,7 @@ const MapContainer = (props = {}) => {
         onRegionChangeComplete={onRegionChangeComplete}
         mapType="standard"
         loadingEnabled={true}
-        loadingIndicatorColor="#6366f1"
+        loadingIndicatorColor="#3b82f6"
         loadingBackgroundColor="#f3f4f6"
       >
         {/* Render all markers */}

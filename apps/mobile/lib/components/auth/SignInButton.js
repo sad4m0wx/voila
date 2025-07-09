@@ -3,6 +3,8 @@ import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import AuthModal from './AuthModal';
+import { GradientView } from '../core';
+import { GRADIENT_STYLES } from '../../theme/gradients';
 
 export default function SignInButton({ onPress, style }) {
   const { user, isFullyOnboarded } = useAuth();
@@ -23,14 +25,19 @@ export default function SignInButton({ onPress, style }) {
 
   return (
     <>
-      <TouchableOpacity
-        style={[styles.button, style]}
-        onPress={handlePress}
-        activeOpacity={0.8}
+      <GradientView
+        gradientName="lightBlue"
+        style={[styles.button, style, GRADIENT_STYLES.card]}
       >
-        <MaterialIcons name="person" size={16} color="#6366f1" />
-        <Text style={styles.buttonText}>Sign In</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.buttonContent}
+          onPress={handlePress}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="person" size={16} color="#6366f1" />
+          <Text style={styles.buttonText}>Sign In</Text>
+        </TouchableOpacity>
+      </GradientView>
       
       <AuthModal 
         visible={showAuthModal} 
@@ -42,22 +49,15 @@ export default function SignInButton({ onPress, style }) {
 
 const styles = StyleSheet.create({
   button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.2)',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   buttonText: {
     marginLeft: 6,

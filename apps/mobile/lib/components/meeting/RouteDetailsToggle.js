@@ -15,7 +15,7 @@ const RouteDetailsToggle = ({ routes, travelTimes }) => {
         onPress={() => setShowRouteDetails(!showRouteDetails)}
       >
         <View style={styles.routeToggleLeft}>
-          <MaterialIcons name="directions" size={20} color="#6366f1" />
+          <MaterialIcons name="directions" size={20} color="#3b82f6" />
           <Text style={styles.routeToggleText}>
             Route Details 
           </Text>
@@ -23,7 +23,7 @@ const RouteDetailsToggle = ({ routes, travelTimes }) => {
         <MaterialIcons 
           name={showRouteDetails ? "expand-less" : "expand-more"} 
           size={24} 
-          color="#6366f1" 
+          color="#3b82f6" 
         />
       </TouchableOpacity>
 

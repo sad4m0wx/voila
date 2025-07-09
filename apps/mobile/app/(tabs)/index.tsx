@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#8b5cf6', // More vivid purple instead of gray
+    color: '#a855f7', // Use gradient purple color
   },
   mapControls: {
     flexDirection: 'row',

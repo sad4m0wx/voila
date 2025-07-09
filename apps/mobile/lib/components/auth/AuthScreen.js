@@ -8,6 +8,8 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import PhoneInput from '../core/PhoneInput';
 import LoadingIndicator from '../utils/LoadingIndicator';
+import { GradientView } from '../core';
+import { GRADIENT_STYLES } from '../../theme/gradients';
 
 export default function AuthScreen({ onVerificationSent }) {
   const { sendVerificationCode, phoneVerification } = useAuth();
@@ -58,20 +60,22 @@ export default function AuthScreen({ onVerificationSent }) {
         )}
 
         {/* Send Code Button */}
-        <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (!isValid || phoneVerification.isLoading) && styles.sendButtonDisabled
-          ]}
-          onPress={handleSendCode}
-          disabled={!isValid || phoneVerification.isLoading}
+        <GradientView
+          gradientName="blueToMagenta"
+          style={[styles.sendButton, GRADIENT_STYLES.primaryButton, (!isValid || phoneVerification.isLoading) && styles.sendButtonDisabled]}
         >
-          {phoneVerification.isLoading ? (
-            <LoadingIndicator size="small" color="#ffffff" />
-          ) : (
-            <Text style={styles.sendButtonText}>Send Verification Code</Text>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sendButtonContent}
+            onPress={handleSendCode}
+            disabled={!isValid || phoneVerification.isLoading}
+          >
+            {phoneVerification.isLoading ? (
+              <LoadingIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.sendButtonText}>Send Verification Code</Text>
+            )}
+          </TouchableOpacity>
+        </GradientView>
 
         {/* Terms */}
         <Text style={styles.termsText}>
@@ -130,25 +134,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   sendButton: {
-    backgroundColor: '#6366f1',
     borderRadius: 12,
+    marginBottom: 24,
+  },
+  sendButtonContent: {
     paddingVertical: 16,
     paddingHorizontal: 24,
     alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#6366f1',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
   },
   sendButtonDisabled: {
-    backgroundColor: '#d1d5db',
-    shadowOpacity: 0,
-    elevation: 0,
+    opacity: 0.6,
   },
   sendButtonText: {
     color: '#ffffff',

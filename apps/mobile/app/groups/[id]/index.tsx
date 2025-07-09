@@ -18,8 +18,10 @@ import { useAuth } from '../../../lib/contexts/AuthContext';
 import { useGroups } from '../../../lib/contexts/GroupsContext';
 import SlideToConfirm from '../../../lib/components/utils/SlideToConfirm';
 import MapContainer from '../../../lib/components/maps/MapContainer';
-import { MeetingPointResults } from '../../../lib';
+import { MeetingPointResults, MetroBackground } from '../../../lib';
 import { findOptimalMeetingPoint } from '../../../lib/services/meetingPointApi';
+import { GradientView } from '../../../lib/components/core';
+import { GRADIENT_STYLES } from '../../../lib/theme/gradients';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -163,36 +165,54 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         <View style={[styles.mapContainer, { height: mapExpanded ? 400 : 320 }]}>
             {/* Floating Header Controls */}
             <View style={styles.headerControls}>
-                <TouchableOpacity
-                    style={styles.headerButton}
-                    onPress={onBackPress}
+                <GradientView
+                    gradientName="lightBlue"
+                    style={[styles.headerButton, GRADIENT_STYLES.card]}
                 >
-                    <MaterialIcons name="arrow-back" size={20} color="#111827" />
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.headerButtonContent}
+                        onPress={onBackPress}
+                    >
+                        <MaterialIcons name="arrow-back" size={20} color="#111827" />
+                    </TouchableOpacity>
+                </GradientView>
                 
-                <View style={styles.groupTitleContainer}>
+                <GradientView
+                    gradientName="lightPurple"
+                    style={[styles.groupTitleContainer, GRADIENT_STYLES.header]}
+                >
                     <Text style={styles.floatingGroupTitle} numberOfLines={1}>
                         {currentGroup?.name || 'Group'}
                     </Text>
-                </View>
+                </GradientView>
                 
                 <View style={styles.rightButtons}>
-                    <TouchableOpacity
-                        style={styles.headerButton}
-                        onPress={toggleMapExpanded}
+                    <GradientView
+                        gradientName="lightBlue"
+                        style={[styles.headerButton, GRADIENT_STYLES.card]}
                     >
-                        <MaterialIcons 
-                            name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                            size={20} 
-                            color="#6b7280" 
-                        />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.headerButton}
-                        onPress={onSettingsPress}
+                        <TouchableOpacity
+                            style={styles.headerButtonContent}
+                            onPress={toggleMapExpanded}
+                        >
+                            <MaterialIcons 
+                                name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
+                                size={20} 
+                                color="#6b7280" 
+                            />
+                        </TouchableOpacity>
+                    </GradientView>
+                    <GradientView
+                        gradientName="lightBlue"
+                        style={[styles.headerButton, GRADIENT_STYLES.card]}
                     >
-                        <MaterialIcons name="settings" size={20} color="#6b7280" />
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.headerButtonContent}
+                            onPress={onSettingsPress}
+                        >
+                            <MaterialIcons name="settings" size={20} color="#6b7280" />
+                        </TouchableOpacity>
+                    </GradientView>
                 </View>
             </View>
 
@@ -234,18 +254,18 @@ function AttendeesList({ members, isExpanded, onToggle }: {
             {isExpanded && (
                 <View style={styles.attendeesList}>
                     {members.map((member) => (
-                        <View key={member.id} style={styles.attendeeItem}>
+                        <GradientView key={member.id} gradientName="lightBlue" style={[styles.attendeeItem, GRADIENT_STYLES.card]}>
                             <View style={styles.attendeeInfo}>
-                                <View style={[
-                                    styles.attendeeAvatar,
-                                    member.type === 'custom_location' && styles.customLocationAvatar
-                                ]}>
+                                <GradientView 
+                                    gradientName={member.type === 'custom_location' ? "sunsetOrange" : "blueToMagenta"}
+                                    style={styles.attendeeAvatar}
+                                >
                                     <MaterialIcons 
                                         name={member.type === 'custom_location' ? "place" : "person"} 
                                         size={16} 
-                                        color={member.type === 'custom_location' ? "#f59e0b" : "#6366f1"} 
+                                        color="white" 
                                     />
-                                </View>
+                                </GradientView>
                                 <View style={styles.attendeeDetails}>
                                     <Text style={styles.attendeeName} numberOfLines={1}>
                                         {member.display_name || 'Unknown'}
@@ -270,7 +290,7 @@ function AttendeesList({ members, isExpanded, onToggle }: {
                                     <MaterialIcons name="help" size={18} color="#9ca3af" />
                                 )}
                             </View>
-                        </View>
+                        </GradientView>
                     ))}
                 </View>
             )}
@@ -622,31 +642,22 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    headerButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: 16,
-        width: 42,
-        height: 42,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 4,
-    },
-    groupTitleContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 4,
-        maxWidth: '60%',
-    },
+      headerButton: {
+    borderRadius: 16,
+    width: 42,
+    height: 42,
+  },
+  headerButtonContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+      groupTitleContainer: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    maxWidth: '60%',
+  },
     floatingGroupTitle: {
         fontSize: 16,
         fontWeight: '700',
@@ -819,33 +830,26 @@ const styles = StyleSheet.create({
         paddingBottom: 8,
         gap: 12,
     },
-    attendeeItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#f8fafc',
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: '#f1f5f9',
-    },
+      attendeeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 16,
+    padding: 16,
+  },
     attendeeInfo: {
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
         gap: 10,
     },
-    attendeeAvatar: {
-        backgroundColor: '#e0e7ff',
-        borderRadius: 16,
-        width: 32,
-        height: 32,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    customLocationAvatar: {
-        backgroundColor: '#fef3c7',
-    },
+      attendeeAvatar: {
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
     attendeeDetails: {
         flex: 1,
     },

@@ -1,138 +1,136 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Linking, Platform, Share } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { createShareLink, shareNatively, copyToClipboard } from '../../services/shareService';
+import { shareContent } from '../../services/shareService';
+import { GradientView } from '../core';
+import { GRADIENT_STYLES, getGradientColors, getGradientPositions } from '../../theme/gradients';
 
-const ActionButtons = ({ meetingPoint, onStartNewSearch, onCreateGroup, addresses }) => {
+export default function ActionButtons({ 
+  meetingPoint, 
+  onNewSearch,
+  onAddToGroup,
+  isGroupMode = false,
+  disabled = false 
+}) {
   const [isSharing, setIsSharing] = useState(false);
 
-  const handleShareLocation = async () => {
-    if (!meetingPoint || !meetingPoint.coordinates) {
-      Alert.alert('Error', 'No location to share');
+  const handleDirections = () => {
+    if (!meetingPoint?.coordinates) {
+      Alert.alert('Error', 'No coordinates available for directions');
       return;
     }
 
-    try {
-      const coords = meetingPoint.coordinates;
-      const shareData = {
-        title: `Meeting Point: ${meetingPoint.name}`,
-        message: `Let's meet at ${meetingPoint.name}\nhttps://maps.google.com/?q=${coords[1]},${coords[0]}`,
-      };
-
-      await Share.share(shareData);
-    } catch (error) {
-      console.error('Error sharing:', error);
-      Alert.alert('Error', 'Failed to share location');
-    }
+    const [lng, lat] = meetingPoint.coordinates;
+    const url = `https://maps.google.com/maps?daddr=${lat},${lng}`;
+    
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Error', 'Could not open maps application');
+    });
   };
 
-  const handleShareMeetingPoint = async () => {
-    if (!addresses || addresses.length < 2) {
-      Alert.alert('Error', 'Cannot share this meeting point - missing location data');
-      return;
-    }
-
+  const handleShare = async () => {
+    if (!meetingPoint) return;
+    
     setIsSharing(true);
-
     try {
-      const shareResult = await createShareLink(addresses);
-      
-      if (!shareResult.success) {
-        throw new Error(shareResult.error);
-      }
+      const shareText = `Check out this meeting point: ${meetingPoint.name || 'Location'}`;
+      const shareUrl = meetingPoint.coordinates 
+        ? `https://maps.google.com/maps?q=${meetingPoint.coordinates[1]},${meetingPoint.coordinates[0]}`
+        : null;
 
-      // Share the meeting point
-      const coords = meetingPoint.coordinates;
-      const shareData = {
-        title: `Meeting Point: ${meetingPoint.name}`,
-        message: `I found the perfect place for us to meet! Check out this meeting point:\n\n${shareResult.shareUrl}`,
-        url: shareResult.shareUrl
-      };
-
-      const shared = await shareNatively(shareData);
-      if (!shared) {
-        // Fallback to copying the link
-        const success = await copyToClipboard(shareResult.shareUrl);
-        if (success) {
-          Alert.alert('Link Copied', 'Meeting point link copied to clipboard');
-        }
-      }
-
+      await shareContent({
+        title: 'Meeting Point',
+        message: shareText,
+        url: shareUrl
+      });
     } catch (error) {
-      console.error('Error creating share link:', error);
-      Alert.alert('Error', 'Failed to create share link. Please try again.');
+      console.error('Error sharing:', error);
+      Alert.alert('Error', 'Could not share meeting point');
     } finally {
       setIsSharing(false);
     }
   };
 
-  const handleOpenInMaps = () => {
-    if (!meetingPoint || !meetingPoint.coordinates) {
-      Alert.alert('Error', 'No location to open');
-      return;
-    }
-
-    const [lng, lat] = meetingPoint.coordinates;
-    const mapsUrl = `https://maps.google.com/?q=${lat},${lng}&ll=${lat},${lng}&z=16`;
-
-    if (Platform.OS === 'ios') {
-      // Try to open in Apple Maps first, fallback to Google Maps
-      const appleMapsUrl = `http://maps.apple.com/?q=${lat},${lng}&ll=${lat},${lng}&z=16`;
-      Linking.canOpenURL(appleMapsUrl).then(supported => {
-        if (supported) {
-          Linking.openURL(appleMapsUrl);
-        } else {
-          Linking.openURL(mapsUrl);
-        }
-      });
-    } else {
-      Linking.openURL(mapsUrl);
-    }
+  const handleBookTable = () => {
+    Alert.alert(
+      'Book Table',
+      'This feature will connect to restaurant booking services.',
+      [{ text: 'OK', style: 'default' }]
+    );
   };
 
   return (
     <View style={styles.container}>
-      
-            {onStartNewSearch && (
-              <TouchableOpacity style={styles.primaryButton} onPress={onStartNewSearch}>
-                <Text style={styles.primaryButtonText}>New Search</Text>
-              </TouchableOpacity>
-            )}
-      {/* Primary Actions */}
+      {/* Action buttons row */}
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleOpenInMaps}>
-          <MaterialIcons name="map" size={18} color="#6366f1" />
-          <Text style={styles.actionButtonText}>Open in Maps</Text>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={handleDirections}
+          disabled={disabled}
+        >
+          <MaterialIcons name="directions" size={18} color="#3b82f6" />
+          <Text style={styles.actionButtonText}>Directions</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={handleBookTable}
+          disabled={disabled}
+        >
+          <MaterialIcons name="restaurant" size={18} color="#059669" />
+          <Text style={styles.actionButtonText}>Book Table</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Share Meeting Point (if available) */}
-      {addresses && addresses.length >= 2 && (
+      {/* Primary action buttons with gradients */}
+      <GradientView
+        gradientName="blueToMagenta"
+        style={[styles.primaryButton, GRADIENT_STYLES.primaryButton]}
+      >
         <TouchableOpacity 
-          style={[styles.shareButton, isSharing && styles.shareButtonLoading]} 
-          onPress={handleShareMeetingPoint}
-          disabled={isSharing}
+          style={styles.primaryButtonContent}
+          onPress={onNewSearch}
+          disabled={disabled}
         >
-          <MaterialIcons 
-            name={isSharing ? "hourglass-empty" : "link"} 
-            size={18} 
-            color="white" 
-          />
-          <Text style={styles.shareButtonText}>
-            {isSharing ? 'Creating Link...' : 'Share Meeting Point'}
-          </Text>
+          <MaterialIcons name="search" size={16} color="white" style={styles.buttonIcon} />
+          <Text style={styles.primaryButtonText}>New Search</Text>
         </TouchableOpacity>
+      </GradientView>
+
+      {!isGroupMode && (
+        <GradientView
+          gradientName="greenEmerald"
+          style={[styles.groupButton, GRADIENT_STYLES.confirmButton]}
+        >
+          <TouchableOpacity 
+            style={styles.groupButtonContent}
+            onPress={onAddToGroup}
+            disabled={disabled}
+          >
+            <MaterialIcons name="group-add" size={16} color="white" />
+            <Text style={styles.groupButtonText}>Add to Group</Text>
+          </TouchableOpacity>
+        </GradientView>
       )}
 
-      {onCreateGroup && (
-        <TouchableOpacity style={styles.groupButton} onPress={onCreateGroup}>
-          <MaterialIcons name="group-add" size={18} color="white" />
-          <Text style={styles.groupButtonText}>Create Group</Text>
+      <GradientView
+        gradientName="purpleToViolet"
+        style={[styles.shareButton, GRADIENT_STYLES.secondaryButton, isSharing && styles.shareButtonLoading]}
+      >
+        <TouchableOpacity 
+          style={styles.shareButtonContent}
+          onPress={handleShare}
+          disabled={disabled || isSharing}
+        >
+          <MaterialIcons name="share" size={16} color="white" />
+          <Text style={styles.shareButtonText}>
+            {isSharing ? 'Sharing...' : 'Share'}
+          </Text>
         </TouchableOpacity>
-      )}
+      </GradientView>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -158,40 +156,39 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6366f1',
+    color: '#4f46e5',
   },
   primaryButton: {
-    backgroundColor: '#6366f1',
     borderRadius: 12,
+    marginBottom: 8,
+  },
+  primaryButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    marginBottom: 8,
-    alignItems: 'center',
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 8,
   },
   primaryButtonText: {
     fontSize: 14,
     fontWeight: '700',
     color: 'white',
   },
+  buttonIcon: {
+    marginRight: 4,
+  },
   groupButton: {
-    backgroundColor: '#10b981',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  groupButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     gap: 8,
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   groupButtonText: {
     color: 'white',
@@ -199,20 +196,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   shareButton: {
-    backgroundColor: '#8b5cf6',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  shareButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 12,
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   shareButtonLoading: {
     opacity: 0.7,
@@ -222,6 +215,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-});
-
-export default ActionButtons; 
+}); 

@@ -6,6 +6,8 @@ import {
   PanResponder,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { GradientView } from '../core';
+import { getGradientColors, getGradientPositions, COMPONENT_GRADIENTS } from '../../theme/gradients';
 
 const TRACK_HEIGHT = 56;
 const THUMB_SIZE = 48;
@@ -197,33 +199,49 @@ export default function SlideToConfirm({
   const displayText = label || (actualIsConfirmed ? confirmText : cancelText);
   const currentText = completed ? (actualIsConfirmed ? "Cancelling..." : "Confirming...") : displayText;
   const currentIcon = actualIsConfirmed ? "check" : "close";
-  const trackColor = actualIsConfirmed ? "#f0f9ff" : "#fef2f2";
-  const fillColor = actualIsConfirmed ? "#dbeafe" : "#fee2e2";
-  const thumbBorderColor = actualIsConfirmed ? "#93c5fd" : "#fecaca";
-  const iconColor = actualIsConfirmed ? "#2563eb" : "#ef4444";
-  const textColor = actualIsConfirmed ? "#1e40af" : "#991b1b";
+  
+  // Get gradient colors based on state
+  const trackGradientName = actualIsConfirmed ? COMPONENT_GRADIENTS.attendingTrack : COMPONENT_GRADIENTS.notAttendingTrack;
+  const fillGradientName = actualIsConfirmed ? COMPONENT_GRADIENTS.attendingFill : COMPONENT_GRADIENTS.notAttendingFill;
+  
+  const trackColors = getGradientColors(trackGradientName);
+  const fillColors = getGradientColors(fillGradientName);
+  const trackPositions = getGradientPositions(trackGradientName);
+  const fillPositions = getGradientPositions(fillGradientName);
+  
+  const thumbBorderColor = actualIsConfirmed ? "#22c55e" : "#ef4444";
+  const iconColor = actualIsConfirmed ? "#16a34a" : "#dc2626";
+  const textColor = actualIsConfirmed ? "#166534" : "#991b1b";
 
   return (
     <View style={[styles.container, style]}>
-      <View 
+      <GradientView 
+        colors={trackColors}
+        start={trackPositions.start}
+        end={trackPositions.end}
         style={[styles.track, { 
-          backgroundColor: trackColor, 
           height: trackHeight,
           borderRadius: trackHeight / 2
         }]}
         onLayout={handleTrackLayout}
       >
-        {/* Animated fill */}
+        {/* Animated gradient fill */}
         <Animated.View 
           style={[
-            styles.fill,
+            styles.fillContainer,
             { 
-              backgroundColor: fillColor,
               width: Animated.add(translateX, thumbSize),
               borderRadius: (trackHeight - 8) / 2
             }
           ]} 
-        />
+        >
+          <GradientView
+            colors={fillColors}
+            start={fillPositions.start}
+            end={fillPositions.end}
+            style={styles.fill}
+          />
+        </Animated.View>
         
         {/* Text */}
         <View style={[styles.textContainer, { paddingLeft: thumbSize + 8 }]}>
@@ -241,7 +259,7 @@ export default function SlideToConfirm({
           </Animated.Text>
         </View>
         
-        {/* Slider thumb */}
+        {/* Slider thumb with gradient background */}
         <Animated.View
           style={[
             styles.thumb,
@@ -255,13 +273,22 @@ export default function SlideToConfirm({
           ]}
           {...panResponder.panHandlers}
         >
-          <MaterialIcons 
-            name={currentIcon} 
-            size={size === "small" ? 16 : 20} 
-            color={iconColor} 
-          />
+          <GradientView
+            gradientName={actualIsConfirmed ? 'greenEmerald' : 'crimsonRed'}
+            style={[styles.thumbGradient, {
+              width: thumbSize - 4,
+              height: thumbSize - 4,
+              borderRadius: (thumbSize - 4) / 2
+            }]}
+          >
+            <MaterialIcons 
+              name={currentIcon} 
+              size={size === "small" ? 16 : 20} 
+              color="white" 
+            />
+          </GradientView>
         </Animated.View>
-      </View>
+      </GradientView>
     </View>
   );
 }
@@ -323,5 +350,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
+  },
+  thumbGradient: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fillContainer: {
+    position: 'absolute',
+    left: 4,
+    top: 4,
+    bottom: 4,
   },
 }); 

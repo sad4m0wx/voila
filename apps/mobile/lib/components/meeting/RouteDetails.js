@@ -54,19 +54,19 @@ const RouteDetails = ({ routes = [], travelTimes = [] }) => {
     return minutes === 1 ? '1 min' : `${minutes} mins`;
   };
   
-  // Helper function to get mode color
+  // Helper function to get mode color using gradient scheme
   const getModeColor = (mode, vehicleType) => {
-    if (mode === 'walking') return { backgroundColor: '#dcfce7', color: '#166534', borderColor: '#bbf7d0' };
+    if (mode === 'walking') return { backgroundColor: '#dcfce7', color: '#059669', borderColor: '#bbf7d0' };
     if (mode === 'transit') {
       const colorMap = {
-        'subway': { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#bfdbfe' },
-        'metro': { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#bfdbfe' },
-        'bus': { backgroundColor: '#fed7aa', color: '#c2410c', borderColor: '#fdba74' },
-        'tram': { backgroundColor: '#e9d5ff', color: '#7c2d12', borderColor: '#d8b4fe' },
-        'train': { backgroundColor: '#fecaca', color: '#b91c1c', borderColor: '#fca5a5' },
-        'rail': { backgroundColor: '#fecaca', color: '#b91c1c', borderColor: '#fca5a5' }
+        'subway': { backgroundColor: '#dbeafe', color: '#3b82f6', borderColor: '#bfdbfe' },
+        'metro': { backgroundColor: '#dbeafe', color: '#3b82f6', borderColor: '#bfdbfe' },
+        'bus': { backgroundColor: '#fed7aa', color: '#f59e0b', borderColor: '#fdba74' },
+        'tram': { backgroundColor: '#e9d5ff', color: '#8b5cf6', borderColor: '#d8b4fe' },
+        'train': { backgroundColor: '#fecaca', color: '#dc2626', borderColor: '#fca5a5' },
+        'rail': { backgroundColor: '#fecaca', color: '#dc2626', borderColor: '#fca5a5' }
       };
-      return colorMap[vehicleType?.toLowerCase()] || { backgroundColor: '#e0e7ff', color: '#3730a3', borderColor: '#c7d2fe' };
+      return colorMap[vehicleType?.toLowerCase()] || { backgroundColor: '#e0e7ff', color: '#6366f1', borderColor: '#c7d2fe' };
     }
     return { backgroundColor: '#f3f4f6', color: '#374151', borderColor: '#d1d5db' };
   };
