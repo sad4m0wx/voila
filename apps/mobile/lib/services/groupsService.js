@@ -58,7 +58,7 @@ class GroupsService {
       const { data, error } = await supabase
         .from('group_members')
         .select(`
-          groups (
+          groups!inner (
             id,
             name,
             description,
@@ -73,7 +73,7 @@ class GroupsService {
 
       if (error) throw error;
 
-      return data.map(item => item.groups);
+      return data.map(item => item.groups).filter(group => group !== null && group.id);
     } catch (error) {
       console.error('Error getting user groups:', error);
       throw error;

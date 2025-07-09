@@ -59,18 +59,20 @@ function groupsReducer(state, action) {
         lastUpdated: new Date()
       };
     case GroupsActionTypes.UPDATE_GROUP:
+      if (!action.payload?.id) return state;
       return { 
         ...state, 
         groups: state.groups.map(group => 
-          group.id === action.payload.id ? action.payload : group
+          group?.id === action.payload.id ? action.payload : group
         ),
         currentGroup: state.currentGroup?.id === action.payload.id ? action.payload : state.currentGroup,
         lastUpdated: new Date()
       };
     case GroupsActionTypes.REMOVE_GROUP:
+      if (!action.payload) return state;
       return { 
         ...state, 
-        groups: state.groups.filter(group => group.id !== action.payload),
+        groups: state.groups.filter(group => group?.id !== action.payload),
         currentGroup: state.currentGroup?.id === action.payload ? null : state.currentGroup,
         lastUpdated: new Date()
       };
@@ -81,9 +83,10 @@ function groupsReducer(state, action) {
         lastUpdated: new Date()
       };
     case GroupsActionTypes.REMOVE_INVITE:
+      if (!action.payload) return state;
       return { 
         ...state, 
-        invites: state.invites.filter(invite => invite.id !== action.payload),
+        invites: state.invites.filter(invite => invite?.id !== action.payload),
         lastUpdated: new Date()
       };
     case GroupsActionTypes.RESET_STATE:
@@ -217,7 +220,7 @@ export function GroupsProvider({ children }) {
       const newGroup = await groupsService.createGroup(user.uid, groupData, initialMembers);
       
       // Add custom addresses to the group if any
-      if (customAddresses.length > 0) {
+      if (newGroup && newGroup.id && customAddresses.length > 0) {
         for (const address of customAddresses) {
           try {
             await groupsService.addCustomLocationToGroup(newGroup.id, address, user.uid);
@@ -234,15 +237,17 @@ export function GroupsProvider({ children }) {
         }
       }
       
-      dispatch({
-        type: GroupsActionTypes.ADD_GROUP,
-        payload: newGroup
-      });
-      
-      dispatch({
-        type: GroupsActionTypes.SET_CURRENT_GROUP,
-        payload: newGroup
-      });
+      if (newGroup && newGroup.id) {
+        dispatch({
+          type: GroupsActionTypes.ADD_GROUP,
+          payload: newGroup
+        });
+        
+        dispatch({
+          type: GroupsActionTypes.SET_CURRENT_GROUP,
+          payload: newGroup
+        });
+      }
       
       return newGroup;
     } catch (error) {
@@ -270,10 +275,12 @@ export function GroupsProvider({ children }) {
     try {
       const updatedGroup = await groupsService.updateGroup(groupId, updateData, user.uid);
       
-      dispatch({
-        type: GroupsActionTypes.UPDATE_GROUP,
-        payload: updatedGroup
-      });
+      if (updatedGroup) {
+        dispatch({
+          type: GroupsActionTypes.UPDATE_GROUP,
+          payload: updatedGroup
+        });
+      }
       
       return true;
     } catch (error) {
@@ -631,6 +638,36 @@ export function GroupsProvider({ children }) {
     }
   }, [user]);
 
+  // Delete group (only group creator can delete)
+  const deleteGroup = useCallback(async (groupId) => {
+    if (!user) {
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: 'User not authenticated'
+      });
+      return false;
+    }
+
+    try {
+      await groupsService.deleteGroup(groupId, user.uid);
+      
+      // Remove group from local state
+      dispatch({
+        type: GroupsActionTypes.REMOVE_GROUP,
+        payload: groupId
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting group:', error);
+      dispatch({
+        type: GroupsActionTypes.SET_ERROR,
+        payload: error.message
+      });
+      return false;
+    }
+  }, [user]);
+
   // Clear error
   const clearError = useCallback(() => {
     dispatch({ type: GroupsActionTypes.CLEAR_ERROR });
@@ -663,6 +700,7 @@ export function GroupsProvider({ children }) {
     getGroupCustomLocations,
     updateCustomLocationAttendance,
     removeCustomLocationFromGroup,
+    deleteGroup,
     clearError
   };
 

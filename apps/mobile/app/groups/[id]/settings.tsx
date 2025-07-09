@@ -32,6 +32,7 @@ export default function GroupSettingsScreen() {
     addGroupMember,
     removeGroupMember,
     resetGroupAttendance,
+    deleteGroup,
     clearError,
     addCustomLocationToGroup,
     updateMyAttendance,
@@ -230,6 +231,35 @@ export default function GroupSettingsScreen() {
       ]
     );
   }, [currentGroup, canManageGroup, resetGroupAttendance]);
+
+  // Handle delete group
+  const handleDeleteGroup = useCallback(() => {
+    if (!currentGroup || currentGroup.created_by !== user?.uid) return;
+
+    Alert.alert(
+      'Delete Group',
+      `Are you sure you want to delete "${currentGroup.name}"? This action cannot be undone and will remove the group for all members.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const success = await deleteGroup(currentGroup.id);
+              if (success) {
+                // Navigate back to groups list
+                router.replace('/groups');
+              }
+            } catch (error) {
+              console.error('Error deleting group:', error);
+              Alert.alert('Error', 'Failed to delete group');
+            }
+          },
+        },
+      ]
+    );
+  }, [currentGroup, user, deleteGroup]);
 
   if (!user) {
     return (
@@ -549,6 +579,17 @@ export default function GroupSettingsScreen() {
               <MaterialIcons name="refresh" size={20} color="#ef4444" />
               <Text style={styles.dangerButtonText}>Reset All Attendance</Text>
             </TouchableOpacity>
+            
+            {/* Show delete button only for group creator */}
+            {currentGroup?.created_by === user?.uid && (
+              <TouchableOpacity
+                style={[styles.dangerButton, styles.deleteButton]}
+                onPress={handleDeleteGroup}
+              >
+                <MaterialIcons name="delete-forever" size={20} color="#ef4444" />
+                <Text style={styles.dangerButtonText}>Delete Group</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </ScrollView>
@@ -849,6 +890,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   deleteButton: {
-    padding: 8,
+    marginTop: 12,
   },
 }); 
