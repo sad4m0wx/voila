@@ -14,13 +14,14 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth } from '../../../lib/contexts/AuthContext';
 import { useGroups } from '../../../lib/contexts/GroupsContext';
 import { AddressInput } from '../../../lib/components/maps';
+import { AddressPicker } from '../../../lib/components/utils';
 import SlideToConfirm from '../../../lib/components/utils/SlideToConfirm';
 
 
 
 export default function GroupSettingsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, addresses: userAddresses, loadUserAddresses } = useAuth();
   const {
     currentGroup,
     currentGroupMembers,
@@ -49,13 +50,15 @@ export default function GroupSettingsScreen() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberAddCount, setMemberAddCount] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
+  const [showAddressPicker, setShowAddressPicker] = useState(false);
 
   // Load group data when component mounts
   useEffect(() => {
     if (id && user) {
       loadGroup(id);
+      loadUserAddresses(user.uid);
     }
-  }, [id, user, loadGroup]);
+  }, [id, user, loadGroup, loadUserAddresses]);
 
   // Update local state when group data changes
   useEffect(() => {
@@ -129,6 +132,30 @@ export default function GroupSettingsScreen() {
       Alert.alert('Error', 'Failed to add member to group');
     }
   }, [currentGroup, addGroupMember, loadGroupMembers]);
+
+  // Handle address selection from address picker
+  const handleAddressSelected = useCallback(async (selectedAddress: any) => {
+    if (!currentGroup || !user?.uid) return;
+
+    try {
+      // Update the user's address preference for this group
+      // For now, we'll update the attendance record with the new address coordinates
+      // This is a temporary solution until we add proper address preference to the schema
+      await updateMyAttendance(currentGroup.id, true, {
+        lat: selectedAddress.coordinates[1], // latitude
+        lng: selectedAddress.coordinates[0]  // longitude
+      });
+      
+      // Reload members to get updated information
+      await loadGroupMembers(currentGroup.id);
+      
+      Alert.alert('Success', `Your ${selectedAddress.name} address preference has been updated for this group`);
+      
+    } catch (error) {
+      console.error('Error updating user address preference:', error);
+      Alert.alert('Error', 'Failed to update your address preference');
+    }
+  }, [currentGroup, updateMyAttendance, loadGroupMembers, user]);
 
   // Handle removing member
   const handleRemoveMember = useCallback((member: any) => {
@@ -346,6 +373,77 @@ export default function GroupSettingsScreen() {
         {/* Group Info Section */}
         
 
+        {/* My Address Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>My Address</Text>
+            <TouchableOpacity
+              style={styles.changeAddressButton}
+              onPress={() => setShowAddressPicker(true)}
+            >
+              <MaterialIcons name="edit" size={16} color="#6366f1" />
+              <Text style={styles.changeAddressText}>Change</Text>
+            </TouchableOpacity>
+          </View>
+          {(() => {
+            // Find current user's membership in the group
+            const myMembership = currentGroupMembers.find(member => 
+              member.user_id === user?.uid && (member as any).type !== 'custom_location'
+            );
+            
+            // Check if user has attendance with location coordinates (address preference)
+            const hasAddressPreference = myMembership?.attendance?.location_lat && myMembership?.attendance?.location_lng;
+            
+            // Find the corresponding saved address if possible
+            let currentAddress = null;
+            if (hasAddressPreference && userAddresses) {
+              // Try to match coordinates with saved addresses (with some tolerance for floating point differences)
+              currentAddress = userAddresses.find(addr => 
+                Math.abs(addr.latitude - myMembership.attendance.location_lat) < 0.0001 &&
+                Math.abs(addr.longitude - myMembership.attendance.location_lng) < 0.0001
+              );
+            }
+            
+            // If no specific preference, show default address
+            if (!currentAddress && userAddresses && userAddresses.length > 0) {
+              currentAddress = userAddresses.find(addr => addr.is_default) || userAddresses[0];
+            }
+            
+            return (
+              <View>
+                {currentAddress ? (
+                  <View style={styles.myAddressCard}>
+                    <View style={styles.myAddressInfo}>
+                      <View style={styles.myAddressIcon}>
+                        <MaterialIcons name="place" size={20} color="#6366f1" />
+                      </View>
+                      <View style={styles.myAddressDetails}>
+                        <Text style={styles.myAddressName}>
+                          {currentAddress.name}
+                          {hasAddressPreference ? '' : ' (Default)'}
+                        </Text>
+                        <Text style={styles.myAddressText} numberOfLines={2}>
+                          {currentAddress.formatted_address}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.noAddressCard}>
+                    <View style={styles.noAddressContent}>
+                      <MaterialIcons name="place" size={24} color="#9ca3af" />
+                      <Text style={styles.noAddressTitle}>No address available</Text>
+                    </View>
+                    <Text style={styles.noAddressSubtitle}>
+                      Add addresses in your profile first
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
+        </View>
+
         {/* Members Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -406,6 +504,7 @@ export default function GroupSettingsScreen() {
                 }}
                 style={styles.addMemberInput}
               />
+              
               <TouchableOpacity
                 style={styles.cancelAddButton}
                 onPress={() => setShowAddMember(false)}
@@ -594,6 +693,15 @@ export default function GroupSettingsScreen() {
         )}
       </ScrollView>
 
+      {/* Address Picker Modal */}
+      <AddressPicker
+        visible={showAddressPicker}
+        onClose={() => setShowAddressPicker(false)}
+        onSelectAddress={handleAddressSelected}
+        title="Add Your Address"
+        emptyMessage="You don't have any saved addresses yet."
+        actionMessage="Add addresses in your profile to see them here."
+      />
     </SafeAreaView>
   );
 }
@@ -891,5 +999,100 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     marginTop: 12,
+  },
+  myAddressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8faff',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  myAddressButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366f1',
+  },
+  myAddressCard: {
+    backgroundColor: '#f8faff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  myAddressInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  myAddressIcon: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+  },
+  myAddressDetails: {
+    flex: 1,
+  },
+  myAddressName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  myAddressText: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+  },
+  changeAddressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f4ff',
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  changeAddressText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6366f1',
+  },
+  noAddressCard: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderStyle: 'dashed',
+  },
+  noAddressContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  noAddressTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginLeft: 8,
+  },
+  noAddressSubtitle: {
+    fontSize: 14,
+    color: '#9ca3af',
+    lineHeight: 20,
   },
 }); 

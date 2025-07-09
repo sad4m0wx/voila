@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -40,37 +40,66 @@ const AddressInput = ({
   const [showModal, setShowModal] = useState(false);
   const [contactsLoaded, setContactsLoaded] = useState(false);
   
-  // Get context functions
-  const { findUsersByPhoneNumbers, getUserAddresses } = useGroups();
-  const { user } = useAuth();
+  // Use refs to track debounce timeouts and component mount state
+  const debounceTimeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
+  
+  // Get context functions with defensive checks
+  const groupsContext = useGroups();
+  const authContext = useAuth();
+  
+  const findUsersByPhoneNumbers = groupsContext?.findUsersByPhoneNumbers;
+  const getUserAddresses = groupsContext?.getUserAddresses;
+  const user = authContext?.user;
   
   // Defensive check for context functions
-  if (!findUsersByPhoneNumbers || !getUserAddresses) {
-    console.warn('AddressInput: Groups context functions not available');
-  }
+  const contextAvailable = !!(findUsersByPhoneNumbers && getUserAddresses && user);
   
-  // Debounce function for API calls
-  const debounce = useCallback((func, delay) => {
-    let timeoutId;
-    return (...args) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func.apply(null, args), delay);
+  if (!contextAvailable) {
+    console.warn('AddressInput: Groups context functions or user not available');
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
     };
   }, []);
 
   // Load contacts when component mounts (same as AddMemberComponent)
   useEffect(() => {
-    loadContacts();
-  }, []);
+    // TEMPORARILY DISABLED: Contact loading to prevent restart issues
+    // Only enable if we need friend search functionality
+    /*
+    if (contextAvailable) {
+      loadContacts();
+    }
+    */
+  }, [contextAvailable]);
 
   const loadContacts = async () => {
     try {
+      // Check if component is still mounted
+      if (!isMountedRef.current) return;
+
+      // Ensure contactService is available
+      if (!contactService) {
+        console.warn('AddressInput: Contact service not available');
+        return;
+      }
+
       // Check permission status
       const permissionStatus = await contactService.getPermissionStatus();
       
+      if (!isMountedRef.current) return;
+
       if (permissionStatus !== 'granted') {
         const granted = await contactService.showPermissionDialog();
-        if (!granted) {
+        if (!granted || !isMountedRef.current) {
           console.warn('AddressInput: Contact permission not granted');
           return;
         }
@@ -78,11 +107,17 @@ const AddressInput = ({
 
       // Load contacts
       await contactService.loadContacts();
-      setContactsLoaded(true);
-      console.log('AddressInput: Contacts loaded successfully', contactService.contacts.length);
+      if (isMountedRef.current) {
+        setContactsLoaded(true);
+        console.log('AddressInput: Contacts loaded successfully', contactService.contacts?.length || 0);
+      }
       
     } catch (error) {
       console.error('AddressInput: Error loading contacts:', error);
+      // Don't throw the error, just log it and continue
+      if (isMountedRef.current) {
+        setContactsLoaded(false);
+      }
     }
   };
 
@@ -92,18 +127,13 @@ const AddressInput = ({
       return [];
     }
 
-    if (!user || !user.uid) {
-      console.warn('AddressInput: User not authenticated, skipping friend search');
+    if (!contextAvailable) {
+      console.warn('AddressInput: Context not available, skipping friend search');
       return [];
     }
 
-    if (!findUsersByPhoneNumbers || !getUserAddresses) {
-      console.warn('AddressInput: Context functions not available, skipping friend search');
-      return [];
-    }
-
-    if (!contactsLoaded || !contactService.contacts || contactService.contacts.length === 0) {
-      console.warn('AddressInput: Contacts not loaded yet, skipping friend search. Loaded:', contactsLoaded, 'Count:', contactService.contacts?.length || 0);
+    if (!contactsLoaded || !contactService?.contacts || contactService.contacts.length === 0) {
+      console.warn('AddressInput: Contacts not loaded yet, skipping friend search. Loaded:', contactsLoaded, 'Count:', contactService?.contacts?.length || 0);
       return [];
     }
 
@@ -238,24 +268,37 @@ const AddressInput = ({
       console.error('AddressInput: Error searching friends:', error);
       return [];
     }
-  }, [findUsersByPhoneNumbers, getUserAddresses, user, contactsLoaded]);
+  }, [findUsersByPhoneNumbers, getUserAddresses, contextAvailable, contactsLoaded]);
 
   // Get place predictions from Google Places API
   const fetchPredictions = useCallback(async (input) => {
     if (!input || input.trim().length < 2) {
-      setPredictions([]);
-      setFriends([]);
-      setShowPredictions(false);
+      if (isMountedRef.current) {
+        setPredictions([]);
+        setFriends([]);
+        setShowPredictions(false);
+      }
       return;
     }
 
-    setIsLoading(true);
+    if (isMountedRef.current) {
+      setIsLoading(true);
+    }
+    
     try {
-      // Search both friends and places in parallel
+      // TEMPORARILY DISABLED: Complex friend search to prevent restarts
+      // Only use Google Places API for now
       const [friendResults, placeResults] = await Promise.all([
-        searchFriends(input),
-        googleMapsService.getPlacePredictions(input, bounds)
+        // Disable friend search temporarily
+        Promise.resolve([]),
+        googleMapsService.getPlacePredictions(input, bounds).catch(err => {
+          console.warn('AddressInput: Place search failed:', err);
+          return [];
+        })
       ]);
+
+      // Only update state if component is still mounted
+      if (!isMountedRef.current) return;
 
       // Format place results
       const formattedPlaces = placeResults.map(place => ({
@@ -268,18 +311,31 @@ const AddressInput = ({
       setShowPredictions(friendResults.length > 0 || formattedPlaces.length > 0);
     } catch (error) {
       console.error('Error fetching predictions:', error);
-      onError && onError({ error: error.message });
-      setFriends([]);
-      setPredictions([]);
-      setShowPredictions(false);
+      if (isMountedRef.current) {
+        onError && onError({ error: error.message });
+        setFriends([]);
+        setPredictions([]);
+        setShowPredictions(false);
+      }
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [bounds, onError, searchFriends]);
+  }, [bounds, onError]);
 
   // Debounced version of fetchPredictions
   const debouncedFetchPredictions = useCallback(
-    debounce(fetchPredictions, 300),
+    (input) => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+      debounceTimeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          fetchPredictions(input);
+        }
+      }, 300);
+    },
     [fetchPredictions]
   );
 
@@ -299,6 +355,8 @@ const AddressInput = ({
 
   // Handle place selection (both friends and places)
   const handlePlaceSelection = async (selection) => {
+    if (!isMountedRef.current) return;
+    
     setIsLoading(true);
     setShowPredictions(false);
     
@@ -317,10 +375,15 @@ const AddressInput = ({
         };
         
         // Show friend's name in the input field instead of their address
-        setInputValue(selection.display_name);
+        if (isMountedRef.current) {
+          setInputValue(selection.display_name);
+        }
       } else {
         // Handle Google place selection
         const placeDetails = await googleMapsService.getPlaceDetails(selection.place_id);
+        
+        // Check if component is still mounted after async operation
+        if (!isMountedRef.current) return;
         
         selectedPlace = {
           address: placeDetails.address,
@@ -333,9 +396,11 @@ const AddressInput = ({
 
       onPlaceSelected && onPlaceSelected(selectedPlace);
 
-      // Close modal and reset state
-      setShowModal(false);
-      setIsFocused(false);
+      // Close modal and reset state only if still mounted
+      if (isMountedRef.current) {
+        setShowModal(false);
+        setIsFocused(false);
+      }
 
       // Trigger preload if enabled and we have location
       if (enablePreload && selectedPlace.location) {
@@ -345,9 +410,13 @@ const AddressInput = ({
       }
     } catch (error) {
       console.error('Error handling place selection:', error);
-      onError && onError({ error: error.message });
+      if (isMountedRef.current) {
+        onError && onError({ error: error.message });
+      }
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 

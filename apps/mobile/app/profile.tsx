@@ -8,7 +8,8 @@ import {
   ScrollView,
   Alert,
   Modal,
-  Platform
+  Platform,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -299,7 +300,7 @@ export default function ProfileScreen() {
               disabled={!selectedAddress || isLoading}
             >
               {isLoading ? (
-                <LoadingIndicator size="small" color="#6366f1" />
+                <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <Text style={styles.modalSaveButtonText}>Save</Text>
               )}

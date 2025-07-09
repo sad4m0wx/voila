@@ -10,6 +10,7 @@ import {
 import { MaterialIcons, FontAwesome5, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AddressInput from '../maps/AddressInput';
+import { AddressPicker } from '../utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGroups } from '../../contexts/GroupsContext';
 
@@ -24,6 +25,7 @@ const AddressForm = ({
   const { user, addresses: userAddresses } = useAuth();
   const { createNewGroup } = useGroups();
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [showAddressPicker, setShowAddressPicker] = useState(false);
   const router = useRouter();
 
   // Get user's default address
@@ -44,31 +46,34 @@ const AddressForm = ({
   };
 
   const addMyAddress = () => {
-    if (!defaultAddress) {
+    if (!userAddresses || userAddresses.length === 0) {
       Alert.alert(
-        'No Address Found',
-        'Please add your home address in your profile first.',
+        'No Saved Addresses',
+        'Please add addresses in your profile first.',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Add Address', onPress: () => {
-            // Navigate to profile or address setup
-            Alert.alert('Info', 'Please go to your profile to add your home address.');
+            Alert.alert('Info', 'Please go to your profile to add your addresses.');
           }}
         ]
       );
       return;
     }
 
-    // Check if user's address is already added
+    setShowAddressPicker(true);
+  };
+
+  const handleAddressSelected = (selectedAddress) => {
+    // Check if this address is already added
     const isAlreadyAdded = addresses.some(addr => 
-      addr.value === defaultAddress.formatted_address ||
+      addr.value === selectedAddress.address ||
       (addr.coordinates && 
-       Math.abs(addr.coordinates[1] - defaultAddress.latitude) < 0.001 &&
-       Math.abs(addr.coordinates[0] - defaultAddress.longitude) < 0.001)
+       Math.abs(addr.coordinates[1] - selectedAddress.coordinates[1]) < 0.001 &&
+       Math.abs(addr.coordinates[0] - selectedAddress.coordinates[0]) < 0.001)
     );
 
     if (isAlreadyAdded) {
-      Alert.alert('Already Added', 'Your address is already in the list.');
+      Alert.alert('Already Added', 'This address is already in the list.');
       return;
     }
 
@@ -80,8 +85,8 @@ const AddressForm = ({
       const newAddresses = addresses.map((addr, index) => 
         index === firstEmptyIndex ? {
           ...addr,
-          value: defaultAddress.formatted_address,
-          coordinates: [defaultAddress.longitude, defaultAddress.latitude]
+          value: selectedAddress.address,
+          coordinates: selectedAddress.coordinates
         } : addr
       );
       onAddressesChange && onAddressesChange(newAddresses);
@@ -97,8 +102,8 @@ const AddressForm = ({
       
       const newAddresses = [...addresses, { 
         id: nextId, 
-        value: defaultAddress.formatted_address,
-        coordinates: [defaultAddress.longitude, defaultAddress.latitude]
+        value: selectedAddress.address,
+        coordinates: selectedAddress.coordinates
       }];
       onAddressesChange && onAddressesChange(newAddresses);
     }
@@ -213,14 +218,14 @@ const AddressForm = ({
         ))}
       </View>
         {/* Add My Address Button */}
-      {user && defaultAddress && (
+      {user && userAddresses && userAddresses.length > 0 && (
         <View style={styles.myAddressSection}>
           <TouchableOpacity style={styles.myAddressButton} onPress={addMyAddress}>
             <MaterialIcons name="my-location" size={16} color="#a855f7" style={styles.buttonIcon} />
             <Text style={styles.myAddressButtonText}>Add My Address</Text>
           </TouchableOpacity>
           <Text style={styles.myAddressPreview} numberOfLines={1}>
-            {defaultAddress.formatted_address}
+            {userAddresses.length} saved address{userAddresses.length !== 1 ? 'es' : ''} available
           </Text>
         </View>
       )}
@@ -251,6 +256,16 @@ const AddressForm = ({
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* Address Picker Modal */}
+      <AddressPicker
+        visible={showAddressPicker}
+        onClose={() => setShowAddressPicker(false)}
+        onSelectAddress={handleAddressSelected}
+        title="Select Your Address"
+        emptyMessage="You don't have any saved addresses yet."
+        actionMessage="Add addresses in your profile to see them here."
+      />
     </View>
   );
 };
