@@ -1,57 +1,81 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Animated, Dimensions } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, G } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const MetroBackground = () => {
-  const animatedValue1 = useRef(new Animated.Value(0)).current;
-  const animatedValue2 = useRef(new Animated.Value(0)).current;
-  const animatedValue3 = useRef(new Animated.Value(0)).current;
-  const animatedValue4 = useRef(new Animated.Value(0)).current;
-  const animatedValue5 = useRef(new Animated.Value(0)).current;
+  // Create animated values for more dots
+  const [animatedValues] = useState(() => ({
+    value1: new Animated.Value(0),
+    value2: new Animated.Value(0),
+    value3: new Animated.Value(0),
+    value4: new Animated.Value(0),
+    value5: new Animated.Value(0),
+    value6: new Animated.Value(0),
+    value7: new Animated.Value(0),
+    value8: new Animated.Value(0),
+    value9: new Animated.Value(0),
+    value10: new Animated.Value(0),
+    value11: new Animated.Value(0),
+    value12: new Animated.Value(0),
+    value13: new Animated.Value(0),
+    value14: new Animated.Value(0),
+    value15: new Animated.Value(0),
+    value16: new Animated.Value(0),
+    value17: new Animated.Value(0),
+    value18: new Animated.Value(0),
+    value19: new Animated.Value(0),
+    value20: new Animated.Value(0),
+  }));
 
   useEffect(() => {
-    // Multiple animation loops for different speeds
-    Animated.loop(
-      Animated.timing(animatedValue1, {
-        toValue: 1,
-        duration: 28000,
-        useNativeDriver: true,
-      })
-    ).start();
+    // Slower, more staggered animations ensuring always something moving
+    const animationConfigs = [
+      { value: animatedValues.value1, duration: 45000, delay: 0 },        // Blue line
+      { value: animatedValues.value2, duration: 52000, delay: 2000 },     // Green line
+      { value: animatedValues.value3, duration: 48000, delay: 4000 },     // Orange line
+      { value: animatedValues.value4, duration: 55000, delay: 6000 },     // Purple vertical
+      { value: animatedValues.value5, duration: 58000, delay: 8000 },     // Red vertical
+      { value: animatedValues.value6, duration: 50000, delay: 10000 },    // Cyan diagonal
+      { value: animatedValues.value7, duration: 62000, delay: 12000 },    // Lime middle
+      { value: animatedValues.value8, duration: 46000, delay: 14000 },    // Orange accent
+      { value: animatedValues.value9, duration: 54000, delay: 16000 },    // Indigo reverse
+      { value: animatedValues.value10, duration: 49000, delay: 18000 },   // Green vertical
+      
+      // Second wave of dots on same lines for continuous movement
+      { value: animatedValues.value11, duration: 45000, delay: 22500 },   // Blue line (half cycle offset)
+      { value: animatedValues.value12, duration: 52000, delay: 28000 },   // Green line (offset)
+      { value: animatedValues.value13, duration: 48000, delay: 28000 },   // Orange line (offset)
+      { value: animatedValues.value14, duration: 50000, delay: 35000 },   // Purple diagonal (offset)
+      { value: animatedValues.value15, duration: 58000, delay: 33000 },   // Red vertical (offset)
+      { value: animatedValues.value16, duration: 62000, delay: 43000 },   // Lime middle (offset)
+      { value: animatedValues.value17, duration: 46000, delay: 37000 },   // Orange accent (offset)
+      { value: animatedValues.value18, duration: 54000, delay: 41000 },   // Indigo reverse (offset)
+      { value: animatedValues.value19, duration: 49000, delay: 39000 },   // Green vertical (offset)
+      { value: animatedValues.value20, duration: 51000, delay: 45000 },   // Cross line
+    ];
 
-    Animated.loop(
-      Animated.timing(animatedValue2, {
-        toValue: 1,
-        duration: 32000,
-        useNativeDriver: true,
-      })
-    ).start();
+    const timeouts = animationConfigs.map(({ value, duration, delay }) => {
+      return setTimeout(() => {
+        Animated.loop(
+          Animated.timing(value, {
+            toValue: 1,
+            duration,
+            useNativeDriver: false, // Consistent non-native driver
+          })
+        ).start();
+      }, delay);
+    });
 
-    Animated.loop(
-      Animated.timing(animatedValue3, {
-        toValue: 1,
-        duration: 25000,
-        useNativeDriver: true,
-      })
-    ).start();
-
-    Animated.loop(
-      Animated.timing(animatedValue4, {
-        toValue: 1,
-        duration: 30000,
-        useNativeDriver: true,
-      })
-    ).start();
-
-    Animated.loop(
-      Animated.timing(animatedValue5, {
-        toValue: 1,
-        duration: 35000,
-        useNativeDriver: true,
-      })
-    ).start();
+    // Cleanup function
+    return () => {
+      timeouts.forEach(timeout => clearTimeout(timeout));
+      animationConfigs.forEach(({ value }) => {
+        value.stopAnimation();
+        value.setValue(0);
+      });
+    };
   }, []);
 
   return (
@@ -119,6 +143,37 @@ const MetroBackground = () => {
             <Stop offset="0%" stopColor="#EC4899" stopOpacity="0" />
             <Stop offset="50%" stopColor="#EC4899" stopOpacity="0.3" />
             <Stop offset="100%" stopColor="#DB2777" stopOpacity="0" />
+          </LinearGradient>
+
+          <LinearGradient id="gradient10" x1="0%" y1="0%" x2="100%" y2="0%">
+            <Stop offset="0%" stopColor="#A855F7" stopOpacity="0" />
+            <Stop offset="30%" stopColor="#A855F7" stopOpacity="0.6" />
+            <Stop offset="70%" stopColor="#9333EA" stopOpacity="0.6" />
+            <Stop offset="100%" stopColor="#7C3AED" stopOpacity="0" />
+          </LinearGradient>
+
+          <LinearGradient id="gradient11" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#14B8A6" stopOpacity="0" />
+            <Stop offset="50%" stopColor="#14B8A6" stopOpacity="0.5" />
+            <Stop offset="100%" stopColor="#0D9488" stopOpacity="0" />
+          </LinearGradient>
+
+          <LinearGradient id="gradient12" x1="0%" y1="0%" x2="100%" y2="0%">
+            <Stop offset="0%" stopColor="#F43F5E" stopOpacity="0" />
+            <Stop offset="50%" stopColor="#F43F5E" stopOpacity="0.4" />
+            <Stop offset="100%" stopColor="#E11D48" stopOpacity="0" />
+          </LinearGradient>
+
+          <LinearGradient id="gradient13" x1="0%" y1="0%" x2="100%" y2="0%">
+            <Stop offset="0%" stopColor="#6366F1" stopOpacity="0" />
+            <Stop offset="50%" stopColor="#6366F1" stopOpacity="0.5" />
+            <Stop offset="100%" stopColor="#4F46E5" stopOpacity="0" />
+          </LinearGradient>
+
+          <LinearGradient id="gradient14" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#22C55E" stopOpacity="0" />
+            <Stop offset="50%" stopColor="#22C55E" stopOpacity="0.4" />
+            <Stop offset="100%" stopColor="#16A34A" stopOpacity="0" />
           </LinearGradient>
         </Defs>
 
@@ -195,66 +250,316 @@ const MetroBackground = () => {
           opacity="0.3"
         />
 
-        {/* Animated Moving Dots */}
+        <Path
+          d="M-100,350 Q250,300 600,360 Q950,420 1300,380 Q1500,360 1700,400"
+          stroke="url(#gradient10)"
+          strokeWidth="2.5"
+          fill="none"
+          opacity="0.6"
+        />
+
+        <Path
+          d="M500,-100 Q480,200 520,400 Q560,600 540,800 Q520,900 500,1000"
+          stroke="url(#gradient11)"
+          strokeWidth="2"
+          fill="none"
+          opacity="0.5"
+        />
+
+        <Path
+          d="M-100,600 Q300,540 700,600 Q1100,660 1500,620 Q1600,610 1700,630"
+          stroke="url(#gradient12)"
+          strokeWidth="2"
+          fill="none"
+          opacity="0.4"
+        />
+
+        <Path
+          d="M1700,300 Q1300,260 900,320 Q500,380 100,340 Q0,330 -100,350"
+          stroke="url(#gradient13)"
+          strokeWidth="2.5"
+          fill="none"
+          opacity="0.5"
+        />
+
+        <Path
+          d="M900,-100 Q880,250 920,450 Q860,650 900,850 Q940,950 900,1000"
+          stroke="url(#gradient14)"
+          strokeWidth="2"
+          fill="none"
+          opacity="0.4"
+        />
+
+        <Path
+          d="M-100,150 Q400,190 800,130 Q1200,70 1600,110"
+          stroke="url(#gradient1)"
+          strokeWidth="1.8"
+          fill="none"
+          opacity="0.4"
+        />
+
+        <Path
+          d="M-100,750 Q500,710 900,770 Q1300,830 1700,790"
+          stroke="url(#gradient2)"
+          strokeWidth="1.8"
+          fill="none"
+          opacity="0.4"
+        />
+
+        <Path
+          d="M1700,450 Q1200,490 800,430 Q400,370 -100,410"
+          stroke="url(#gradient10)"
+          strokeWidth="1.5"
+          fill="none"
+          opacity="0.3"
+        />
+
+        {/* Animated Moving Dots - More Dots for Busier Metro */}
         <G>
+          {/* Primary Line Dots */}
           <AnimatedCircle
             r="5"
             fill="#3B82F6"
             opacity="0.9"
-            animatedValue={animatedValue1}
+            animatedValue={animatedValues.value1}
             path="M-100,200 Q200,120 400,180 Q600,240 800,200 Q1000,160 1200,220 Q1400,280 1600,200"
           />
           <AnimatedCircle
             r="4"
             fill="#10B981"
             opacity="0.8"
-            animatedValue={animatedValue2}
+            animatedValue={animatedValues.value2}
             path="M-100,700 Q300,620 500,680 Q700,740 900,700 Q1100,660 1300,720 Q1500,780 1700,700"
           />
           <AnimatedCircle
             r="4"
             fill="#F59E0B"
             opacity="0.7"
-            animatedValue={animatedValue3}
+            animatedValue={animatedValues.value3}
             path="M1700,100 Q1400,60 1200,120 Q1000,180 800,140 Q600,100 400,160 Q200,220 -100,180"
           />
           <AnimatedCircle
             r="3"
             fill="#8B5CF6"
             opacity="0.6"
-            animatedValue={animatedValue4}
+            animatedValue={animatedValues.value4}
             path="M200,-100 Q180,100 220,300 Q260,500 240,700 Q220,800 200,1000"
           />
           <AnimatedCircle
             r="3"
             fill="#EF4444"
             opacity="0.6"
-            animatedValue={animatedValue5}
+            animatedValue={animatedValues.value5}
             path="M1200,-100 Q1180,150 1220,350 Q1160,550 1200,750 Q1240,850 1200,1000"
+          />
+          
+          {/* Additional Dots on Same Lines - Matching Colors */}
+          <AnimatedCircle
+            r="4"
+            fill="#6366F1"
+            opacity="0.6"
+            animatedValue={animatedValues.value11}
+            path="M-100,200 Q200,120 400,180 Q600,240 800,200 Q1000,160 1200,220 Q1400,280 1600,200"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#047857"
+            opacity="0.5"
+            animatedValue={animatedValues.value12}
+            path="M-100,700 Q300,620 500,680 Q700,740 900,700 Q1100,660 1300,720 Q1500,780 1700,700"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#D97706"
+            opacity="0.5"
+            animatedValue={animatedValues.value13}
+            path="M1700,100 Q1400,60 1200,120 Q1000,180 800,140 Q600,100 400,160 Q200,220 -100,180"
+          />
+          
+          {/* Secondary Lines */}
+          <AnimatedCircle
+            r="4"
+            fill="#A855F7"
+            opacity="0.7"
+            animatedValue={animatedValues.value6}
+            path="M-100,350 Q250,300 600,360 Q950,420 1300,380 Q1500,360 1700,400"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#14B8A6"
+            opacity="0.6"
+            animatedValue={animatedValues.value7}
+            path="M500,-100 Q480,200 520,400 Q560,600 540,800 Q520,900 500,1000"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#F43F5E"
+            opacity="0.5"
+            animatedValue={animatedValues.value8}
+            path="M-100,600 Q300,540 700,600 Q1100,660 1500,620 Q1600,610 1700,630"
+          />
+          <AnimatedCircle
+            r="4"
+            fill="#6366F1"
+            opacity="0.6"
+            animatedValue={animatedValues.value9}
+            path="M1700,300 Q1300,260 900,320 Q500,380 100,340 Q0,330 -100,350"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#22C55E"
+            opacity="0.5"
+            animatedValue={animatedValues.value10}
+            path="M900,-100 Q880,250 920,450 Q860,650 900,850 Q940,950 900,1000"
+          />
+          
+          {/* More Secondary Line Dots - Matching Colors */}
+          <AnimatedCircle
+            r="3"
+            fill="#7C3AED"
+            opacity="0.4"
+            animatedValue={animatedValues.value14}
+            path="M-100,350 Q250,300 600,360 Q950,420 1300,380 Q1500,360 1700,400"
+          />
+          <AnimatedCircle
+            r="2"
+            fill="#0D9488"
+            opacity="0.4"
+            animatedValue={animatedValues.value15}
+            path="M500,-100 Q480,200 520,400 Q560,600 540,800 Q520,900 500,1000"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#E11D48"
+            opacity="0.3"
+            animatedValue={animatedValues.value16}
+            path="M-100,600 Q300,540 700,600 Q1100,660 1500,620 Q1600,610 1700,630"
+          />
+          <AnimatedCircle
+            r="2"
+            fill="#4F46E5"
+            opacity="0.4"
+            animatedValue={animatedValues.value17}
+            path="M1700,300 Q1300,260 900,320 Q500,380 100,340 Q0,330 -100,350"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#16A34A"
+            opacity="0.3"
+            animatedValue={animatedValues.value18}
+            path="M900,-100 Q880,250 920,450 Q860,650 900,850 Q940,950 900,1000"
+          />
+          
+          {/* Cross Lines */}
+          <AnimatedCircle
+            r="2"
+            fill="#06B6D4"
+            opacity="0.4"
+            animatedValue={animatedValues.value19}
+            path="M-100,150 Q400,190 800,130 Q1200,70 1600,110"
+          />
+          <AnimatedCircle
+            r="3"
+            fill="#EC4899"
+            opacity="0.5"
+            animatedValue={animatedValues.value20}
+            path="M-100,750 Q500,710 900,770 Q1300,830 1700,790"
           />
         </G>
 
-        {/* Floating Particles */}
-        <G opacity="0.2">
-          <Circle cx="300" cy="250" r="1" fill="#3B82F6" opacity="0.5" />
-          <Circle cx="800" cy="150" r="1.5" fill="#10B981" opacity="0.4" />
-          <Circle cx="1100" cy="600" r="1" fill="#F59E0B" opacity="0.6" />
-          <Circle cx="400" cy="700" r="1.5" fill="#8B5CF6" opacity="0.3" />
-          <Circle cx="600" cy="450" r="1" fill="#EF4444" opacity="0.5" />
-          <Circle cx="950" cy="350" r="1.5" fill="#06B6D4" opacity="0.4" />
-          <Circle cx="250" cy="550" r="1" fill="#84CC16" opacity="0.5" />
-          <Circle cx="1250" cy="250" r="1.5" fill="#EC4899" opacity="0.4" />
-        </G>
+
       </Svg>
     </View>
   );
 };
 
-// Custom animated circle component
+// Custom animated circle component that moves along a path
 const AnimatedCircle = ({ r, fill, opacity, animatedValue, path }) => {
-  // This is a simplified version - in production, you'd use react-native-svg-animations
-  // or implement path following animation
-  return <Circle cx="0" cy="0" r={r} fill={fill} opacity={opacity} />;
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  
+  React.useEffect(() => {
+    const listener = animatedValue.addListener(({ value }) => {
+      // Simple path interpolation for demo - parse the path and interpolate
+      const pathPoints = parsePathToPoints(path);
+      if (pathPoints.length > 0) {
+        const index = Math.floor(value * (pathPoints.length - 1));
+        const nextIndex = Math.min(index + 1, pathPoints.length - 1);
+        const progress = (value * (pathPoints.length - 1)) - index;
+        
+        const currentPoint = pathPoints[index];
+        const nextPoint = pathPoints[nextIndex];
+        
+        const x = currentPoint.x + (nextPoint.x - currentPoint.x) * progress;
+        const y = currentPoint.y + (nextPoint.y - currentPoint.y) * progress;
+        
+        setPosition({ x, y });
+      }
+    });
+    
+    return () => animatedValue.removeListener(listener);
+  }, [animatedValue, path]);
+  
+  return <Circle cx={position.x} cy={position.y} r={r} fill={fill} opacity={opacity} />;
+};
+
+// Helper function to parse SVG path to points with proper curve handling
+const parsePathToPoints = (pathString) => {
+  const points = [];
+  
+  // Parse SVG path commands (M, Q, L)
+  const commands = pathString.match(/[MQL][^MQL]*/g);
+  if (!commands) return [{ x: 0, y: 0 }];
+  
+  let currentPoint = { x: 0, y: 0 };
+  
+  commands.forEach(command => {
+    const type = command[0];
+    const coords = command.slice(1).match(/-?\d+\.?\d*/g);
+    
+    if (!coords) return;
+    
+    if (type === 'M') {
+      // Move to
+      currentPoint = { x: parseFloat(coords[0]), y: parseFloat(coords[1]) };
+      points.push({ ...currentPoint });
+    } else if (type === 'Q') {
+      // Quadratic Bezier curve
+      for (let i = 0; i < coords.length; i += 4) {
+        const controlX = parseFloat(coords[i]);
+        const controlY = parseFloat(coords[i + 1]);
+        const endX = parseFloat(coords[i + 2]);
+        const endY = parseFloat(coords[i + 3]);
+        
+        // Generate points along the quadratic curve
+        for (let t = 0; t <= 1; t += 0.02) { // Higher density for smoother curves
+          const x = Math.pow(1 - t, 2) * currentPoint.x + 
+                   2 * (1 - t) * t * controlX + 
+                   Math.pow(t, 2) * endX;
+          const y = Math.pow(1 - t, 2) * currentPoint.y + 
+                   2 * (1 - t) * t * controlY + 
+                   Math.pow(t, 2) * endY;
+          points.push({ x, y });
+        }
+        
+        currentPoint = { x: endX, y: endY };
+      }
+    } else if (type === 'L') {
+      // Line to
+      const endX = parseFloat(coords[0]);
+      const endY = parseFloat(coords[1]);
+      
+      // Linear interpolation
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = currentPoint.x + (endX - currentPoint.x) * t;
+        const y = currentPoint.y + (endY - currentPoint.y) * t;
+        points.push({ x, y });
+      }
+      
+      currentPoint = { x: endX, y: endY };
+    }
+  });
+  
+  return points.length > 0 ? points : [{ x: 0, y: 0 }];
 };
 
 const styles = StyleSheet.create({
@@ -265,7 +570,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 0,
-    opacity: 0.2,
+    opacity: 1, // Higher opacity to see moving dots clearly
   },
   svg: {
     position: 'absolute',

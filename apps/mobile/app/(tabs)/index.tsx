@@ -589,16 +589,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 0,
+    zIndex: -1, // Ensure it's behind everything
   },
   mainContent: {
     flex: 1,
     zIndex: 1,
     position: 'relative',
+    backgroundColor: 'transparent', // Ensure no background blocks the metro background
   },
   contentSafeArea: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)', // Changed from gray to semi-transparent white to show metro background
+    backgroundColor: 'rgba(255, 255, 255, 0.55)', // Further reduced opacity to show metro background
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,

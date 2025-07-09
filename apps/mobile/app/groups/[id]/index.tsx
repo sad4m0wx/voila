@@ -563,15 +563,21 @@ export default function GroupScreen() {
 
     return (
         <View style={styles.container}>
-            {/* Full Screen Map with Floating Header */}
-            <MapDisplay
-                meetingPoint={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex] || meetingPoint) : null}
-                routes={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex]?.routes || meetingPoint.routes || []) : []}
-                attendeeAddresses={attendeeAddresses}
-                currentGroup={currentGroup}
-                onBackPress={() => router.back()}
-                onSettingsPress={handleSettingsPress}
-            />
+            {/* Background */}
+            <View style={styles.backgroundContainer}>
+                <MetroBackground />
+            </View>
+
+            <View style={styles.mainContent}>
+                {/* Full Screen Map with Floating Header */}
+                <MapDisplay
+                    meetingPoint={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex] || meetingPoint) : null}
+                    routes={meetingPoint ? (meetingPoint.allMeetingPoints?.[currentMeetingPointIndex]?.routes || meetingPoint.routes || []) : []}
+                    attendeeAddresses={attendeeAddresses}
+                    currentGroup={currentGroup}
+                    onBackPress={() => router.back()}
+                    onSettingsPress={handleSettingsPress}
+                />
 
             {/* Content Below Map */}
             <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
@@ -613,6 +619,7 @@ export default function GroupScreen() {
                 />
                 </ScrollView>
             </SafeAreaView>
+            </View>
         </View>
     );
 }
@@ -620,11 +627,30 @@ export default function GroupScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8fafc',
+        position: 'relative',
+    },
+    backgroundContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: -1, // Ensure it's behind everything
+    },
+    mainContent: {
+        flex: 1,
+        zIndex: 1,
+        position: 'relative',
+        backgroundColor: 'transparent', // Ensure no background blocks the metro background
     },
     contentSafeArea: {
         flex: 1,
-        backgroundColor: '#f8fafc',
+        backgroundColor: 'rgba(255, 255, 255, 0.55)', // Further reduced opacity to show metro background
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
     },
     content: {
         flex: 1,
