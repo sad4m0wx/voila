@@ -3,16 +3,16 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   Alert,
   StyleSheet
 } from 'react-native';
-import { MaterialIcons, FontAwesome5, Feather } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AddressInput from '../maps/AddressInput';
 import { AddressPicker } from '../utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGroups } from '../../contexts/GroupsContext';
+import { GradientView } from '../core';
 
 const AddressForm = ({
   addresses = [],
@@ -180,7 +180,7 @@ const AddressForm = ({
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Where is everyone?</Text>
-        <Text style={styles.subtitle}>Add addresses and find your perfect meeting spot!</Text>
+        <Text style={styles.subtitle}>Find your perfect meeting spot!</Text>
       </View>
       
       {/* Error Message */}
@@ -224,21 +224,20 @@ const AddressForm = ({
             <MaterialIcons name="my-location" size={16} color="#a855f7" style={styles.buttonIcon} />
             <Text style={styles.myAddressButtonText}>Add My Address</Text>
           </TouchableOpacity>
-          <Text style={styles.myAddressPreview} numberOfLines={1}>
-            {userAddresses.length} saved address{userAddresses.length !== 1 ? 'es' : ''} available
-          </Text>
         </View>
       )}
       {/* Action Buttons - Add Address + Find Meeting Point side by side */}
       <View style={styles.actionButtonsContainer}>
         {/* Add Address Button (Plus Icon Only) */}
+        <GradientView gradientName="sunsetOrange" style={styles.addAddressIconButton}>
               {addresses.length < 5 && (
           <TouchableOpacity style={styles.addAddressIconButton} onPress={addAddress}>
-            <MaterialIcons name="add" size={24} color="#a855f7" />
+            <MaterialIcons name="add" size={24} color="white" />
           </TouchableOpacity>
-      )}
+      )}</GradientView>
 
         {/* Find Meeting Point Button */}
+        <GradientView gradientName="greenEmerald" style={styles.findMeetingButton}>
         <TouchableOpacity
           style={[styles.findMeetingButton, isCalculating && styles.buttonDisabled]}
           onPress={handleFindMeetingPoint}
@@ -255,6 +254,7 @@ const AddressForm = ({
             </Text>
           </View>
         </TouchableOpacity>
+        </GradientView>
       </View>
 
       {/* Address Picker Modal */}
@@ -321,12 +321,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'transparent',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#d8b4fe', // More vivid purple border
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     marginBottom: 8,
   },
   myAddressButtonText: {
@@ -341,7 +339,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   addressList: {
-    marginBottom: 24,
+    marginBottom: 0,
     paddingHorizontal: 16,
   },
   addressItem: {
@@ -378,37 +376,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   addAddressIconButton: {
-    backgroundColor: 'rgba(139, 92, 246, 0.15)', // More vivid purple background
-    borderRadius: 16,
+    backgroundColor: 'transparent',
+    borderRadius: 28,
     width: 56,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)', // More vivid purple border
-    shadowColor: '#8b5cf6', // More vivid purple shadow
-    shadowOffset: {
-      width: 0,
-      height: 4,
-  },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
     elevation: 4,
   },
   findMeetingButton: {
     flex: 1,
-    backgroundColor: '#8b5cf6', // More vivid purple
     borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    shadowColor: '#8b5cf6', // More vivid purple shadow
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
   findMeetingButtonContent: {
     flexDirection: 'row',
