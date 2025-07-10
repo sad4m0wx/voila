@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 0,
-    opacity: 1, // Higher opacity to see moving dots clearly
+    backgroundColor: 'rgba(255, 255, 255, 1)',
   },
   svg: {
     position: 'absolute',

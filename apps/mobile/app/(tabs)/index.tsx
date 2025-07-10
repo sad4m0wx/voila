@@ -599,7 +599,7 @@ const styles = StyleSheet.create({
   },
   contentSafeArea: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.55)', // Further reduced opacity to show metro background
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', // Further reduced opacity to show metro background
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,
