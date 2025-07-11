@@ -63,43 +63,29 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Auth state listener
-  useEffect(() => {
-    const { data: authListener } = supabaseAuthService.onAuthStateChange(async (event, session) => {
-      
-      if (session?.user) {
-        const user = {
-          uid: session.user.id,
-          phoneNumber: session.user.phone,
-          displayName: session.user.user_metadata?.display_name || '',
-          email: session.user.email || null,
-        };
+  // Load user addresses - NO dependencies to break circular reference
+  const loadUserAddresses = useCallback(async (userId) => {
+    try {
+      const { data: addresses, error } = await supabase
+        .from('user_addresses')
+        .select('*')
+        .eq('user_id', userId)
+        .order('is_default', { ascending: false });
 
-        dispatch({
-          type: AuthActionTypes.SET_USER,
-          payload: user
-        });
+      if (error) throw error;
 
-        try {
-          // Load user profile but don't automatically set onboarding step
-          await loadUserProfile(session.user.id);
-        } catch (error) {
-          console.error('Error loading user profile:', error);
-        }
-      } else {
-        dispatch({ type: AuthActionTypes.RESET_STATE });
-      }
-    });
+      dispatch({
+        type: AuthActionTypes.SET_ADDRESSES,
+        payload: addresses || []
+      });
+    } catch (error) {
+      console.error('Error loading user addresses:', error);
+    }
+  }, []); // FIXED: No dependencies to prevent circular reference
 
-    return () => {
-      authListener?.unsubscribe?.();
-    };
-  }, [loadUserProfile]);
-
-  // Load user profile without setting onboarding step automatically
+  // Load user profile - stable reference with proper dependencies
   const loadUserProfile = useCallback(async (userId) => {
     try {
-      // Check if user has completed profile setup
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -126,18 +112,17 @@ export function AuthProvider({ children }) {
           dispatch({ type: AuthActionTypes.SET_ONBOARDING_STEP, payload: 'complete' });
         }
 
-        // Load user addresses if profile exists
-        await loadUserAddresses(userId);
+        // Load user addresses - call directly without dependency issues
+        loadUserAddresses(userId);
       }
     } catch (error) {
       console.error('Error loading user profile:', error);
     }
-  }, [loadUserAddresses]);
+  }, [loadUserAddresses]); // FIXED: Now safe since loadUserAddresses is stable
 
-  // Check user profile and determine onboarding step (only called when needed)
+  // Check user profile - stable reference 
   const checkUserProfile = useCallback(async (userId) => {
     try {
-      // Check if user has completed profile setup
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -146,11 +131,9 @@ export function AuthProvider({ children }) {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No rows returned - new user
           dispatch({ type: AuthActionTypes.SET_ONBOARDING_STEP, payload: 'name' });
           return;
         } else if (error.code === '42P01') {
-          // Table doesn't exist - database not set up
           console.warn('⚠️  Database tables not set up. See DATABASE_SETUP.md for instructions.');
           console.warn('User can still use the app without authentication features.');
           dispatch({ type: AuthActionTypes.SET_ONBOARDING_STEP, payload: 'name' });
@@ -161,7 +144,6 @@ export function AuthProvider({ children }) {
       }
 
       if (!profile) {
-        // New user - needs to complete name setup
         dispatch({ type: AuthActionTypes.SET_ONBOARDING_STEP, payload: 'name' });
         return;
       }
@@ -179,36 +161,48 @@ export function AuthProvider({ children }) {
         dispatch({ type: AuthActionTypes.SET_ONBOARDING_STEP, payload: 'complete' });
       }
 
-      // Load user addresses if profile exists
+      // Load addresses directly
       if (profile) {
-        await loadUserAddresses(userId);
+        loadUserAddresses(userId);
       }
     } catch (error) {
       console.error('Error checking user profile:', error);
-      // Fallback to name setup if there's any error
       dispatch({ type: AuthActionTypes.SET_ONBOARDING_STEP, payload: 'name' });
     }
-  }, [loadUserAddresses]);
+  }, [loadUserAddresses]); // FIXED: Now safe since loadUserAddresses is stable
 
-  // Load user addresses
-  const loadUserAddresses = useCallback(async (userId) => {
-    try {
-      const { data: addresses, error } = await supabase
-        .from('user_addresses')
-        .select('*')
-        .eq('user_id', userId)
-        .order('is_default', { ascending: false });
+  // Auth state listener - FIXED with stable references
+  useEffect(() => {
+    const { data: authListener } = supabaseAuthService.onAuthStateChange(async (event, session) => {
+      
+      if (session?.user) {
+        const user = {
+          uid: session.user.id,
+          phoneNumber: session.user.phone,
+          displayName: session.user.user_metadata?.display_name || '',
+          email: session.user.email || null,
+        };
 
-      if (error) throw error;
+        dispatch({
+          type: AuthActionTypes.SET_USER,
+          payload: user
+        });
 
-      dispatch({
-        type: AuthActionTypes.SET_ADDRESSES,
-        payload: addresses || []
-      });
-    } catch (error) {
-      console.error('Error loading user addresses:', error);
-    }
-  }, []);
+        try {
+          // Call loadUserProfile directly to avoid dependency issues
+          loadUserProfile(session.user.id);
+        } catch (error) {
+          console.error('Error loading user profile:', error);
+        }
+      } else {
+        dispatch({ type: AuthActionTypes.RESET_STATE });
+      }
+    });
+
+    return () => {
+      authListener?.unsubscribe?.();
+    };
+  }, []); // FIXED: Empty dependency array since we're calling functions directly
 
   // Send verification code
   const sendVerificationCode = useCallback(async (phoneNumber) => {
