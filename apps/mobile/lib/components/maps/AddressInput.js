@@ -72,13 +72,9 @@ const AddressInput = ({
 
   // Load contacts when component mounts (same as AddMemberComponent)
   useEffect(() => {
-    // TEMPORARILY DISABLED: Contact loading to prevent restart issues
-    // Only enable if we need friend search functionality
-    /*
     if (contextAvailable) {
       loadContacts();
     }
-    */
   }, [contextAvailable]);
 
   const loadContacts = async () => {
@@ -286,11 +282,12 @@ const AddressInput = ({
     }
     
     try {
-      // TEMPORARILY DISABLED: Complex friend search to prevent restarts
-      // Only use Google Places API for now
+      // Search for both friends and places
       const [friendResults, placeResults] = await Promise.all([
-        // Disable friend search temporarily
-        Promise.resolve([]),
+        searchFriends(input).catch(err => {
+          console.warn('AddressInput: Friend search failed:', err);
+          return [];
+        }),
         googleMapsService.getPlacePredictions(input, bounds).catch(err => {
           console.warn('AddressInput: Place search failed:', err);
           return [];
@@ -322,7 +319,7 @@ const AddressInput = ({
         setIsLoading(false);
       }
     }
-  }, [bounds, onError]);
+  }, [bounds, onError, searchFriends]);
 
   // Debounced version of fetchPredictions
   const debouncedFetchPredictions = useCallback(
@@ -467,13 +464,18 @@ const AddressInput = ({
         <Text style={styles.friendIcon}>👤</Text>
       </View>
       <View style={styles.predictionText}>
-        <Text style={styles.primaryText}>
+        <Text style={styles.primaryText}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {item.display_name}
         </Text>
-        <Text style={styles.secondaryText}>
+        <Text style={styles.secondaryText}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {item.address}
         </Text>
-        <Text style={styles.friendLabel}>Friend</Text>
       </View>
     </TouchableOpacity>
   );
@@ -492,10 +494,16 @@ const AddressInput = ({
         <Text style={styles.locationIcon}>📍</Text>
       </View>
       <View style={styles.predictionText}>
-        <Text style={styles.primaryText}>
+        <Text style={styles.primaryText}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {item.structured_formatting?.main_text || item.description}
         </Text>
-        <Text style={styles.secondaryText}>
+        <Text style={styles.secondaryText}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {item.structured_formatting?.secondary_text || ''}
         </Text>
       </View>
