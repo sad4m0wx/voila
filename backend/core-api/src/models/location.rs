@@ -46,6 +46,19 @@ impl Location {
         
         EARTH_RADIUS * c
     }
+
+    pub fn is_in_ile_de_france(&self) -> bool {
+        // Île-de-France approximate bounding box
+        const IDF_BOUNDS: [(f64, f64); 2] = [
+            (1.4462, 48.1201), // Southwest corner (lon, lat)
+            (3.5590, 49.2412)  // Northeast corner (lon, lat)
+        ];
+        
+        self.longitude >= IDF_BOUNDS[0].0 && 
+        self.longitude <= IDF_BOUNDS[1].0 && 
+        self.latitude >= IDF_BOUNDS[0].1 && 
+        self.latitude <= IDF_BOUNDS[1].1
+    }
 }
 
 

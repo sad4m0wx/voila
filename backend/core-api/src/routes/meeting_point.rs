@@ -38,6 +38,24 @@ async fn meeting_point_handler(
         }));
     }
 
+    // Validate all locations are within Île-de-France
+    let invalid_locations: Vec<String> = locations.iter()
+        .filter(|(_, loc)| !loc.is_in_ile_de_france())
+        .map(|(id, loc)| format!("{} ({}, {})", 
+            loc.address.as_deref().unwrap_or("Unknown"),
+            loc.longitude,
+            loc.latitude
+        ))
+        .collect();
+
+    if !invalid_locations.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "LOCATION_OUT_OF_BOUNDS",
+            "message": "Some locations are outside Île-de-France region",
+            "details": invalid_locations
+        }));
+    }
+
     // Step 2: Check for complete cache hit
     let cache_service = CacheService::global().await;
     if let Some(cached_result) = cache_service.get_cached_meeting_point_result(&locations).await {
