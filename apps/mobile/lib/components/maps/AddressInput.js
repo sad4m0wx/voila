@@ -10,7 +10,8 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
-  Pressable
+  Pressable,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { googleMapsService } from '../../services/map/GoogleMapsService';
@@ -18,6 +19,7 @@ import { preloadIsochroneForAddress } from '../../services/preloadApi';
 import { useGroups } from '../../contexts/GroupsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { contactService } from '../../services/contactService';
+import { isInIleDeFrance } from '../../utils';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -362,6 +364,15 @@ const AddressInput = ({
       
       if (selection.type === 'friend') {
         // Handle friend selection
+        if (!isInIleDeFrance(selection.location)) {
+          Alert.alert(
+            'Location Not Supported',
+            "This friend's location is outside the Île-de-France region. Currently, we only support locations within Île-de-France."
+          );
+          setIsLoading(false);
+          return;
+        }
+
         selectedPlace = {
           address: selection.address,
           location: selection.location,
@@ -381,6 +392,16 @@ const AddressInput = ({
         
         // Check if component is still mounted after async operation
         if (!isMountedRef.current) return;
+
+        // Validate location is within Île-de-France
+        if (!isInIleDeFrance(placeDetails.location)) {
+          Alert.alert(
+            'Location Not Supported',
+            'Please select a location within the Île-de-France region. Currently, we only support locations within Île-de-France.'
+          );
+          setIsLoading(false);
+          return;
+        }
         
         selectedPlace = {
           address: placeDetails.address,
