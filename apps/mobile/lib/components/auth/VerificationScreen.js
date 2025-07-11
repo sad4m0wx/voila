@@ -20,6 +20,7 @@ export default function VerificationScreen({ phoneNumber, onBack, onVerified }) 
   const [code, setCode] = useState('');
   const [resendTimer, setResendTimer] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [verificationSuccess, setVerificationSuccess] = useState(false);
   const inputRefs = useRef([]);
 
   // Start countdown timer
@@ -66,9 +67,14 @@ export default function VerificationScreen({ phoneNumber, onBack, onVerified }) 
     const result = await verifyCode(phoneNumber, code);
     
     if (result.success) {
-      if (onVerified) {
-        onVerified(result.user);
-      }
+      setVerificationSuccess(true);
+      
+      // Show success for 2 seconds before transitioning
+      setTimeout(() => {
+        if (onVerified) {
+          onVerified(result.user);
+        }
+      }, 2000);
     } else {
       Alert.alert(
         'Invalid Code',
@@ -129,57 +135,78 @@ export default function VerificationScreen({ phoneNumber, onBack, onVerified }) 
             </Text>
           </View>
 
-          {/* Code Input */}
-          <View style={styles.codeContainer}>
-            {[...Array(6)].map((_, index) => (
-              <TextInput
-                key={index}
-                ref={(ref) => (inputRefs.current[index] = ref)}
-                style={[
-                  styles.codeInput,
-                  code[index] && styles.codeInputFilled,
-                  phoneVerification.error && styles.codeInputError
-                ]}
-                value={code[index] || ''}
-                onChangeText={(value) => handleCodeChange(value, index)}
-                onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
-                keyboardType="number-pad"
-                maxLength={1}
-                textAlign="center"
-                selectTextOnFocus
-              />
-            ))}
-          </View>
-
-          {/* Error Display */}
-          {phoneVerification.error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{phoneVerification.error}</Text>
-            </View>
-          )}
-
-          {/* Loading Indicator */}
-          {phoneVerification.isLoading && (
-            <View style={styles.loadingContainer}>
-              <LoadingIndicator size="small" />
-              <Text style={styles.loadingText}>Verifying code...</Text>
-            </View>
-          )}
-
-          {/* Resend Section */}
-          <View style={styles.resendSection}>
-            <Text style={styles.resendText}>Didn't receive the code?</Text>
-            
-            {canResend ? (
-              <TouchableOpacity onPress={handleResendCode}>
-                <Text style={styles.resendButton}>Resend Code</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.resendTimer}>
-                Resend code in {resendTimer}s
+          {/* Success Display */}
+          {verificationSuccess && (
+            <View style={styles.successContainer}>
+              <View style={styles.successIconContainer}>
+                <MaterialIcons name="check-circle" size={64} color="#10b981" />
+              </View>
+              <Text style={styles.successTitle}>Verification Successful!</Text>
+              <Text style={styles.successMessage}>
+                Welcome to Voilà! Setting up your account...
               </Text>
-            )}
-          </View>
+              <View style={styles.successLoadingContainer}>
+                <LoadingIndicator size="small" />
+              </View>
+            </View>
+          )}
+
+          {/* Code Input - Hide when success */}
+          {!verificationSuccess && (
+            <>
+              {/* Code Input */}
+              <View style={styles.codeContainer}>
+                {[...Array(6)].map((_, index) => (
+                  <TextInput
+                    key={index}
+                    ref={(ref) => (inputRefs.current[index] = ref)}
+                    style={[
+                      styles.codeInput,
+                      code[index] && styles.codeInputFilled,
+                      phoneVerification.error && styles.codeInputError
+                    ]}
+                    value={code[index] || ''}
+                    onChangeText={(value) => handleCodeChange(value, index)}
+                    onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    textAlign="center"
+                    selectTextOnFocus
+                  />
+                ))}
+              </View>
+
+              {/* Error Display */}
+              {phoneVerification.error && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{phoneVerification.error}</Text>
+                </View>
+              )}
+
+              {/* Loading Indicator */}
+              {phoneVerification.isLoading && (
+                <View style={styles.loadingContainer}>
+                  <LoadingIndicator size="small" />
+                  <Text style={styles.loadingText}>Verifying code...</Text>
+                </View>
+              )}
+
+              {/* Resend Section */}
+              <View style={styles.resendSection}>
+                <Text style={styles.resendText}>Didn't receive the code?</Text>
+                
+                {canResend ? (
+                  <TouchableOpacity onPress={handleResendCode}>
+                    <Text style={styles.resendButton}>Resend Code</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.resendTimer}>
+                    Resend code in {resendTimer}s
+                  </Text>
+                )}
+              </View>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -293,5 +320,38 @@ const styles = StyleSheet.create({
   resendTimer: {
     fontSize: 14,
     color: '#9ca3af',
+  },
+  successContainer: {
+    alignItems: 'center',
+    marginTop: 40,
+    padding: 20,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d1fae5',
+  },
+  successIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#ecfdf5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#065f46',
+    marginBottom: 8,
+  },
+  successMessage: {
+    fontSize: 16,
+    color: '#4b5563',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  successLoadingContainer: {
+    marginTop: 10,
   },
 }); 

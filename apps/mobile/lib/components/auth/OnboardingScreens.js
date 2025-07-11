@@ -206,6 +206,7 @@ export function AddressSetupScreen({ onComplete, onClose }) {
 export function ContactsSetupScreen({ onComplete, onClose }) {
   const { completeOnboardingStep } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [setupComplete, setSetupComplete] = useState(false);
 
   const handleAllowContacts = async () => {
     setIsLoading(true);
@@ -217,8 +218,15 @@ export function ContactsSetupScreen({ onComplete, onClose }) {
         // Mark contacts step as complete
         const result = await completeOnboardingStep('contacts', {});
         
-        if (result.success && onComplete) {
-          onComplete();
+        if (result.success) {
+          setSetupComplete(true);
+          
+          // Show success for 3 seconds before completing
+          setTimeout(() => {
+            if (onComplete) {
+              onComplete();
+            }
+          }, 3000);
         } else if (!result.success) {
           Alert.alert('Error', result.error || 'Failed to complete setup. Please try again.');
         }
@@ -244,44 +252,77 @@ export function ContactsSetupScreen({ onComplete, onClose }) {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.emoji}>📞</Text>
-          <Text style={styles.title}>Find your friends</Text>
-          <Text style={styles.subtitle}>
-            Contact access is required to find friends and complete your account setup
-          </Text>
-        </View>
-
-        {/* Benefits */}
-        <View style={styles.benefitsContainer}>
-          <View style={styles.benefit}>
-            <MaterialIcons name="group" size={24} color="#6366f1" />
-            <Text style={styles.benefitText}>Find friends automatically</Text>
+        {setupComplete ? (
+          /* Setup Complete Success State */
+          <View style={styles.successStateContainer}>
+            <View style={styles.successAnimation}>
+              <MaterialIcons name="check-circle" size={80} color="#10b981" />
+            </View>
+            <Text style={styles.successTitle}>Welcome to Voilà!</Text>
+            <Text style={styles.successSubtitle}>
+              Your account has been set up successfully. You can now start finding perfect meeting points with your friends!
+            </Text>
+            <View style={styles.successFeatures}>
+              <View style={styles.successFeature}>
+                <MaterialIcons name="place" size={24} color="#10b981" />
+                <Text style={styles.successFeatureText}>Find optimal meeting points</Text>
+              </View>
+              <View style={styles.successFeature}>
+                <MaterialIcons name="group" size={24} color="#10b981" />
+                <Text style={styles.successFeatureText}>Create groups with friends</Text>
+              </View>
+              <View style={styles.successFeature}>
+                <MaterialIcons name="navigation" size={24} color="#10b981" />
+                <Text style={styles.successFeatureText}>Get directions and routes</Text>
+              </View>
+            </View>
+            <View style={styles.successLoadingContainer}>
+              <LoadingIndicator size="small" />
+              <Text style={styles.successLoadingText}>Taking you to the app...</Text>
+            </View>
           </View>
-          <View style={styles.benefit}>
-            <MaterialIcons name="security" size={24} color="#6366f1" />
-            <Text style={styles.benefitText}>Your contacts stay private</Text>
-          </View>
-          <View style={styles.benefit}>
-            <MaterialIcons name="sync" size={24} color="#6366f1" />
-            <Text style={styles.benefitText}>Stay connected with new users</Text>
-          </View>
-        </View>
+        ) : (
+          /* Original Permission Request UI */
+          <>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.emoji}>📞</Text>
+              <Text style={styles.title}>Find your friends</Text>
+              <Text style={styles.subtitle}>
+                Contact access is required to find friends and complete your account setup
+              </Text>
+            </View>
 
-        {/* Buttons */}
-        <TouchableOpacity
-          style={[styles.continueButton, isLoading && styles.continueButtonDisabled]}
-          onPress={handleAllowContacts}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <LoadingIndicator size="small" color="#ffffff" />
-          ) : (
-            <Text style={styles.continueButtonText}>Allow Contact Access</Text>
-          )}
-        </TouchableOpacity>
+            {/* Benefits */}
+            <View style={styles.benefitsContainer}>
+              <View style={styles.benefit}>
+                <MaterialIcons name="group" size={24} color="#6366f1" />
+                <Text style={styles.benefitText}>Find friends automatically</Text>
+              </View>
+              <View style={styles.benefit}>
+                <MaterialIcons name="security" size={24} color="#6366f1" />
+                <Text style={styles.benefitText}>Your contacts stay private</Text>
+              </View>
+              <View style={styles.benefit}>
+                <MaterialIcons name="sync" size={24} color="#6366f1" />
+                <Text style={styles.benefitText}>Stay connected with new users</Text>
+              </View>
+            </View>
 
+            {/* Buttons */}
+            <TouchableOpacity
+              style={[styles.continueButton, isLoading && styles.continueButtonDisabled]}
+              onPress={handleAllowContacts}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <LoadingIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.continueButtonText}>Allow Contact Access</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -400,5 +441,56 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  successStateContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  successAnimation: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#e0f2fe',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  successSubtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 30,
+  },
+  successFeatures: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 30,
+  },
+  successFeature: {
+    alignItems: 'center',
+  },
+  successFeatureText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  successLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  successLoadingText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#6b7280',
   },
 }); 
