@@ -33,7 +33,17 @@ const AddressForm = ({
 
   const addAddress = () => {
     if (addresses.length >= 5) {
-      // Don't add more than 5 addresses
+      // Show alert when user tries to add more than 5 addresses
+      Alert.alert(
+        'Maximum Addresses',
+        'You can only add up to 5 addresses. Create a group to manage more locations!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Create Group', onPress: () => {
+            router.push('/groups');
+          }}
+        ]
+      );
       return;
     }
     
@@ -200,7 +210,7 @@ const AddressForm = ({
             <View style={styles.addressInputContainer}>
               <AddressInput
                 value={address.value}
-                placeholder={`Address ${index + 1}`}
+                placeholder={`Add a friend or a custom address`}
                 bounds={mapBounds}
                 onInput={(e) => updateAddress(address.id, e.value)}
                 onPlaceSelected={(selectedPlace) => handlePlaceSelected(address.id, selectedPlace)}
@@ -230,11 +240,10 @@ const AddressForm = ({
       <View style={styles.actionButtonsContainer}>
         {/* Add Address Button (Plus Icon Only) */}
         <GradientView gradientName="sunsetOrange" style={styles.addAddressIconButton}>
-              {addresses.length < 5 && (
           <TouchableOpacity style={styles.addAddressIconButton} onPress={addAddress}>
             <MaterialIcons name="add" size={24} color="white" />
           </TouchableOpacity>
-      )}</GradientView>
+        </GradientView>
 
         {/* Find Meeting Point Button */}
         <GradientView gradientName="greenEmerald" style={styles.findMeetingButton}>
