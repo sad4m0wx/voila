@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getGradientColors } from '../../theme/gradients';
 
@@ -15,14 +15,15 @@ const MapContainer = (props = {}) => {
     animateToResults = false,
     height = '100%',
     onBoundsChange = null,
-    style = {}
+    style = {},
+    onMapReady
   } = props;
-
 
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
 
-  // Initial region based on center prop
+  // Initial region based on center prop - memoized
   const initialRegion = useMemo(() => ({
     latitude: center[1],
     longitude: center[0],
@@ -33,7 +34,8 @@ const MapContainer = (props = {}) => {
   // Handle map ready event
   const handleMapReady = useCallback(() => {
     setMapReady(true);
-  }, []);
+    onMapReady?.();
+  }, [onMapReady]);
 
   // Calculate meeting zone radius (blue circle around meeting point)
   const meetingZoneRadius = useMemo(() => {
@@ -42,7 +44,7 @@ const MapContainer = (props = {}) => {
 
   // Auto-fit map to show all markers and routes when data changes
   useEffect(() => {
-    if (!mapRef.current || !mapReady || markers.length === 0) return;
+    if (!mapRef.current || !mapReady || markers.length === 0 || isAnimating) return;
 
     const allCoordinates = [];
 
@@ -58,6 +60,7 @@ const MapContainer = (props = {}) => {
 
     // Fit to coordinates if we have any
     if (allCoordinates.length > 0) {
+      setIsAnimating(true);
       setTimeout(() => {
         if (mapRef.current) {
           if (allCoordinates.length === 1) {
@@ -72,6 +75,7 @@ const MapContainer = (props = {}) => {
               animated: true,
             });
           }
+          setTimeout(() => setIsAnimating(false), 1000);
         }
       }, 500);
     }
@@ -79,8 +83,9 @@ const MapContainer = (props = {}) => {
 
   // Animate to meeting point when results are available
   useEffect(() => {
-    if (!mapRef.current || !mapReady || !animateToResults || !meetingPoint?.coordinates) return;
+    if (!mapRef.current || !mapReady || !animateToResults || !meetingPoint?.coordinates || isAnimating) return;
 
+    setIsAnimating(true);
     setTimeout(() => {
       if (mapRef.current) {
         let latitudeDelta = 0.01;
@@ -100,11 +105,12 @@ const MapContainer = (props = {}) => {
           latitudeDelta,
           longitudeDelta,
         }, 1500);
+        setTimeout(() => setIsAnimating(false), 1500);
       }
     }, 500);
   }, [animateToResults, meetingPoint, meetingZoneRadius, mapReady]);
 
-  // Get marker color based on type and index using gradient colors
+  // Get marker color based on type and index using gradient colors - memoized
   const getMarkerColor = useCallback((type, index = 0) => {
     const gradientColorSets = [
       getGradientColors('blueToMagenta')[0],
@@ -125,7 +131,7 @@ const MapContainer = (props = {}) => {
     }
   }, []);
 
-  // Get marker icon based on type
+  // Get marker icon based on type - memoized
   const getMarkerIcon = useCallback((type) => {
     switch (type) {
       case 'meeting-point':
@@ -138,7 +144,7 @@ const MapContainer = (props = {}) => {
     }
   }, []);
 
-  // Render individual marker
+  // Render individual marker - memoized
   const renderMarker = useCallback((marker, index) => {
     if (!marker.position || marker.position.length < 2) {
       return null;
@@ -176,51 +182,34 @@ const MapContainer = (props = {}) => {
     );
   }, [getMarkerColor, getMarkerIcon]);
 
-  // Helper function to get step color
+  // Helper function to get step color - memoized
   const getStepColor = useCallback((step, routeColor) => {
-    // Walking steps are green
     if (step.mode === 'walking') {
-      return '#059669'; // Darker emerald
+      return '#059669';
     }
-    
-    // Transit steps use the line color if available
     if (step.mode === 'transit' && step.transit_details?.line?.color) {
-      // Ensure the color has a # prefix
       const lineColor = step.transit_details.line.color;
-      const finalColor = lineColor.startsWith('#') ? lineColor : `#${lineColor}`;
-      return finalColor;
+      return lineColor.startsWith('#') ? lineColor : `#${lineColor}`;
     }
-    
-    // Driving steps are blue
     if (step.mode === 'driving') {
-      return '#2563EB'; // Darker blue
+      return '#2563EB';
     }
-    
-    // Default to route color or blue
-    const defaultColor = routeColor || '#3b82f6';
-    return defaultColor;
+    return routeColor || '#3b82f6';
   }, []);
 
-  // Render route with steps
+  // Render route with steps - memoized
   const renderRoute = useCallback((route, routeIndex) => {
     if (!route) return null;
 
     const polylines = [];
     
-    // If route has steps, render each step separately with its own color
     if (route.steps && Array.isArray(route.steps) && route.steps.length > 0) {
-      
       route.steps.forEach((step, stepIndex) => {
-        if (!step.geometry || !step.geometry.coordinates || !Array.isArray(step.geometry.coordinates)) {
-          return;
-        }
+        if (!step.geometry?.coordinates || !Array.isArray(step.geometry.coordinates)) return;
 
         const stepCoords = step.geometry.coordinates;
-        if (stepCoords.length < 2) {
-          return;
-        }
+        if (stepCoords.length < 2) return;
 
-        // Convert coordinates to React Native Maps format
         const coordinates = stepCoords
           .filter(coord => Array.isArray(coord) && coord.length >= 2 && !isNaN(coord[0]) && !isNaN(coord[1]))
           .map(coord => ({
@@ -228,14 +217,9 @@ const MapContainer = (props = {}) => {
             longitude: coord[0]
           }));
 
-        if (coordinates.length < 2) {
-          return;
-        }
+        if (coordinates.length < 2) return;
 
-        // Get color for this step
         const stepColor = getStepColor(step, route.color);
-
-        // Simple, stable key generation
         const uniqueKey = `route-${routeIndex}-step-${stepIndex}`;
 
         polylines.push(
@@ -249,10 +233,7 @@ const MapContainer = (props = {}) => {
           />
         );
       });
-    } else if (route.geometry && route.geometry.coordinates) {
-      // Fallback: render entire route as single polyline
-      console.log(`🎯 Route ${routeIndex}: Using main geometry, color: ${route.color}`);
-      
+    } else if (route.geometry?.coordinates) {
       const coordinates = route.geometry.coordinates
         .filter(coord => Array.isArray(coord) && coord.length >= 2 && !isNaN(coord[0]) && !isNaN(coord[1]))
         .map(coord => ({
@@ -261,11 +242,9 @@ const MapContainer = (props = {}) => {
         }));
 
       if (coordinates.length >= 2) {
-        const uniqueKey = `route-main-${routeIndex}`;
-        
         polylines.push(
           <Polyline
-            key={uniqueKey}
+            key={`route-main-${routeIndex}`}
             coordinates={coordinates}
             strokeColor={route.color || '#3b82f6'}
             strokeWidth={6}
@@ -279,9 +258,9 @@ const MapContainer = (props = {}) => {
     return polylines;
   }, [getStepColor]);
 
-  // Render meeting zone circle
+  // Render meeting zone circle - memoized
   const renderMeetingZoneCircle = useCallback(() => {
-    if (!meetingPoint || !meetingPoint.coordinates || meetingZoneRadius <= 0) return null;
+    if (!meetingPoint?.coordinates || meetingZoneRadius <= 0) return null;
 
     return (
       <Circle
@@ -298,57 +277,94 @@ const MapContainer = (props = {}) => {
     );
   }, [meetingPoint, meetingZoneRadius]);
 
-  // Handle region change and notify parent
+  // Handle region change and notify parent - memoized
   const onRegionChangeComplete = useCallback((newRegion) => {
-    if (onBoundsChange && typeof onBoundsChange === 'function') {
-      const bounds = {
-        northeast: [
-          newRegion.longitude + newRegion.longitudeDelta / 2,
-          newRegion.latitude + newRegion.latitudeDelta / 2
-        ],
-        southwest: [
-          newRegion.longitude - newRegion.longitudeDelta / 2,
-          newRegion.latitude - newRegion.latitudeDelta / 2
-        ]
-      };
-      onBoundsChange({ bounds });
-    }
-  }, [onBoundsChange]);
+    if (!onBoundsChange || isAnimating) return;
+    
+    const bounds = {
+      northeast: [
+        newRegion.longitude + newRegion.longitudeDelta / 2,
+        newRegion.latitude + newRegion.latitudeDelta / 2
+      ],
+      southwest: [
+        newRegion.longitude - newRegion.longitudeDelta / 2,
+        newRegion.latitude - newRegion.latitudeDelta / 2
+      ]
+    };
+    onBoundsChange({ bounds });
+  }, [onBoundsChange, isAnimating]);
+
+  // Memoize map content to prevent unnecessary re-renders
+  const mapContent = useMemo(() => {
+    if (!mapReady) return null;
+    
+    return (
+      <>
+        {markers.map((marker, index) => renderMarker(marker, index))}
+        {routes.map((route, index) => renderRoute(route, index))}
+        {renderMeetingZoneCircle()}
+      </>
+    );
+  }, [mapReady, markers, routes, renderMarker, renderRoute, renderMeetingZoneCircle]);
 
   return (
-    <View style={[{ height }, style]}>
+    <View style={[styles.container, { height }, style]}>
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
+        provider={PROVIDER_GOOGLE}
         initialRegion={initialRegion}
         onMapReady={handleMapReady}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
-        showsCompass={true}
-        showsScale={true}
         onRegionChangeComplete={onRegionChangeComplete}
         mapType="standard"
         loadingEnabled={true}
         loadingIndicatorColor="#3b82f6"
         loadingBackgroundColor="#f3f4f6"
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        showsCompass={false}
+        toolbarEnabled={false}
+        moveOnMarkerPress={false}
+        pitchEnabled={false}
+        rotateEnabled={false}
+        zoomTapEnabled={false}
+        {...Platform.select({
+          ios: {
+            maxZoomLevel: 18,
+            minZoomLevel: 10
+          },
+          android: {
+            maxZoomLevel: 18,
+            minZoomLevel: 10
+          }
+        })}
       >
-        {/* Render all markers */}
-        {mapReady && markers.map((marker, index) => renderMarker(marker, index))}
-
-        {/* Render all routes (now returns arrays of polylines) */}
-        {mapReady && routes.map((route, index) => renderRoute(route, index))}
-
-        {/* Render meeting zone circle */}
-        {mapReady && renderMeetingZoneCircle()}
+        {mapContent}
       </MapView>
     </View>
   );
 };
 
+// Enhanced memoization
+const areEqual = (prevProps, nextProps) => {
+  if (prevProps.height !== nextProps.height) return false;
+  if (prevProps.center[0] !== nextProps.center[0] || prevProps.center[1] !== nextProps.center[1]) return false;
+  if (prevProps.markers?.length !== nextProps.markers?.length) return false;
+  if (prevProps.routes?.length !== nextProps.routes?.length) return false;
+  if (prevProps.meetingPoint !== nextProps.meetingPoint) return false;
+  if (prevProps.animateToResults !== nextProps.animateToResults) return false;
+  if (prevProps.venueRadius !== nextProps.venueRadius) return false;
+  return true;
+};
+
 const styles = StyleSheet.create({
+  container: {
+    overflow: 'hidden',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+  },
   map: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
   customMarker: {
     width: 32,
@@ -387,4 +403,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default MapContainer;
+export default memo(MapContainer, areEqual); 
