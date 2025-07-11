@@ -44,7 +44,7 @@ export const getEnvironment = () => {
 
 // Map height constants
 export const MAP_HEIGHTS = {
-  DEFAULT: 320,
+  DEFAULT: 300,
   EXPANDED: 400,
   WITH_RESULTS: 280,
   WITH_RESULTS_EXPANDED: 360,
