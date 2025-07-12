@@ -32,11 +32,11 @@ const AddressForm = ({
   const defaultAddress = userAddresses?.find(addr => addr.is_default) || userAddresses?.[0];
 
   const addAddress = () => {
-    if (addresses.length >= 3) {
+    if (addresses.length >= 4) {
       // Show alert when user tries to add more than 5 addresses
       Alert.alert(
         'Maximum Addresses',
-        'You can only add up to 5 addresses. Create a group to manage more locations!',
+        'You can only add up to 4 addresses. Create a group to manage more locations!',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Create Group', onPress: () => {
