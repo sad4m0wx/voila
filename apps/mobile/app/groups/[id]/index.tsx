@@ -56,6 +56,8 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
 }) {
     const [mapReady, setMapReady] = useState(false);
     const [stableRoutes, setStableRoutes] = useState<any[]>([]);
+    const [stableMarkers, setStableMarkers] = useState<any[]>([]);
+    const [stableCenter, setStableCenter] = useState<[number, number]>([2.3522, 48.8566]);
     const routeUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastValidRoutesRef = useRef<any[]>([]);
 
@@ -96,36 +98,8 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         return validatedRoutes;
     }, []);
 
-    // Simplified route update logic - only one useEffect to handle all updates
-    useEffect(() => {
-        
-        // Clear existing timeout
-        if (routeUpdateTimeoutRef.current) {
-            clearTimeout(routeUpdateTimeoutRef.current);
-        }
-
-        const validatedRoutes = validateRoutes(routes);
-        
-        // If we have valid routes, set them immediately for first load
-        if (stableRoutes.length === 0 && validatedRoutes.length > 0) {
-            setStableRoutes(validatedRoutes);
-            return;
-        }
-        
-        // For subsequent updates, use a short debounce to prevent rapid changes during swiping
-        routeUpdateTimeoutRef.current = setTimeout(() => {
-            setStableRoutes(validatedRoutes);
-        }, 150); // Slightly longer debounce for stability
-
-        return () => {
-            if (routeUpdateTimeoutRef.current) {
-                clearTimeout(routeUpdateTimeoutRef.current);
-            }
-        };
-    }, [routes, validateRoutes, stableRoutes.length]);
-
     // Create markers for the map
-    const markers = React.useMemo(() => {
+    const createMarkers = useCallback(() => {
         const allMarkers = [];
 
         // Add attendee markers
@@ -152,6 +126,44 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
 
         return allMarkers;
     }, [meetingPoint, attendeeAddresses]);
+
+    // Get center position
+    const getCenterPosition = useCallback(() => {
+        return meetingPoint && meetingPoint.coordinates ? meetingPoint.coordinates : [2.3522, 48.8566];
+    }, [meetingPoint]);
+
+    // Synchronized update logic for routes, markers, and center
+    useEffect(() => {
+        // Clear existing timeout
+        if (routeUpdateTimeoutRef.current) {
+            clearTimeout(routeUpdateTimeoutRef.current);
+        }
+
+        const validatedRoutes = validateRoutes(routes);
+        const newMarkers = createMarkers();
+        const newCenter = getCenterPosition();
+        
+        // If we have valid routes and this is the first load, set everything immediately
+        if (stableRoutes.length === 0 && validatedRoutes.length > 0) {
+            setStableRoutes(validatedRoutes);
+            setStableMarkers(newMarkers);
+            setStableCenter(newCenter);
+            return;
+        }
+        
+        // For subsequent updates, use a short debounce to prevent rapid changes during swiping
+        routeUpdateTimeoutRef.current = setTimeout(() => {
+            setStableRoutes(validatedRoutes);
+            setStableMarkers(newMarkers);
+            setStableCenter(newCenter);
+        }, 150); // Slightly longer debounce for stability
+
+        return () => {
+            if (routeUpdateTimeoutRef.current) {
+                clearTimeout(routeUpdateTimeoutRef.current);
+            }
+        };
+    }, [routes, validateRoutes, createMarkers, getCenterPosition, stableRoutes.length]);
 
     return (
         <View style={[styles.mapContainer, { height: 280 }]}>
@@ -194,8 +206,8 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
             </View>
 
             <MapContainer
-                center={meetingPoint && meetingPoint.coordinates ? meetingPoint.coordinates : [2.3522, 48.8566]}
-                markers={markers}
+                center={stableCenter}
+                markers={stableMarkers}
                 routes={stableRoutes}
                 onMapReady={handleMapReady}
                 height="100%"
