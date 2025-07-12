@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Alert,
   Dimensions,
   Platform,
@@ -503,13 +502,9 @@ export default function HomeScreen() {
             </View>
         </Animated.View>
 
-        {/* CONTENT BELOW MAP */}
+        {/* CONTENT BELOW MAP - Fixed Height */}
         <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
-          <ScrollView 
-            style={styles.contentScrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
+          <View style={styles.contentContainer}>
             {/* Loading Indicator */}
             {isCalculating && (
               <View style={styles.loadingContainer}>
@@ -555,11 +550,8 @@ export default function HomeScreen() {
                 error={error}
               />
             )}
-
-            {/* Bottom spacing for tab bar */}
-            <View style={styles.bottomSpacing} />
-            </ScrollView>
-          </SafeAreaView>
+          </View>
+        </SafeAreaView>
         </View>
     </View>
   );
@@ -592,6 +584,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+  },
+  contentContainer: {
+    flex: 1,
+    paddingBottom: 16,
   },
   mapArea: {
     marginTop: 0,
@@ -660,17 +656,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#f3f4f6',
   },
-  contentScrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 32,
-  },
   loadingContainer: {
     backgroundColor: 'white',
     borderRadius: 16,
-    padding: 24,
-    marginVertical: 16,
+    padding: 20,
+    marginVertical: 12,
     marginHorizontal: 16,
     alignItems: 'center',
     shadowColor: '#8b5cf6', // More vivid purple shadow
@@ -685,7 +675,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 16,
-    marginVertical: 16,
+    marginVertical: 12,
     marginHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -729,11 +719,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  bottomSpacing: {
-    height: 32,
-  },
   resultsContainer: {
     paddingHorizontal: 0,
-    paddingVertical: 16,
+    paddingVertical: 8,
   },
 });
