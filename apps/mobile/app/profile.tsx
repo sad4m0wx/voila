@@ -15,9 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Stack } from 'expo-router';
-import { useAuth } from '../lib/contexts/AuthContext';
-import { AddressInput } from '../lib/components/maps';
-import { LoadingIndicator } from '../lib/components/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { AddressInput } from '@/components/maps';
+import { LoadingIndicator } from '@/components/utils';
 
 const ADDRESS_TAGS = [
   { key: 'home', label: 'Home', icon: 'home', color: '#6366f1' },

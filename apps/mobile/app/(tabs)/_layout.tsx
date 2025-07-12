@@ -2,9 +2,9 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, useColorScheme, View, Animated } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useAuth } from '../../lib/contexts/AuthContext';
-import { GradientView } from '../../lib/components/core';
-import { GRADIENTS } from '../../lib/theme/gradients';
+import { useAuth } from '@/contexts/AuthContext';
+import { GradientView } from '@/components/core';
+import { GRADIENTS } from '@/theme/gradients';
 
 const TAB_ICON_SIZE = 24;
 const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 70;

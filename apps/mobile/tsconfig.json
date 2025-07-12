@@ -2,11 +2,15 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "baseUrl": "./",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
-    }
+      "@/*": ["lib/*"],
+      "@/components/*": ["lib/components/*"],
+      "@/services/*": ["lib/services/*"],
+      "@/contexts/*": ["lib/contexts/*"],
+      "@/utils/*": ["lib/utils/*"],
+      "@/hooks/*": ["lib/hooks/*"],
+      "@/theme/*": ["lib/theme/*"]    }
   },
   "include": [
     "**/*.ts",

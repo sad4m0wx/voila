@@ -5,9 +5,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import 'react-native-reanimated';
-import { useAuth } from '../lib/contexts/AuthContext';
-import { AuthNavigator } from '../lib/components/auth';
-import AppProviders from '../lib/components/AppProviders';
+import { useAuth } from '@/contexts/AuthContext';
+import { AuthNavigator } from '@/components/auth';
+import AppProviders from '@/components/AppProviders';
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();

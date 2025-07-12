@@ -14,14 +14,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useAuth } from '../../../lib/contexts/AuthContext';
-import { useGroups } from '../../../lib/contexts/GroupsContext';
-import SlideToConfirm from '../../../lib/components/utils/SlideToConfirm';
-import MapContainer from '../../../lib/components/maps/MapContainer';
-import { MeetingPointResults, MetroBackground } from '../../../lib';
-import { findOptimalMeetingPoint } from '../../../lib/services/meetingPointApi';
-import { GradientView } from '../../../lib/components/core';
-import { GRADIENT_STYLES } from '../../../lib/theme/gradients';
+import { findOptimalMeetingPoint } from '@/services/meetingPointApi';
+import { defaultMapCenter, defaultMapZoom } from '@/config';
+import { AddressForm, MeetingPointResults } from '@/components/meeting';
+import { MetroBackground, GradientView } from '@/components/core';
+import { GRADIENT_STYLES } from '@/theme/gradients';
+import MapContainer from '@/components/maps/MapContainer';
+import { SlideToConfirm, LoadingIndicator } from '@/components/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGroups } from '@/contexts/GroupsContext';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -70,18 +71,15 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
     // Safely validate and process routes while preserving all properties
     const validateRoutes = useCallback((inputRoutes: any[]): any[] => {
         if (!Array.isArray(inputRoutes)) {
-            console.log('⚠️ Routes is not an array, returning last valid routes');
             return lastValidRoutesRef.current;
         }
 
         if (inputRoutes.length === 0) {
-            console.log('⚠️ Empty routes array received');
             return [];
         }
 
         const validatedRoutes = inputRoutes.map((route, index) => {
             if (!route) {
-                console.log(`⚠️ Skipping null/undefined route at index ${index}`);
                 return null;
             }
             
@@ -115,7 +113,6 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         
         // If we have valid routes, set them immediately for first load
         if (stableRoutes.length === 0 && validatedRoutes.length > 0) {
-            console.log('🚀 First load - setting routes immediately');
             setStableRoutes(validatedRoutes);
             return;
         }
@@ -334,7 +331,6 @@ export default function GroupScreen() {
     // Reload group members when group changes
     useEffect(() => {
         if (currentGroup?.id && user) {
-            console.log('🔄 Reloading group members after group update...');
             loadGroupMembers(currentGroup.id);
         }
     }, [currentGroup?.id, user, loadGroupMembers]);

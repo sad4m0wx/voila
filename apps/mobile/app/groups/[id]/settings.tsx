@@ -11,11 +11,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useAuth } from '../../../lib/contexts/AuthContext';
-import { useGroups } from '../../../lib/contexts/GroupsContext';
-import { AddressInput } from '../../../lib/components/maps';
-import { AddressPicker } from '../../../lib/components/utils';
-import SlideToConfirm from '../../../lib/components/utils/SlideToConfirm';
+import { useAuth, } from '@/contexts/AuthContext';
+import { useGroups } from '@/contexts/GroupsContext';
+import { AddressInput } from '@/components/maps';
+import { AddressPicker, SlideToConfirm } from '@/components/utils';
 
 
 
@@ -489,8 +488,6 @@ export default function GroupSettingsScreen() {
                     try {
                       if (currentGroup) {
                         const dbLocation = await addCustomLocationToGroup(currentGroup.id, customAddress);
-                        console.log('Custom address added:', dbLocation);
-                        // Reload members to get the proper database ID and updated list
                         await loadGroupMembers(currentGroup.id);
                       }
                     } catch (error) {
@@ -542,15 +539,7 @@ export default function GroupSettingsScreen() {
                         isAttending={member.attendance?.isAttending || false}
                         onAttendanceChange={async (isAttending) => {
                           try {
-                            console.log('Updating attendance for member:', {
-                              id: member.id,
-                              type: (member as any).type,
-                              isAttending
-                            });
-                            
-                            // Check if this is another user (not current user and not custom location)
                             const isAnotherUser = (member as any).type !== 'custom_location' && !member.is_me;
-                            
                             if (isAnotherUser) {
                               // Show confirmation alert for other users
                               Alert.alert(
@@ -579,11 +568,6 @@ export default function GroupSettingsScreen() {
                               const actualId = member.id.startsWith('custom_location_') 
                                 ? member.id.replace('custom_location_', '') 
                                 : member.id;
-                              
-                              console.log('Custom location ID mapping:', {
-                                displayId: member.id,
-                                actualId: actualId
-                              });
                               
                               await updateCustomLocationAttendance(actualId, isAttending);
                             } else {
@@ -631,11 +615,6 @@ export default function GroupSettingsScreen() {
                                   const actualId = member.id.startsWith('custom_location_') 
                                     ? member.id.replace('custom_location_', '') 
                                     : member.id;
-                                  
-                                  console.log('Deleting custom location ID mapping:', {
-                                    displayId: member.id,
-                                    actualId: actualId
-                                  });
                                   
                                   await removeCustomLocationFromGroup(actualId);
                                 } else {

@@ -13,20 +13,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  findOptimalMeetingPoint,
-  defaultMapCenter, 
-  defaultMapZoom,
-  AddressForm,
-  MeetingPointResults,
-  MapContainer,
-  MetroBackground,
-  LoadingIndicator,
-  SignInButton,
-  ProfileButton,
-  useAuth,
-  useGroups
-} from '../../lib';
+import { findOptimalMeetingPoint } from '@/services/meetingPointApi';
+import { createNewGroup } from '@/services/groupService';
+import { defaultMapCenter, defaultMapZoom } from '@/config';
+import { AddressForm, MeetingPointResults } from '@/components/meeting';
+import { MetroBackground } from '@/components/core';
+import MapContainer from '@/components/maps/MapContainer';
+import LoadingIndicator from '@/components/utils/LoadingIndicator';
+import { SignInButton, ProfileButton } from '@/components/auth';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGroups } from '@/contexts/GroupsContext';
+
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -109,7 +106,7 @@ export default function HomeScreen() {
       setShowResults(false);
       
       // Import the share service
-      const { getSharedMeetingPoint } = await import('../../lib/services/shareService');
+      const { getSharedMeetingPoint } = await import('lib/services/shareService');
       const result = await getSharedMeetingPoint(shareId);
       
       if (result.success && result.meetingPointResult) {
@@ -405,12 +402,8 @@ export default function HomeScreen() {
           // This is a friend - add them as a group member
           friendMembers.push(addr.friendData.id);
         } else if (addr.coordinates && addr.value) {
-          // Check if this is the user's own address
           if (isUserOwnAddress(addr)) {
-            // This is the user's own address - don't add as custom location
-            // The user will be automatically added as a group member
             hasUserAddress = true;
-            console.log('Detected user own address, skipping custom location creation');
           } else {
             // This is a custom address - add as custom location
             customAddresses.push({
@@ -423,12 +416,6 @@ export default function HomeScreen() {
             });
           }
         }
-      });
-
-      console.log('Creating group with:', {
-        groupName,
-        friendMembers,
-        customAddresses: customAddresses.length
       });
 
       const newGroup = await createNewGroup(

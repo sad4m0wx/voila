@@ -16,11 +16,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useAuth } from '../../lib/contexts/AuthContext';
-import { useGroups } from '../../lib/contexts/GroupsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGroups } from '@/contexts/GroupsContext';
 import { router } from 'expo-router';
-import { contactService } from '../../lib/services/contactService';
-import { AddressInput } from '../../lib/components/maps';
+import { contactService } from '@/services/contactService';
+import { AddressInput } from '@/components/maps';
 
 interface Group {
   id: string;
