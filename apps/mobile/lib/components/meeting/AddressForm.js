@@ -32,7 +32,7 @@ const AddressForm = ({
   const defaultAddress = userAddresses?.find(addr => addr.is_default) || userAddresses?.[0];
 
   const addAddress = () => {
-    if (addresses.length >= 5) {
+    if (addresses.length >= 3) {
       // Show alert when user tries to add more than 5 addresses
       Alert.alert(
         'Maximum Addresses',
@@ -289,34 +289,34 @@ const AddressForm = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 20,
+    paddingVertical: 12,
     paddingHorizontal: 0,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 16,
     alignItems: 'center',
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6b7280',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fef2f2',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+    padding: 12,
+    marginBottom: 12,
     marginHorizontal: 16,
     borderLeftWidth: 4,
     borderLeftColor: '#f87171',
@@ -326,12 +326,12 @@ const styles = StyleSheet.create({
   },
   errorText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     color: '#dc2626',
     fontWeight: '500',
   },
   myAddressSection: {
-    marginBottom: 20,
+    marginBottom: 12,
     paddingHorizontal: 16,
   },
   myAddressButton: {
@@ -340,20 +340,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 14,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   myAddressButtonText: {
-    color: '#8b5cf6', // More vivid purple
-    fontSize: 14,
+    color: '#8b5cf6',
+    fontSize: 13,
     fontWeight: '600',
-  },
-  myAddressPreview: {
-    fontSize: 12,
-    color: '#6b7280',
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
   addressList: {
     marginBottom: 0,
@@ -362,17 +356,17 @@ const styles = StyleSheet.create({
   addressItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   addressInputContainer: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 8,
   },
   removeButton: {
     backgroundColor: '#fef2f2',
-    borderRadius: 10,
-    width: 32,
-    height: 32,
+    borderRadius: 8,
+    width: 28,
+    height: 28,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -389,23 +383,22 @@ const styles = StyleSheet.create({
   actionButtonsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     paddingHorizontal: 16,
+    gap: 12,
   },
   addAddressIconButton: {
-    backgroundColor: 'transparent',
-    borderRadius: 28,
-    width: 56,
-    height: 56,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
   },
   findMeetingButton: {
     flex: 1,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   findMeetingButtonContent: {
     flexDirection: 'row',
@@ -414,15 +407,15 @@ const styles = StyleSheet.create({
   },
   findMeetingButtonText: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   buttonIcon: {
-    marginRight: 6,
+    marginRight: 4,
   },
   buttonDisabled: {
-    opacity: 0.7,
-    shadowOpacity: 0.1,
+    opacity: 0.6,
   },
 });
 

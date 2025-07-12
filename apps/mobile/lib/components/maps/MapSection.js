@@ -150,53 +150,91 @@ const MapSection = memo(({
 MapSection.displayName = 'MapSection';
 
 const areEqual = (prevProps, nextProps) => {
-  // Compare mode first
-  if (prevProps.mode !== nextProps.mode) return false;
+  try {
+    // Compare mode first
+    if (prevProps.mode !== nextProps.mode) return false;
 
-  // Compare primitive values
-  if (
-    prevProps.mapExpanded !== nextProps.mapExpanded ||
-    prevProps.venueRadius !== nextProps.venueRadius ||
-    prevProps.animateToResults !== nextProps.animateToResults
-  ) return false;
+    // Compare primitive values
+    if (
+      prevProps.mapExpanded !== nextProps.mapExpanded ||
+      prevProps.venueRadius !== nextProps.venueRadius ||
+      prevProps.animateToResults !== nextProps.animateToResults
+    ) return false;
 
-  // Compare meeting point
-  if (prevProps.meetingPoint !== nextProps.meetingPoint) {
-    if (prevProps.meetingPoint?.coordinates && nextProps.meetingPoint?.coordinates) {
-      const prevCoords = prevProps.meetingPoint.coordinates;
-      const nextCoords = nextProps.meetingPoint.coordinates;
-      if (prevCoords[0] !== nextCoords[0] || prevCoords[1] !== nextCoords[1]) {
+    // Compare meeting point with more thorough checks
+    if (prevProps.meetingPoint !== nextProps.meetingPoint) {
+      // If either is null/undefined but the other isn't
+      if (!prevProps.meetingPoint || !nextProps.meetingPoint) return false;
+      
+      // Compare coordinates
+      if (prevProps.meetingPoint?.coordinates && nextProps.meetingPoint?.coordinates) {
+        const prevCoords = prevProps.meetingPoint.coordinates;
+        const nextCoords = nextProps.meetingPoint.coordinates;
+        if (!Array.isArray(prevCoords) || !Array.isArray(nextCoords)) return false;
+        if (prevCoords.length !== nextCoords.length) return false;
+        if (prevCoords[0] !== nextCoords[0] || prevCoords[1] !== nextCoords[1]) return false;
+      } else {
         return false;
       }
-    } else if (prevProps.meetingPoint !== nextProps.meetingPoint) {
-      return false;
-    }
-  }
-
-  // Compare center
-  if (prevProps.center !== nextProps.center) {
-    if (Array.isArray(prevProps.center) && Array.isArray(nextProps.center)) {
-      if (prevProps.center[0] !== nextProps.center[0] || prevProps.center[1] !== nextProps.center[1]) {
+      
+      // Compare name for debugging
+      if (prevProps.meetingPoint?.name !== nextProps.meetingPoint?.name) {
+        console.log('MapSection: Meeting point name changed', {
+          prev: prevProps.meetingPoint?.name,
+          next: nextProps.meetingPoint?.name
+        });
         return false;
       }
-    } else {
+    }
+
+    // Compare center with better validation
+    if (prevProps.center !== nextProps.center) {
+      if (!Array.isArray(prevProps.center) || !Array.isArray(nextProps.center)) return false;
+      if (prevProps.center.length !== nextProps.center.length) return false;
+      if (prevProps.center[0] !== nextProps.center[0] || prevProps.center[1] !== nextProps.center[1]) return false;
+    }
+
+    // Compare markers with more thorough checks
+    if (prevProps.markers?.length !== nextProps.markers?.length) {
+      console.log('MapSection: Markers length changed', {
+        prev: prevProps.markers?.length,
+        next: nextProps.markers?.length
+      });
       return false;
     }
+
+    // Compare routes with more thorough checks
+    if (prevProps.routes?.length !== nextProps.routes?.length) {
+      console.log('MapSection: Routes length changed', {
+        prev: prevProps.routes?.length,
+        next: nextProps.routes?.length
+      });
+      return false;
+    }
+
+    // Check if routes content changed (not just reference)
+    if (prevProps.routes && nextProps.routes && prevProps.routes.length > 0 && nextProps.routes.length > 0) {
+      // Simple check - if the first route has a different geometry, consider it changed
+      const prevFirstRoute = prevProps.routes[0];
+      const nextFirstRoute = nextProps.routes[0];
+      
+      if (prevFirstRoute?.geometry?.coordinates?.length !== nextFirstRoute?.geometry?.coordinates?.length) {
+        console.log('MapSection: Route geometry changed');
+        return false;
+      }
+    }
+
+    // Group-specific comparisons
+    if (prevProps.mode === 'group') {
+      if (prevProps.currentGroup?.id !== nextProps.currentGroup?.id) return false;
+      if (prevProps.attendeeAddresses?.length !== nextProps.attendeeAddresses?.length) return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error in MapSection comparison:', error);
+    return false; // Re-render on error to be safe
   }
-
-  // Compare markers length
-  if (prevProps.markers?.length !== nextProps.markers?.length) return false;
-
-  // Compare routes length
-  if (prevProps.routes?.length !== nextProps.routes?.length) return false;
-
-  // Group-specific comparisons
-  if (prevProps.mode === 'group') {
-    if (prevProps.currentGroup?.id !== nextProps.currentGroup?.id) return false;
-    if (prevProps.attendeeAddresses?.length !== nextProps.attendeeAddresses?.length) return false;
-  }
-
-  return true;
 };
 
 const styles = {
