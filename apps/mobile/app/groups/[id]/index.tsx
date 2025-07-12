@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGroups } from '@/contexts/GroupsContext';
 import RouteDetailsToggle from '@/components/meeting/RouteDetailsToggle';
 import CompactActionsCard from '@/components/meeting/CompactActionsCard';
+import MeetingPointResults from '@/components/meeting/MeetingPointResults';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -500,25 +501,19 @@ export default function GroupScreen() {
                                 <MaterialIcons name="chevron-right" size={20} color="#6b7280" />
                             </View>
                         </TouchableOpacity>
-
-                        {/* Action Buttons */}
-                        {meetingPoint && (
-                            <CompactActionsCard
-                                meetingPoint={meetingPoint}
-                                travelTimes={meetingPoint.travelTimes || []}
-                                addresses={attendeeAddresses}
-                                mode="group"
-                            />
-                        )}
-
-                        {/* Route Details Toggle */}
-                        {meetingPoint && meetingPoint.routes && meetingPoint.routes.length > 0 && (
-                            <RouteDetailsToggle
-                                routes={meetingPoint.routes}
-                                travelTimes={meetingPoint.travelTimes || []}
-                            />
-                        )}
                     </View>
+
+                    {/* Meeting Point Results with Swipe Functionality - No padding to avoid double padding */}
+                    {meetingPoint && (
+                        <MeetingPointResults
+                            meetingPoint={meetingPoint}
+                            meetingPoints={meetingPoint.allMeetingPoints || [meetingPoint]}
+                            currentMeetingPointIndex={currentMeetingPointIndex}
+                            setCurrentMeetingPointIndex={setCurrentMeetingPointIndex}
+                            mode="group"
+                            addresses={attendeeAddresses}
+                        />
+                    )}
                 </SafeAreaView>
             </View>
         </View>
