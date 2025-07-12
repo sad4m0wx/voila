@@ -42,16 +42,6 @@ export const getEnvironment = () => {
   };
 };
 
-// Map height constants
-export const MAP_HEIGHTS = {
-  DEFAULT: 300,
-  EXPANDED: 400,
-  WITH_RESULTS: 280,
-  WITH_RESULTS_EXPANDED: 360,
-  GROUP_DEFAULT: 280,
-  GROUP_EXPANDED: 360
-};
-
 export default {
   supabase,
   API_BASE_URL,

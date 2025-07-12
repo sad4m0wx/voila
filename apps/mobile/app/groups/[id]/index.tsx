@@ -54,17 +54,12 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
     onSettingsPress: () => void
 }) {
     const [mapReady, setMapReady] = useState(false);
-    const [mapExpanded, setMapExpanded] = useState(false);
     const [stableRoutes, setStableRoutes] = useState<any[]>([]);
     const routeUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastValidRoutesRef = useRef<any[]>([]);
 
     const handleMapReady = () => {
         setMapReady(true);
-    };
-
-    const toggleMapExpanded = () => {
-        setMapExpanded(!mapExpanded);
     };
 
     // Safely validate and process routes while preserving all properties
@@ -158,7 +153,7 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
     }, [meetingPoint, attendeeAddresses]);
 
     return (
-        <View style={[styles.mapContainer, { height: mapExpanded ? 400 : 320 }]}>
+        <View style={[styles.mapContainer, { height: 280 }]}>
             {/* Floating Header Controls */}
             <View style={styles.headerControls}>
                 <GradientView
@@ -183,21 +178,6 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
                 </GradientView>
                 
                 <View style={styles.rightButtons}>
-                    <GradientView
-                        gradientName="lightBlue"
-                        style={[styles.headerButton, GRADIENT_STYLES.card]}
-                    >
-                        <TouchableOpacity
-                            style={styles.headerButtonContent}
-                            onPress={toggleMapExpanded}
-                        >
-                            <MaterialIcons 
-                                name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                                size={20} 
-                                color="#6b7280" 
-                            />
-                        </TouchableOpacity>
-                    </GradientView>
                     <GradientView
                         gradientName="lightBlue"
                         style={[styles.headerButton, GRADIENT_STYLES.card]}

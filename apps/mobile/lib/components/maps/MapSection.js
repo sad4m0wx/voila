@@ -4,7 +4,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import MapContainer from './MapContainer';
 import { GradientView } from '../core';
 import { GRADIENT_STYLES } from '../../theme/gradients';
-import { MAP_HEIGHTS } from '../../config';
 
 /**
  * Unified Optimized Map Section Component
@@ -14,7 +13,6 @@ import { MAP_HEIGHTS } from '../../config';
 const MapSection = memo(({
   // Map state
   mapHeightAnim,
-  mapExpanded,
   meetingPoint,
   
   // Map data
@@ -25,7 +23,6 @@ const MapSection = memo(({
   animateToResults,
   
   // Event handlers
-  onToggleExpanded,
   onBoundsChange,
   onBackPress,
   onSettingsPress,
@@ -47,19 +44,6 @@ const MapSection = memo(({
         <View style={styles.headerControls}>
           {logoComponent}
           <View style={styles.mapControls}>
-            {meetingPoint && (
-              <TouchableOpacity
-                style={styles.mapControlButton}
-                onPress={onToggleExpanded}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons 
-                  name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                  size={20} 
-                  color="#6b7280" 
-                />
-              </TouchableOpacity>
-            )}
             {authButtonComponent}
           </View>
         </View>
@@ -84,22 +68,6 @@ const MapSection = memo(({
         </View>
         
         <View style={styles.rightButtons}>
-          <GradientView
-            gradientName="lightBlue"
-            style={[styles.headerButton, GRADIENT_STYLES.card]}
-          >
-            <TouchableOpacity
-              style={styles.headerButtonContent}
-              onPress={onToggleExpanded}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons 
-                name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                size={20} 
-                color="#6b7280" 
-              />
-            </TouchableOpacity>
-          </GradientView>
           {mode === 'group' && (
             <GradientView
               gradientName="lightBlue"
@@ -125,7 +93,7 @@ const MapSection = memo(({
         styles.mapArea,
         mode === 'main' && mapHeightAnim ? 
           { height: mapHeightAnim } : 
-          { height: mapExpanded ? MAP_HEIGHTS.GROUP_EXPANDED : MAP_HEIGHTS.GROUP_DEFAULT }
+          { height: 320 }
       ]}
     >
       {renderHeaderControls()}
@@ -156,7 +124,6 @@ const areEqual = (prevProps, nextProps) => {
 
     // Compare primitive values
     if (
-      prevProps.mapExpanded !== nextProps.mapExpanded ||
       prevProps.venueRadius !== nextProps.venueRadius ||
       prevProps.animateToResults !== nextProps.animateToResults
     ) return false;

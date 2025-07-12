@@ -58,7 +58,6 @@ export default function HomeScreen() {
   const [error, setError] = useState(null);
   const [mapBounds, setMapBounds] = useState(null);
   const [showResults, setShowResults] = useState(false);
-  const [mapExpanded, setMapExpanded] = useState(false);
   const [animateToResults, setAnimateToResults] = useState(false);
 
   // Animated values for smooth map height transitions
@@ -71,9 +70,8 @@ export default function HomeScreen() {
 
   // Calculate base map height based on state
   const getBaseMapHeight = () => {
-    if (mapExpanded) return 380;
-    if (showResults) return 300;
-    return 280;
+    if (showResults) return 280;
+    return 320;
   };
 
   // Animate map height changes
@@ -89,7 +87,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const targetHeight = getBaseMapHeight();
     animateMapHeight(targetHeight);
-  }, [mapExpanded, showResults]);
+  }, [showResults]);
 
   // Check for shared meeting point parameter
   useEffect(() => {
@@ -266,10 +264,6 @@ export default function HomeScreen() {
     setMapBounds(boundsData.bounds);
   };
 
-  const toggleMapExpanded = () => {
-    setMapExpanded(!mapExpanded);
-  };
-
   // Create map markers for all locations
   const createMapMarkers = () => {
     const markers = [];
@@ -341,7 +335,6 @@ export default function HomeScreen() {
     setIsCalculating(false);
     setShowResults(false);
     setAnimateToResults(false);
-    setMapExpanded(false);
     animateMapHeight(320);
   };
 
@@ -469,19 +462,6 @@ export default function HomeScreen() {
               
               {/* Map Controls */}
               <View style={styles.mapControls}>
-                {meetingPoint && (
-                  <TouchableOpacity
-                    style={styles.mapControlButton}
-                    onPress={toggleMapExpanded}
-                  >
-                    <MaterialIcons 
-                      name={mapExpanded ? "fullscreen-exit" : "fullscreen"} 
-                      size={20} 
-                      color="#6b7280" 
-                    />
-                  </TouchableOpacity>
-                )}
-                
                 {/* Auth Button - SignIn or Profile */}
                 <AuthButton />
               </View>
