@@ -421,7 +421,7 @@ export default function GroupSettingsScreen() {
                           {currentAddress.name}
                           {hasAddressPreference ? '' : ' (Default)'}
                         </Text>
-                        <Text style={styles.myAddressText} numberOfLines={2}>
+                        <Text style={styles.myAddressText} numberOfLines={1} ellipsizeMode="tail">
                           {currentAddress.formatted_address}
                         </Text>
                       </View>
