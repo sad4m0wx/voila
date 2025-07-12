@@ -152,8 +152,8 @@ const AddressForm = ({
           friendData: {
             id: selectedPlace.friendId,
             name: selectedPlace.friendName,
-            address: selectedPlace.friendAddress,
-            location: selectedPlace.friendLocation
+            address: selectedPlace.address,
+            location: selectedPlace.location
           }
         } : addr
       );
@@ -170,9 +170,17 @@ const AddressForm = ({
 
   const handleFindMeetingPoint = () => {
     // Check if we have at least 2 valid addresses
-    const validAddresses = addresses.filter(addr => 
-      addr.value && addr.value.trim() !== '' && (addr.coordinates || addr.friendData)
-    );
+    const validAddresses = addresses.filter(addr => {
+      if (!addr.value || addr.value.trim() === '') return false;
+      
+      if (addr.coordinates) return true;
+      
+      if (addr.friendData && addr.friendData.location) {
+        return addr.friendData.location.lat && addr.friendData.location.lng;
+      }
+      
+      return false;
+    });
 
     if (validAddresses.length < 2) {
       Alert.alert(
