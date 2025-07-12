@@ -73,7 +73,7 @@ const RouteDetailsToggle = ({ routes, travelTimes }) => {
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 8,
+    marginTop: 6,
   },
   routeToggle: {
     flexDirection: 'row',
@@ -81,8 +81,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#f8fafc',
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    padding: 10,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   routeToggleText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#374151',
   },

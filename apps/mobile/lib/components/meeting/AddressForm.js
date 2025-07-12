@@ -289,34 +289,34 @@ const AddressForm = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 0,
   },
   header: {
-    marginBottom: 16,
+    marginBottom: 12,
     alignItems: 'center',
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#6b7280',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 16,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fef2f2',
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
+    padding: 10,
+    marginBottom: 10,
     marginHorizontal: 16,
     borderLeftWidth: 4,
     borderLeftColor: '#f87171',
@@ -326,12 +326,12 @@ const styles = StyleSheet.create({
   },
   errorText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     color: '#dc2626',
     fontWeight: '500',
   },
   myAddressSection: {
-    marginBottom: 12,
+    marginBottom: 10,
     paddingHorizontal: 16,
   },
   myAddressButton: {
@@ -340,13 +340,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginBottom: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginBottom: 2,
   },
   myAddressButtonText: {
     color: '#8b5cf6',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   addressList: {
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   addressItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   addressInputContainer: {
     flex: 1,

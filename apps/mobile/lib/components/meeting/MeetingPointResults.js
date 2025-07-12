@@ -139,10 +139,10 @@ const MeetingPointResults = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   swipeableContainer: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   singleContainer: {
     paddingHorizontal: 16,
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     paddingHorizontal: 16,
   },
   newSearchButton: {
@@ -159,12 +159,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f3f4f6',
     borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    gap: 6,
   },
   newSearchButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#8b5cf6',
   },
@@ -200,16 +200,16 @@ const styles = StyleSheet.create({
   fallbackNotice: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fffbeb',
+    backgroundColor: '#fef3c7',
     borderRadius: 8,
     padding: 8,
-    marginTop: 12,
+    marginTop: 8,
     gap: 6,
   },
   fallbackText: {
     fontSize: 12,
     color: '#d97706',
-    fontStyle: 'italic',
+    fontWeight: '500',
   },
   singleHeaderContainer: {
     marginBottom: 16,

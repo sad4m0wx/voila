@@ -24,13 +24,13 @@ const VenuesDisplay = ({ venues }) => {
 
 const styles = StyleSheet.create({
   venuesSection: {
-    marginTop: 16,
+    marginTop: 12,
   },
   venuesTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   venuesGrid: {
     flexDirection: 'row',

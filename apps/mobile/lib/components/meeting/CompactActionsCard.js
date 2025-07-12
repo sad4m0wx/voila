@@ -181,33 +181,34 @@ const CompactActionsCard = ({
         ))}
       </View>
 
-      {/* Create Group Button */}
+      {/* Create Group Button - Separate Row */}
       {createGroupAction && (
-        <GradientView
-          key={createGroupAction.id}
-          colors={createGroupAction.background}
-          style={styles.actionButton}
-        >
-          <TouchableOpacity
-            style={styles.actionButtonContent}
-            onPress={createGroupAction.onPress}
-            disabled={createGroupAction.disabled}
+        <View style={styles.createGroupContainer}>
+          <GradientView
+            colors={createGroupAction.background}
+            style={styles.createGroupButton}
           >
-            <GradientView
-              gradientName={createGroupAction.gradientName}
-              style={styles.actionIconContainer}
+            <TouchableOpacity
+              style={styles.createGroupButtonContent}
+              onPress={createGroupAction.onPress}
+              disabled={createGroupAction.disabled}
             >
-              <MaterialIcons 
-                name={createGroupAction.icon} 
-                size={20} 
-                color="white"
-              />
-            </GradientView>
-            <Text style={[styles.actionLabel, { color: getGradientColors(createGroupAction.gradientName)[0] }]}>
-              {createGroupAction.label}
-            </Text>
-          </TouchableOpacity>
-        </GradientView>
+              <GradientView
+                gradientName={createGroupAction.gradientName}
+                style={styles.createGroupIconContainer}
+              >
+                <MaterialIcons 
+                  name={createGroupAction.icon} 
+                  size={20} 
+                  color="white"
+                />
+              </GradientView>
+              <Text style={[styles.createGroupLabel, { color: getGradientColors(createGroupAction.gradientName)[0] }]}>
+                {createGroupAction.label}
+              </Text>
+            </TouchableOpacity>
+          </GradientView>
+        </View>
       )}
     </View>
   );
@@ -217,43 +218,43 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: 'transparent', // Remove white background
     borderRadius: 0, // Remove border radius
-    padding: 20,
+    padding: 16,
     shadowColor: 'transparent', // Remove shadow
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0,
     shadowRadius: 0,
     elevation: 0, // Remove elevation
-    marginBottom: 16,
+    marginBottom: 12,
   },
   spacer: {
     flex: 1,
   },
   statsHeader: {
     alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 16,
+    marginBottom: 16,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
   statsContent: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   statsValue: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '800',
     color: '#8b5cf6', // More vivid purple
     letterSpacing: -0.5,
   },
   statsUnit: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#a855f7', // More vivid purple for unit
     marginLeft: 4,
   },
   statsLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748b',
     fontWeight: '500',
     textTransform: 'uppercase',
@@ -262,7 +263,7 @@ const styles = StyleSheet.create({
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
     justifyContent: 'space-between',
   },
   actionButton: {
@@ -273,19 +274,19 @@ const styles = StyleSheet.create({
   },
   actionButtonContent: {
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
   },
   actionButtonDisabled: {
     opacity: 0.6,
   },
   actionIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -293,10 +294,45 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   actionLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 12,
+  },
+  createGroupContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  createGroupButton: {
+    borderRadius: 16,
+    minWidth: '80%', // Make it wider
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createGroupButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  createGroupIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  createGroupLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 
