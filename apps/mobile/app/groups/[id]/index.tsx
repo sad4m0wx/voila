@@ -3,10 +3,8 @@ import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
     TouchableOpacity,
     Alert,
-    RefreshControl,
     Dimensions,
     Platform,
     Linking,
@@ -16,13 +14,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { findOptimalMeetingPoint } from '@/services/meetingPointApi';
 import { defaultMapCenter, defaultMapZoom } from '@/config';
-import { AddressForm, MeetingPointResults } from '@/components/meeting';
 import { MetroBackground, GradientView } from '@/components/core';
 import { GRADIENT_STYLES } from '@/theme/gradients';
 import MapContainer from '@/components/maps/MapContainer';
 import { SlideToConfirm, LoadingIndicator } from '@/components/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroups } from '@/contexts/GroupsContext';
+import RouteDetailsToggle from '@/components/meeting/RouteDetailsToggle';
+import CompactActionsCard from '@/components/meeting/CompactActionsCard';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -225,75 +224,9 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
     );
 }
 
-function AttendeesList({ members, isExpanded, onToggle }: {
-    members: GroupMember[],
-    isExpanded: boolean,
-    onToggle: () => void
-}) {
-    const attendingCount = members.filter(m => m.attendance?.isAttending).length;
 
-    return (
-        <View style={styles.attendeesContainer}>
-            <TouchableOpacity style={styles.attendeesHeader} onPress={onToggle}>
-                <View style={styles.attendeesHeaderLeft}>
-                    <MaterialIcons name="people" size={20} color="#6b7280" />
-                    <Text style={styles.attendeesTitle}>
-                        Attendees ({attendingCount}/{members.length})
-                    </Text>
-                </View>
-                <MaterialIcons
-                    name={isExpanded ? "expand-less" : "expand-more"}
-                    size={24}
-                    color="#6b7280"
-                />
-            </TouchableOpacity>
 
-            {isExpanded && (
-                <View style={styles.attendeesList}>
-                    {members.map((member) => (
-                        <GradientView key={member.id} gradientName="lightBlue" style={[styles.attendeeItem, GRADIENT_STYLES.card]}>
-                            <View style={styles.attendeeInfo}>
-                                <GradientView 
-                                    gradientName={member.type === 'custom_location' ? "sunsetOrange" : "blueToMagenta"}
-                                    style={styles.attendeeAvatar}
-                                >
-                                    <MaterialIcons 
-                                        name={member.type === 'custom_location' ? "place" : "person"} 
-                                        size={16} 
-                                        color="white" 
-                                    />
-                                </GradientView>
-                                <View style={styles.attendeeDetails}>
-                                    <Text style={styles.attendeeName} numberOfLines={1}>
-                                        {member.display_name || 'Unknown'}
-                                        {member.is_me && ' (You)'}
-                                    </Text>
-                                    {member.type === 'custom_location' && (
-                                        <Text style={styles.attendeeType} numberOfLines={1}>
-                                            Custom Location{member.created_by ? ` • Added by ${member.created_by}` : ''}
-                                        </Text>
-                                    )}
-                                </View>
-                            </View>
 
-                            <View style={styles.attendeeStatus}>
-                                {member.attendance?.isAttending !== undefined ? (
-                                    <MaterialIcons
-                                        name={member.attendance.isAttending ? "check-circle" : "cancel"}
-                                        size={18}
-                                        color={member.attendance.isAttending ? "#10b981" : "#ef4444"}
-                                    />
-                                ) : (
-                                    <MaterialIcons name="help" size={18} color="#9ca3af" />
-                                )}
-                            </View>
-                        </GradientView>
-                    ))}
-                </View>
-            )}
-        </View>
-    );
-}
 
 export default function GroupScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -312,12 +245,10 @@ export default function GroupScreen() {
         clearError,
     } = useGroups();
 
-    const [refreshing, setRefreshing] = useState(false);
     const [myAttendance, setMyAttendance] = useState<any | null>(null);
     const [meetingPoint, setMeetingPoint] = useState<any | null>(null);
     const [attendeeAddresses, setAttendeeAddresses] = useState<any[]>([]);
     const [isCalculatingMeetingPoint, setIsCalculatingMeetingPoint] = useState(false);
-    const [attendeesExpanded, setAttendeesExpanded] = useState(false);
     const [currentMeetingPointIndex, setCurrentMeetingPointIndex] = useState(0);
 
     // Load group data when component mounts
@@ -456,20 +387,6 @@ export default function GroupScreen() {
         calculateMeetingPoint();
     }, [calculateMeetingPoint]);
 
-    const onRefresh = useCallback(async () => {
-        if (!id) return;
-
-        setRefreshing(true);
-        try {
-            await Promise.all([
-                loadGroup(id),
-                loadMyAttendance()
-            ]);
-        } finally {
-            setRefreshing(false);
-        }
-    }, [id, loadGroup, loadMyAttendance]);
-
     const handleAttendanceConfirm = useCallback(async () => {
         if (!currentGroup || !user) return;
 
@@ -575,46 +492,54 @@ export default function GroupScreen() {
                     onSettingsPress={handleSettingsPress}
                 />
 
-            {/* Content Below Map */}
-            <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
-                <ScrollView
-                    style={styles.content}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.scrollContent}
-                >
+                {/* Compact Content Below Map */}
+                <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
+                    <View style={styles.compactContent}>
+                        {/* Slide to Confirm */}
+                        <View style={styles.slideContainer}>
+                            <SlideToConfirm
+                                text="I'm attending!"
+                                cancelText="I can't make it"
+                                onConfirm={handleAttendanceConfirm}
+                                onCancel={handleAttendanceCancel}
+                                isConfirmed={myAttendance?.is_attending || false}
+                                disabled={loading}
+                            />
+                        </View>
 
-                {/* Slide to Confirm */}
-                <View style={styles.slideContainer}>
-                    <SlideToConfirm
-                        text="I'm attending!"
-                        cancelText="I can't make it"
-                        onConfirm={handleAttendanceConfirm}
-                        onCancel={handleAttendanceCancel}
-                        isConfirmed={myAttendance?.is_attending || false}
-                        disabled={loading}
-                    />
-                </View>
+                        {/* Attendees Count Button */}
+                        <TouchableOpacity 
+                            style={styles.attendeesButton}
+                            onPress={handleSettingsPress}
+                        >
+                            <View style={styles.attendeesButtonContent}>
+                                <MaterialIcons name="people" size={20} color="#6b7280" />
+                                <Text style={styles.attendeesButtonText}>
+                                    Attendees ({currentGroupMembers.filter(m => m.attendance?.isAttending).length}/{currentGroupMembers.length})
+                                </Text>
+                                <MaterialIcons name="chevron-right" size={20} color="#6b7280" />
+                            </View>
+                        </TouchableOpacity>
 
-                {/* Meeting Point Results */}
-                {meetingPoint && (
-                    <MeetingPointResults
-                        meetingPoint={meetingPoint}
-                        meetingPoints={meetingPoint.allMeetingPoints || [meetingPoint]}
-                        currentMeetingPointIndex={currentMeetingPointIndex}
-                        setCurrentMeetingPointIndex={setCurrentMeetingPointIndex}
-                        mode="group"
-                    />
-                )}
+                        {/* Action Buttons */}
+                        {meetingPoint && (
+                            <CompactActionsCard
+                                meetingPoint={meetingPoint}
+                                travelTimes={meetingPoint.travelTimes || []}
+                                addresses={attendeeAddresses}
+                                mode="group"
+                            />
+                        )}
 
-                {/* Attendees List */}
-                <AttendeesList
-                    members={currentGroupMembers}
-                    isExpanded={attendeesExpanded}
-                    onToggle={() => setAttendeesExpanded(!attendeesExpanded)}
-                />
-                </ScrollView>
-            </SafeAreaView>
+                        {/* Route Details Toggle */}
+                        {meetingPoint && meetingPoint.routes && meetingPoint.routes.length > 0 && (
+                            <RouteDetailsToggle
+                                routes={meetingPoint.routes}
+                                travelTimes={meetingPoint.travelTimes || []}
+                            />
+                        )}
+                    </View>
+                </SafeAreaView>
             </View>
         </View>
     );
@@ -640,19 +565,78 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent', // Ensure no background blocks the metro background
     },
     contentSafeArea: {
-        flex: 1,
-        backgroundColor: 'rgba(255, 255, 255, 0.55)', // Further reduced opacity to show metro background
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.05,
+        shadowOpacity: 0.1,
         shadowRadius: 8,
         elevation: 2,
     },
-    content: {
+    compactContent: {
+        paddingHorizontal: 16,
+        paddingVertical: 20,
+    },
+    slideContainer: {
+        marginBottom: 16,
+    },
+    attendeesButton: {
+        marginBottom: 16,
+    },
+    attendeesButtonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        backgroundColor: '#f3f4f6',
+    },
+    attendeesButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#111827',
+        marginLeft: 8,
+    },
+    statsSection: {
+        marginBottom: 16,
+    },
+    statsContainer: {
+        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+        borderRadius: 12,
+        padding: 16,
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(99, 102, 241, 0.15)',
+    },
+    statItem: {
+        alignItems: 'center',
         flex: 1,
     },
-    scrollContent: {
-        paddingBottom: 32,
+    statValue: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#6366f1',
+        marginBottom: 2,
+    },
+    statLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#475569',
+        textAlign: 'center',
+    },
+    statUnit: {
+        fontSize: 10,
+        fontWeight: '500',
+        color: '#64748b',
+        marginTop: 2,
+    },
+    statDivider: {
+        width: 1,
+        height: 40,
+        backgroundColor: 'rgba(99, 102, 241, 0.2)',
+        marginHorizontal: 16,
     },
     headerControls: {
         position: 'absolute',
@@ -723,10 +707,6 @@ const styles = StyleSheet.create({
         color: '#6366f1',
         marginTop: 4,
     },
-    slideContainer: {
-        paddingHorizontal: 16,
-        paddingVertical: 20,
-    },
     loadingContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -758,137 +738,8 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 24,
     },
-    resultsContainer: {
-        paddingVertical: 20,
-        paddingHorizontal: 16,
-    },
-    swipeableContainer: {
-        marginBottom: 16,
-    },
-    resultHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 12,
-        paddingHorizontal: 16,
-    },
-    resultTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#111827',
-        marginLeft: 8,
-        flex: 1,
-    },
-    locationName: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#111827',
-        marginBottom: 16,
-    },
-    venuesSection: {
-        marginTop: 8,
-    },
-    venuesTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 8,
-    },
-    venuesGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 6,
-    },
-    venueChip: {
-        backgroundColor: '#ecfdf5',
-        borderRadius: 16,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        maxWidth: (screenWidth - 64) / 2,
-    },
-    venueName: {
-        fontSize: 12,
-        color: '#065f46',
-        fontWeight: '500',
-    },
-    fallbackNotice: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fffbeb',
-        borderRadius: 8,
-        padding: 8,
-        marginTop: 12,
-        gap: 6,
-    },
-    fallbackText: {
-        fontSize: 12,
-        color: '#d97706',
-        fontStyle: 'italic',
-    },
-    attendeesContainer: {
-        marginTop: 24,
-        paddingHorizontal: 16,
-        paddingBottom: 32,
-    },
-    attendeesHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 16,
-        paddingHorizontal: 4,
-    },
-    attendeesHeaderLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    attendeesTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#111827',
-    },
-    attendeesList: {
-        paddingHorizontal: 4,
-        paddingBottom: 8,
-        gap: 12,
-    },
-      attendeeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 16,
-    padding: 16,
-  },
-    attendeeInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        gap: 10,
-    },
-      attendeeAvatar: {
-    borderRadius: 16,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-    attendeeDetails: {
-        flex: 1,
-    },
-    attendeeName: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#111827',
-        flex: 1,
-    },
-    attendeeType: {
-        fontSize: 12,
-        color: '#9ca3af',
-        marginTop: 2,
-    },
-    attendeeStatus: {
-        marginLeft: 8,
-    },
+
+
     errorState: {
         flex: 1,
         justifyContent: 'center',
