@@ -88,21 +88,68 @@ const CompactActionsCard = ({
     }
 
     const [lng, lat] = meetingPoint.coordinates;
-    const mapsUrl = `https://maps.google.com/?q=${lat},${lng}&ll=${lat},${lng}&z=16`;
 
-    if (Platform.OS === 'ios') {
-      // Try to open in Apple Maps first, fallback to Google Maps
-      const appleMapsUrl = `http://maps.apple.com/?q=${lat},${lng}&ll=${lat},${lng}&z=16`;
-      Linking.canOpenURL(appleMapsUrl).then(supported => {
-        if (supported) {
-          Linking.openURL(appleMapsUrl);
-        } else {
-          Linking.openURL(mapsUrl);
-        }
-      });
-    } else {
-      Linking.openURL(mapsUrl);
-    }
+    const googleMapsUrl = `https://maps.google.com/?q=${lat},${lng}&ll=${lat},${lng}&z=16`;
+    const appleMapsUrl = `http://maps.apple.com/?q=${lat},${lng}&ll=${lat},${lng}&z=16`;
+    const citymapperUrl = `citymapper://directions?endcoord=${lat},${lng}`;
+
+    const showOptions = async () => {
+      let options = [];
+      let urls = [];
+
+      options.push('Citymapper');
+      urls.push(citymapperUrl);
+
+      // Apple Maps (iOS only)
+      if (Platform.OS === 'ios') {
+        options.push('Apple Maps');
+        urls.push(appleMapsUrl);
+      }
+
+      // Google Maps (always show, opens app if installed, browser otherwise)
+      options.push('Google Maps');
+      urls.push(googleMapsUrl);
+
+      options.push('Cancel');
+      urls.push(null);
+
+      if (Platform.OS === 'ios' && typeof ActionSheetIOS !== 'undefined') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options,
+            cancelButtonIndex: options.length - 1,
+          },
+          (buttonIndex) => {
+            if (buttonIndex === options.length - 1) return; // Cancel
+            const url = urls[buttonIndex];
+            if (!url) return;
+            Linking.openURL(url).catch(() => {
+              Alert.alert('Error', `Cannot open ${options[buttonIndex]}`);
+            });
+          }
+        );
+      } else {
+        // Android or fallback
+        Alert.alert(
+          'Open in Maps',
+          'Choose an app to open the location:',
+          options
+            .slice(0, -1)
+            .map((label, idx) => ({
+              text: label,
+              onPress: () => {
+                const url = urls[idx];
+                Linking.openURL(url).catch(() => {
+                  Alert.alert('Error', `Cannot open ${label}`);
+                });
+              }
+            }))
+            .concat({ text: 'Cancel', style: 'cancel' })
+        );
+      }
+    };
+
+    showOptions();
   };
 
   const showNewSearch = mode === 'main' && onStartNewSearch;
