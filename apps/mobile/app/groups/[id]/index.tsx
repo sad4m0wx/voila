@@ -243,6 +243,7 @@ export default function GroupScreen() {
     const [attendeeAddresses, setAttendeeAddresses] = useState<any[]>([]);
     const [isCalculatingMeetingPoint, setIsCalculatingMeetingPoint] = useState(false);
     const [currentMeetingPointIndex, setCurrentMeetingPointIndex] = useState(0);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
 
     // Load group data when component mounts
     useEffect(() => {
@@ -258,6 +259,35 @@ export default function GroupScreen() {
             loadGroupMembers(currentGroup.id);
         }
     }, [currentGroup?.id, user, loadGroupMembers]);
+
+    // Track when initial loading is complete
+    useEffect(() => {
+        if (currentGroup && currentGroupMembers.length > 0 && myAttendance !== null) {
+            setIsInitialLoading(false);
+        } else if (currentGroup && myAttendance !== null) {
+            // Even if no members, we have the basic data
+            setIsInitialLoading(false);
+        }
+    }, [currentGroup, currentGroupMembers, myAttendance]);
+
+    // Sync attendance state with group members data
+    useEffect(() => {
+        if (user && currentGroupMembers.length > 0) {
+            const myMember = currentGroupMembers.find(member => member.user_id === user.uid);
+            if (myMember?.attendance) {
+                // Convert the group member attendance format to match what getMyAttendance returns
+                const syncedAttendance = {
+                    group_id: currentGroup?.id,
+                    user_id: user.uid,
+                    is_attending: myMember.attendance.isAttending,
+                    location_lat: myMember.attendance.location_lat,
+                    location_lng: myMember.attendance.location_lng,
+                    confirmed_at: myMember.attendance.confirmedAt,
+                };
+                setMyAttendance(syncedAttendance);
+            }
+        }
+    }, [currentGroupMembers, user, currentGroup?.id]);
 
     // Load current user's attendance
     const loadMyAttendance = useCallback(async () => {
@@ -450,6 +480,30 @@ export default function GroupScreen() {
                     <Text style={styles.errorTitle}>Authentication Required</Text>
                 </View>
             </SafeAreaView>
+        );
+    }
+
+    // Show loading screen while initial data is being fetched
+    if (isInitialLoading || loading) {
+        return (
+            <View style={styles.container}>
+                {/* Background */}
+                <View style={styles.backgroundContainer}>
+                    <MetroBackground />
+                </View>
+                
+                <SafeAreaView style={styles.loadingContainer}>
+                    <View style={styles.loadingContent}>
+                        <LoadingIndicator size="large" />
+                        <Text style={styles.loadingTitle}>Loading Group...</Text>
+                        <Text style={styles.loadingSubtitle}>
+                            {!currentGroup ? "Fetching group details" : 
+                             currentGroupMembers.length === 0 ? "Loading members" : 
+                             "Calculating meeting point"}
+                        </Text>
+                    </View>
+                </SafeAreaView>
+            </View>
         );
     }
 
@@ -738,6 +792,28 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#111827',
         marginTop: 16,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+    },
+    loadingContent: {
+        alignItems: 'center',
+        gap: 16,
+    },
+    loadingTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#111827',
+        textAlign: 'center',
+    },
+    loadingSubtitle: {
+        fontSize: 16,
+        color: '#6b7280',
+        textAlign: 'center',
+        marginTop: 8,
     },
 
 }); 
