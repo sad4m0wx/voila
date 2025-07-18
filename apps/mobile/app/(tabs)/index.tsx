@@ -101,14 +101,14 @@ export default function HomeScreen() {
       setIsCalculating(true);
       setError(null);
       setShowResults(false);
-      
+
       // Import the share service
       const { getSharedMeetingPoint } = await import('lib/services/shareService');
       const result = await getSharedMeetingPoint(shareId);
-      
+
       if (result.success && result.meetingPointResult) {
         const data = result.meetingPointResult;
-        
+
         // Extract meeting point (use first one if multiple)
         if (data.meeting_points && data.meeting_points.length > 0) {
           const mp = data.meeting_points[0];
@@ -117,18 +117,18 @@ export default function HomeScreen() {
             coordinates: mp.coordinates,
             travelTimes: mp.travel_times || []
           };
-          
+
           setMeetingPoint(meetingPointData);
           setMeetingPoints([meetingPointData]);
           setCurrentMeetingPointIndex(0);
         }
-        
+
         // Extract venues and routes
         setVenues(data.venues || []);
         const routesData = (data.routes && data.routes.length > 0) ? data.routes[0] : [];
         setRoutes(routesData);
         setAllRoutes([routesData]);
-        
+
         // Create addresses from travel times for display
         if (data.meeting_points?.[0]?.travel_times) {
           const addressList = data.meeting_points[0].travel_times.map((tt, index) => ({
@@ -138,13 +138,13 @@ export default function HomeScreen() {
           }));
           setAddresses(addressList);
         }
-        
+
         // Show results and trigger animation
         setShowResults(true);
         setTimeout(() => {
           setAnimateToResults(true);
         }, 500);
-        
+
       } else {
         setError(result.error || 'Failed to load shared meeting point');
       }
@@ -173,7 +173,7 @@ export default function HomeScreen() {
       });
 
       // Check if we have at least 2 addresses with coordinates (including friends)
-      const validAddresses = processedAddresses.filter(addr => 
+      const validAddresses = processedAddresses.filter(addr =>
         addr.value && addr.value.trim() !== '' && addr.coordinates
       );
 
@@ -198,11 +198,11 @@ export default function HomeScreen() {
       if (result) {
         // Handle allRoutes properly - if it's empty, create it from routes
         let processedAllRoutes = result.allRoutes;
-        
+
         if (!processedAllRoutes || processedAllRoutes.length === 0) {
           processedAllRoutes = [];
           const meetingPointsCount = result.allMeetingPoints?.length || 1;
-          
+
           for (let i = 0; i < meetingPointsCount; i++) {
             if (i === 0) {
               processedAllRoutes.push(result.routes || []);
@@ -215,15 +215,15 @@ export default function HomeScreen() {
         // Store all meeting points and routes
         setMeetingPoints(result.allMeetingPoints || [result]);
         setAllRoutes(processedAllRoutes);
-        
+
         // Set the first meeting point as current
         setMeetingPoint(result);
         setRoutes(result.routes || []);
         setVenues(result.venues || []);
         setCurrentMeetingPointIndex(0);
-        
+
         setShowResults(true);
-        
+
         // Trigger animation to results after a short delay
         setTimeout(() => {
           setAnimateToResults(true);
@@ -241,7 +241,7 @@ export default function HomeScreen() {
     if (meetingPointsData.length > 0 && index < meetingPointsData.length) {
       const currentPoint = meetingPointsData[index];
       const newRoutes = allRoutes[index] || [];
-      
+
       setMeetingPoint({
         name: currentPoint.name,
         coordinates: currentPoint.coordinates,
@@ -249,7 +249,7 @@ export default function HomeScreen() {
       });
       setRoutes(newRoutes);
       setCurrentMeetingPointIndex(index);
-      
+
       // Trigger animation to new meeting point
       setAnimateToResults(true);
       setTimeout(() => setAnimateToResults(false), 1000);
@@ -272,7 +272,7 @@ export default function HomeScreen() {
     addresses.forEach((address, index) => {
       let coordinates = null;
       let title = null;
-      
+
       // Handle friend addresses
       if (address.friendData && address.friendData.location) {
         coordinates = [address.friendData.location.lng, address.friendData.location.lat];
@@ -341,7 +341,7 @@ export default function HomeScreen() {
   // Helper function to check if an address belongs to the current user
   const isUserOwnAddress = (address) => {
     if (!userAddresses || !userAddresses.length) return false;
-    
+
     // Check if the address matches any of the user's saved addresses
     return userAddresses.some(userAddr => {
       // Compare coordinates if available (within small tolerance for floating point)
@@ -350,13 +350,13 @@ export default function HomeScreen() {
         const lngDiff = Math.abs(address.coordinates[0] - userAddr.longitude);
         return latDiff < 0.0001 && lngDiff < 0.0001; // Very small tolerance
       }
-      
+
       // Fallback: compare formatted addresses (basic string matching)
       if (address.value && userAddr.formatted_address) {
         return address.value.toLowerCase().includes(userAddr.formatted_address.toLowerCase()) ||
-               userAddr.formatted_address.toLowerCase().includes(address.value.toLowerCase());
+          userAddr.formatted_address.toLowerCase().includes(address.value.toLowerCase());
       }
-      
+
       return false;
     });
   };
@@ -381,160 +381,178 @@ export default function HomeScreen() {
     }
 
     try {
-      // Create a descriptive group name
-      const groupName = `Meeting at ${meetingPoint.name || 'Selected Location'}`;
-      
-      // Separate friends, user's own addresses, and custom addresses
-      const friendMembers = [];
-      const customAddresses = [];
-      let hasUserAddress = false;
-      
-      addresses.forEach((addr, index) => {
-        if (addr.friendData) {
-          // This is a friend - add them as a group member
-          friendMembers.push(addr.friendData.id);
-        } else if (addr.coordinates && addr.value) {
-          if (isUserOwnAddress(addr)) {
-            hasUserAddress = true;
-          } else {
-            // This is a custom address - add as custom location
-            customAddresses.push({
-              id: `address-${index}`,
-              display_name: addr.value.split(',')[0] || `Location ${index + 1}`,
-              address: addr.value,
-              coordinates: addr.coordinates,
-              type: 'custom_address',
-              isAttending: true,
-            });
+      Alert.alert(
+        'Create Group',
+        'Are you sure you want to create a group with the selected members and locations?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Create',
+            style: 'default',
+            onPress: async () => {
+              try {
+                // Create a descriptive group name
+                const groupName = `Meeting at ${meetingPoint.name || 'Selected Location'}`;
+
+                // Separate friends, user's own addresses, and custom addresses
+                const friendMembers = [];
+                const customAddresses = [];
+                let hasUserAddress = false;
+
+                addresses.forEach((addr, index) => {
+                  if (addr.friendData) {
+                    // This is a friend - add them as a group member
+                    friendMembers.push(addr.friendData.id);
+                  } else if (addr.coordinates && addr.value) {
+                    if (isUserOwnAddress(addr)) {
+                      hasUserAddress = true;
+                    } else {
+                      // This is a custom address - add as custom location
+                      customAddresses.push({
+                        id: `address-${index}`,
+                        display_name: addr.value.split(',')[0] || `Location ${index + 1}`,
+                        address: addr.value,
+                        coordinates: addr.coordinates,
+                        type: 'custom_address',
+                        isAttending: true,
+                      });
+                    }
+                  }
+                });
+
+                const newGroup = await createNewGroup(
+                  { name: groupName },
+                  friendMembers,
+                  customAddresses
+                );
+
+                if (newGroup) {
+                  const totalMembers = friendMembers.length + 1; // +1 for the current user
+                  const locationText = customAddresses.length > 0 ? ` and ${customAddresses.length} custom locations` : '';
+
+                  Alert.alert(
+                    'Group Created!',
+                    `Group "${newGroup.name}" created successfully with ${totalMembers} members${locationText}.`,
+                    [
+                      { text: 'Go to Group', onPress: () => router.push(`/groups/${newGroup.id}`) }
+                    ]
+                  );
+                } else {
+                  Alert.alert('Error', 'Failed to create group. Please try again.');
+                }
+              } catch (err) {
+                console.error('Error creating group:', err);
+                Alert.alert('Error', 'Failed to create group. Please try again.');
+              }
+            }
           }
-        }
-      });
-
-      const newGroup = await createNewGroup(
-        { name: groupName },
-        friendMembers,
-        customAddresses
+        ]
       );
-
-      if (newGroup) {
-        const totalMembers = friendMembers.length + 1; // +1 for the current user
-        const locationText = customAddresses.length > 0 ? ` and ${customAddresses.length} custom locations` : '';
-        
-        Alert.alert(
-          'Group Created!',
-          `Group "${newGroup.name}" created successfully with ${totalMembers} members${locationText}.`,
-          [
-            { text: 'Stay Here', style: 'cancel' },
-            { text: 'Go to Group', onPress: () => router.push(`/groups/${newGroup.id}`) }
-          ]
-        );
-      } else {
-        Alert.alert('Error', 'Failed to create group. Please try again.');
-      }
     } catch (err) {
       console.error('Error creating group:', err);
       Alert.alert('Error', 'Failed to create group. Please try again.');
     }
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Background */}
-      <View style={styles.backgroundContainer}>
-        <MetroBackground />
-      </View>
 
-      <View style={styles.mainContent}>
-        {/* MAP AT TOP - Full Screen */}
-        <Animated.View 
-          style={[
-            styles.mapArea,
-            { height: mapHeightAnim }
-          ]}
-        >
-            {/* Map Header with Controls */}
-            <View style={styles.headerControls}>
-              {/* Floating Logo */}
-              <View style={styles.logoContainer}>
-                <Text style={styles.logoIcon}>📍</Text>
-                <Text style={styles.logoText}>Voilà!</Text>
-              </View>
-              
-              {/* Map Controls */}
-              <View style={styles.mapControls}>
-                {/* Auth Button - SignIn or Profile */}
-                <AuthButton />
-              </View>
-            </View>
-
-            {/* Map Container */}
-            <View style={styles.mapContainer}>
-              <MapContainer
-                center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
-                markers={mapMarkers}
-                routes={routes}
-                meetingPoint={meetingPoint}
-                venueRadius={venueRadius}
-                animateToResults={animateToResults}
-                height="100%"
-                onBoundsChange={handleMapBounds}
-              />
-            </View>
-        </Animated.View>
-
-        {/* CONTENT BELOW MAP - Fixed Height */}
-        <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
-          <View style={styles.contentContainer}>
-            {/* Loading Indicator */}
-            {isCalculating && (
-              <View style={styles.loadingContainer}>
-                <LoadingIndicator message="Calculating optimal meeting point..." />
-              </View>
-            )}
-
-            {/* Error Display */}
-            {error && (
-              <View style={styles.errorContainer}>
-                <MaterialIcons name="error" size={24} color="#ef4444" style={styles.errorIcon} />
-                <View style={styles.errorContent}>
-                  <Text style={styles.errorTitle}>Calculation Error</Text>
-                  <Text style={styles.errorMessage}>{error}</Text>
-                  <TouchableOpacity style={styles.errorButton} onPress={handleFindMeetingPoint}>
-                    <Text style={styles.errorButtonText}>TRY AGAIN</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* Address Form or Results */}
-            {showResults && meetingPoint && !isCalculating ? (
-              <View style={styles.resultsContainer}>
-                <MeetingPointResults
-                  meetingPoint={meetingPoint}
-                  meetingPoints={meetingPoints}
-                  currentMeetingPointIndex={currentMeetingPointIndex}
-                  setCurrentMeetingPointIndex={handleMeetingPointChange}
-                  onStartNewSearch={handleStartNewSearch}
-                  onCreateGroup={handleSaveLocation}
-                  mode="main"
-                  addresses={addresses}
-                />
-              </View>
-            ) : (
-              <AddressForm
-                addresses={addresses}
-                onAddressesChange={setAddresses}
-                onFindMeetingPoint={handleFindMeetingPoint}
-                isCalculating={isCalculating}
-                mapBounds={mapBounds}
-                error={error}
-              />
-            )}
-          </View>
-        </SafeAreaView>
-        </View>
+return (
+  <View style={styles.container}>
+    {/* Background */}
+    <View style={styles.backgroundContainer}>
+      <MetroBackground />
     </View>
-  );
+
+    <View style={styles.mainContent}>
+      {/* MAP AT TOP - Full Screen */}
+      <Animated.View
+        style={[
+          styles.mapArea,
+          { height: mapHeightAnim }
+        ]}
+      >
+        {/* Map Header with Controls */}
+        <View style={styles.headerControls}>
+          {/* Floating Logo */}
+          <View style={styles.logoContainer}>
+            <Text style={styles.logoIcon}>📍</Text>
+            <Text style={styles.logoText}>Voilà!</Text>
+          </View>
+
+          {/* Map Controls */}
+          <View style={styles.mapControls}>
+            {/* Auth Button - SignIn or Profile */}
+            <AuthButton />
+          </View>
+        </View>
+
+        {/* Map Container */}
+        <View style={styles.mapContainer}>
+          <MapContainer
+            center={meetingPoint ? meetingPoint.coordinates : defaultMapCenter}
+            markers={mapMarkers}
+            routes={routes}
+            meetingPoint={meetingPoint}
+            venueRadius={venueRadius}
+            animateToResults={animateToResults}
+            height="100%"
+            onBoundsChange={handleMapBounds}
+          />
+        </View>
+      </Animated.View>
+
+      {/* CONTENT BELOW MAP - Fixed Height */}
+      <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
+        <View style={styles.contentContainer}>
+          {/* Loading Indicator */}
+          {isCalculating && (
+            <View style={styles.loadingContainer}>
+              <LoadingIndicator message="Calculating optimal meeting point..." />
+            </View>
+          )}
+
+          {/* Error Display */}
+          {error && (
+            <View style={styles.errorContainer}>
+              <MaterialIcons name="error" size={24} color="#ef4444" style={styles.errorIcon} />
+              <View style={styles.errorContent}>
+                <Text style={styles.errorTitle}>Calculation Error</Text>
+                <Text style={styles.errorMessage}>{error}</Text>
+                <TouchableOpacity style={styles.errorButton} onPress={handleFindMeetingPoint}>
+                  <Text style={styles.errorButtonText}>TRY AGAIN</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Address Form or Results */}
+          {showResults && meetingPoint && !isCalculating ? (
+            <View style={styles.resultsContainer}>
+              <MeetingPointResults
+                meetingPoint={meetingPoint}
+                meetingPoints={meetingPoints}
+                currentMeetingPointIndex={currentMeetingPointIndex}
+                setCurrentMeetingPointIndex={handleMeetingPointChange}
+                onStartNewSearch={handleStartNewSearch}
+                onCreateGroup={handleSaveLocation}
+                mode="main"
+                addresses={addresses}
+              />
+            </View>
+          ) : (
+            <AddressForm
+              addresses={addresses}
+              onAddressesChange={setAddresses}
+              onFindMeetingPoint={handleFindMeetingPoint}
+              isCalculating={isCalculating}
+              mapBounds={mapBounds}
+              error={error}
+            />
+          )}
+        </View>
+      </SafeAreaView>
+    </View>
+  </View>
+);
 }
 
 const styles = StyleSheet.create({
