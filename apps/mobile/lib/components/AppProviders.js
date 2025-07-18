@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { GroupsProvider } from '../contexts/GroupsContext';
+import { MeetingPointProvider } from '../contexts/MeetingPointContext';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import LoadingIndicator from './utils/LoadingIndicator';
 import { GradientView } from './core';
@@ -107,9 +108,11 @@ const AppProviders = ({ children }) => {
   return (
     <AuthProvider>
       <GroupsProvider>
-        <AppInitializer>
-          {children}
-        </AppInitializer>
+        <MeetingPointProvider>
+          <AppInitializer>
+            {children}
+          </AppInitializer>
+        </MeetingPointProvider>
       </GroupsProvider>
     </AuthProvider>
   );

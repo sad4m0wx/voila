@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
-import { findOptimalMeetingPoint } from '@/services/meetingPointApi';
 import { defaultMapCenter, defaultMapZoom } from '@/config';
 import { MetroBackground, GradientView } from '@/components/core';
 import { GRADIENT_STYLES } from '@/theme/gradients';
@@ -20,6 +19,7 @@ import MapContainer from '@/components/maps/MapContainer';
 import { SlideToConfirm, LoadingIndicator } from '@/components/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroups } from '@/contexts/GroupsContext';
+import { useMeetingPoint } from '@/contexts/MeetingPointContext';
 import RouteDetailsToggle from '@/components/meeting/RouteDetailsToggle';
 import CompactActionsCard from '@/components/meeting/CompactActionsCard';
 import MeetingPointResults from '@/components/meeting/MeetingPointResults';
@@ -226,10 +226,14 @@ export default function GroupScreen() {
         loadGroup,
         loadGroupMembers,
         updateMyAttendance,
-        getUserAddresses,
         getGroupMemberAddresses,
         clearError,
     } = useGroups();
+    const {
+        calculateMeetingPoint,
+        getCachedMeetingPoint,
+        isCalculatingMeetingPoint,
+    } = useMeetingPoint();
 
     // [REFACTOR START]
     // --- State ---
@@ -237,8 +241,7 @@ export default function GroupScreen() {
     const [attendeeAddresses, setAttendeeAddresses] = useState([]);
     const [currentMeetingPointIndex, setCurrentMeetingPointIndex] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
-    const [isCalculatingMeetingPoint, setIsCalculatingMeetingPoint] = useState(false);
-    const meetingPointCalcRef = useRef(0);
+    const [hasInitialMeetingPoint, setHasInitialMeetingPoint] = useState(false);
 
     // --- Centralized Data Loading ---
     const loadAllData = useCallback(async () => {
@@ -259,112 +262,31 @@ export default function GroupScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, user]);
 
-    // --- Meeting Point Calculation (debounced, robust) ---
-    const calculateMeetingPoint = useCallback(async (members, group) => {
-      if (!members?.length || !group?.id) {
-        setMeetingPoint(null);
-        setAttendeeAddresses([]);
-        return;
-      }
-      const attendees = members.filter(m => m.attendance?.isAttending);
-      if (attendees.length < 2) {
-        setMeetingPoint(null);
-        setAttendeeAddresses([]);
-        return;
-      }
-      setIsCalculatingMeetingPoint(true);
-      const calcId = ++meetingPointCalcRef.current;
-      try {
-        const userAddressesMap = await getGroupMemberAddresses(group.id);
-        const addressesArr = [];
-        for (const attendee of attendees) {
-          if (attendee.type === 'custom_location') {
-            if (attendee.coordinates && attendee.coordinates.length >= 2) {
-              addressesArr.push({
-                address: attendee.address || attendee.display_name,
-                lat: attendee.coordinates[1],
-                lng: attendee.coordinates[0],
-                name: attendee.display_name,
-                type: 'custom_location',
-              });
-            }
-          } else if (attendee.is_me) {
-            const userAddress = addresses?.find(a => a.is_default) || addresses?.[0];
-            if (userAddress) {
-              addressesArr.push({
-                address: userAddress.formatted_address || userAddress.name || `${userAddress.latitude}, ${userAddress.longitude}`,
-                lat: userAddress.latitude,
-                lng: userAddress.longitude,
-                name: attendee.display_name || 'You',
-                type: 'user',
-              });
-            }
-          } else if (attendee.user_id) {
-            const userAddress = userAddressesMap[attendee.user_id];
-            if (userAddress) {
-              addressesArr.push({
-                address: userAddress.address,
-                lat: userAddress.latitude,
-                lng: userAddress.longitude,
-                name: attendee.display_name || 'User',
-                type: 'user',
-              });
-            } else {
-              const currentUserAddress = addresses?.find(a => a.is_default) || addresses?.[0];
-              if (currentUserAddress) {
-                const latOffset = (Math.random() - 0.5) * 0.02;
-                const lngOffset = (Math.random() - 0.5) * 0.02;
-                addressesArr.push({
-                  address: `${attendee.display_name}'s Location (estimated)`,
-                  lat: currentUserAddress.latitude + latOffset,
-                  lng: currentUserAddress.longitude + lngOffset,
-                  name: attendee.display_name || 'User',
-                  type: 'user',
-                });
-              }
-            }
-          }
-        }
-        setAttendeeAddresses(addressesArr);
-        if (addressesArr.length < 2) {
-          setMeetingPoint(null);
-          return;
-        }
-        const apiAddresses = addressesArr.filter(a => a.address && a.lat && a.lng).map((a, i) => ({
-          id: `addr-${i}`,
-          value: a.address,
-          coordinates: [a.lng, a.lat],
-        }));
-        if (apiAddresses.length < 2) {
-          setMeetingPoint(null);
-          return;
-        }
-        const result = await findOptimalMeetingPoint(apiAddresses, {
-          transportation_mode: 'transit',
-          venue_types: ['restaurant', 'cafe', 'bar'],
-          search_radius: 1000,
-        });
-        // Only set if this is the latest calculation
-        if (meetingPointCalcRef.current === calcId) {
-          setMeetingPoint(result);
-        }
-      } catch (e) {
-        if (meetingPointCalcRef.current === calcId) {
-          setMeetingPoint(null);
-        }
-      } finally {
-        if (meetingPointCalcRef.current === calcId) {
-          setIsCalculatingMeetingPoint(false);
-        }
-      }
-    }, [addresses, getGroupMemberAddresses]);
-
-    // --- Trigger meeting point calculation when members/addresses change ---
+    // --- Immediate Cache Check and Async Calculation ---
     useEffect(() => {
-      if (!currentGroup || !currentGroupMembers) return;
-      calculateMeetingPoint(currentGroupMembers, currentGroup);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentGroup, currentGroupMembers, addresses]);
+      if (!currentGroup || !currentGroupMembers || !addresses) return;
+      
+      // First, check cache immediately for instant UI update
+      const cachedResult = getCachedMeetingPoint(currentGroupMembers, addresses);
+      if (cachedResult) {
+        setMeetingPoint(cachedResult.meetingPoint);
+        setAttendeeAddresses(cachedResult.attendeeAddresses);
+        setHasInitialMeetingPoint(true);
+        return; // No need to calculate if we have cache
+      }
+      
+      // If no cache, calculate asynchronously
+      const calculateAndSetMeetingPoint = async () => {
+        const result = await calculateMeetingPoint(currentGroupMembers, addresses, () => 
+          getGroupMemberAddresses(currentGroup.id)
+        );
+        setMeetingPoint(result.meetingPoint);
+        setAttendeeAddresses(result.attendeeAddresses);
+        setHasInitialMeetingPoint(true);
+      };
+      
+      calculateAndSetMeetingPoint();
+    }, [currentGroup, currentGroupMembers, addresses, calculateMeetingPoint, getCachedMeetingPoint, getGroupMemberAddresses]);
 
     // --- Attendance Handlers (no redundant reloads) ---
     const handleAttendanceConfirm = useCallback(async () => {
@@ -424,7 +346,7 @@ export default function GroupScreen() {
     }
 
     // Show loading screen while initial data is being fetched
-    if (isLoading || loading) {
+    if (isLoading || loading || (!hasInitialMeetingPoint && isCalculatingMeetingPoint)) {
         return (
             <View style={styles.container}>
                 {/* Background */}
@@ -439,7 +361,8 @@ export default function GroupScreen() {
                         <Text style={styles.loadingSubtitle}>
                             {!currentGroup ? "Fetching group details" : 
                              currentGroupMembers.length === 0 ? "Loading members" : 
-                             "Calculating meeting point"}
+                             !hasInitialMeetingPoint && isCalculatingMeetingPoint ? "Calculating meeting point" :
+                             "Ready"}
                         </Text>
                     </View>
                 </SafeAreaView>
@@ -482,6 +405,14 @@ export default function GroupScreen() {
                 {/* Compact Content Below Map */}
                 <SafeAreaView style={styles.contentSafeArea} edges={['left', 'right', 'bottom']}>
                     <View style={styles.compactContent}>
+                        {/* Subtle loading indicator for background calculations */}
+                        {hasInitialMeetingPoint && isCalculatingMeetingPoint && (
+                            <View style={styles.backgroundLoadingContainer}>
+                                <LoadingIndicator size="small" />
+                                <Text style={styles.backgroundLoadingText}>Updating meeting point...</Text>
+                            </View>
+                        )}
+                        
                         {/* Slide to Confirm */}
                         <View style={styles.slideContainer}>
                             <SlideToConfirm
@@ -754,6 +685,20 @@ const styles = StyleSheet.create({
         color: '#6b7280',
         textAlign: 'center',
         marginTop: 8,
+    },
+    backgroundLoadingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        backgroundColor: '#f3f4f6',
+        borderRadius: 12,
+        marginBottom: 16,
+    },
+    backgroundLoadingText: {
+        fontSize: 14,
+        color: '#6b7280',
+        marginLeft: 8,
     },
 
 }); 
