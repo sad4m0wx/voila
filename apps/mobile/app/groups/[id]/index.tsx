@@ -226,7 +226,6 @@ export default function GroupScreen() {
         loadGroup,
         loadGroupMembers,
         updateMyAttendance,
-        getMyAttendance,
         getUserAddresses,
         getGroupMemberAddresses,
         clearError,
@@ -234,7 +233,6 @@ export default function GroupScreen() {
 
     // [REFACTOR START]
     // --- State ---
-    const [myAttendance, setMyAttendance] = useState(null);
     const [meetingPoint, setMeetingPoint] = useState(null);
     const [attendeeAddresses, setAttendeeAddresses] = useState([]);
     const [currentMeetingPointIndex, setCurrentMeetingPointIndex] = useState(0);
@@ -249,14 +247,12 @@ export default function GroupScreen() {
       try {
         await loadGroup(id);
         await loadGroupMembers(id);
-        const attendance = await getMyAttendance(id);
-        setMyAttendance(attendance);
       } catch (e) {
-        setMyAttendance(null);
+        // Error handled by context
       } finally {
         setIsLoading(false);
       }
-    }, [id, user, loadGroup, loadGroupMembers, getMyAttendance]);
+    }, [id, user, loadGroup, loadGroupMembers]);
 
     useEffect(() => {
       loadAllData();
@@ -493,7 +489,7 @@ export default function GroupScreen() {
                                 cancelText="I can't make it"
                                 onConfirm={handleAttendanceConfirm}
                                 onCancel={handleAttendanceCancel}
-                                isConfirmed={myAttendance?.is_attending || false}
+                                isConfirmed={currentGroupMembers.find(m => m.is_me)?.attendance?.isAttending || false}
                                 disabled={loading}
                             />
                         </View>
