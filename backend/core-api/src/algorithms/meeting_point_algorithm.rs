@@ -52,12 +52,21 @@ impl MeetingPointAlgorithm {
         info!("⏱️  Estimated time limit: {}min", time_limit_minutes);
         
         // Step 3: Get optimal isochrones with adaptive area control
-        let (final_isochrones, intersections) = self
+        let isochrone_result = self
             .find_optimal_isochrones(locations, time_limit_minutes)
-            .await?;
+            .await;
+        
+        let (final_isochrones, intersections) = match isochrone_result {
+            Ok((isochrones, intersections)) => (isochrones, intersections),
+            Err(_) => {
+                info!("⚠️  Could not find optimal isochrones within time limits, falling back to centroid");
+                return self.create_centroid_fallback(locations, &center).await;
+            }
+        };
         
         if intersections.is_empty() {
-            return Err(anyhow::anyhow!("No valid intersections found"));
+            info!("⚠️  No valid intersections found, falling back to centroid");
+            return self.create_centroid_fallback(locations, &center).await;
         }
 
         info!("🌐 Generated {} isochrones with {} intersections", final_isochrones.len(), intersections.len());
@@ -65,7 +74,8 @@ impl MeetingPointAlgorithm {
         // Step 4: Generate and optimize candidates
         let candidates = self.generate_and_optimize_candidates(&intersections).await?;
         if candidates.is_empty() {
-            return Err(anyhow::anyhow!("No valid candidates found"));
+            info!("⚠️  No valid candidates found, falling back to centroid");
+            return self.create_centroid_fallback(locations, &center).await;
         }
         info!("🎯 Generated {} candidate points", candidates.len());
         
@@ -123,6 +133,71 @@ impl MeetingPointAlgorithm {
         info!("🕒 Total execution time: {:?}", duration);
 
         Ok((meeting_points, routes_per_point, debug_data))
+    }
+
+    async fn create_centroid_fallback(
+        &self,
+        locations: &[(String, Location)],
+        center: &Location,
+    ) -> Result<(Vec<MeetingPoint>, Vec<Vec<Route>>, Option<DebugData>)> {
+        info!("📍 Using centroid as fallback meeting point");
+        
+        // Get routes to centroid
+        let route_results = self.route_service.get_transit_routes(locations, center).await;
+        
+        let mut routes = Vec::new();
+        let mut durations = Vec::new();
+        
+        for (route_result, (_id, _)) in route_results.iter().zip(locations.iter()) {
+            if let Ok((duration, _distance, steps)) = route_result {
+                routes.push(Route {
+                    geometry: LineString::new(vec![]),
+                    steps: steps.clone(),
+                });
+                durations.push(duration.as_secs() as u32);
+            } else {
+                // If route calculation fails, use estimated values
+                routes.push(Route {
+                    geometry: LineString::new(vec![]),
+                    steps: vec![],
+                });
+                durations.push(0); // Will be marked as estimated
+            }
+        }
+        
+        let meeting_point = MeetingPoint {
+            name: "Centroid Meeting Point".to_string(),
+            coordinates: (center.longitude, center.latitude),
+            travel_times: routes.iter().zip(locations.iter()).zip(durations.iter()).map(|((route, (id, location)), &duration)| {
+                TravelTime {
+                    id: id.clone(),
+                    address: location.address.clone().unwrap_or_else(|| 
+                        format!("{:.4}, {:.4}", location.latitude, location.longitude)
+                    ),
+                    duration: if duration > 0 { duration / 60 } else { 0 }, // Convert seconds to minutes
+                    distance: route.steps.iter().map(|step| step.distance).sum(),
+                    estimated: duration == 0,
+                    transit_summary: None,
+                }
+            }).collect(),
+        };
+        
+        let debug_data = Some(DebugData {
+            geometric_centroid: (center.longitude, center.latitude),
+            isochrones: vec![],
+            intersection_polygons: vec![],
+            candidate_points: vec![],
+            final_candidates: vec![DebugCandidate {
+                id: "centroid_fallback".to_string(),
+                coordinates: (center.longitude, center.latitude),
+                source: "centroid_fallback".to_string(),
+                score: None,
+            }],
+            isochrone_data: None,
+            heatmap_data: None,
+        });
+
+        Ok((vec![meeting_point], vec![routes], debug_data))
     }
 
     fn calculate_centroid(locations: &[(String, Location)]) -> Location {
