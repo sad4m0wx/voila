@@ -46,7 +46,6 @@ export default function GroupSettingsScreen() {
   const [editingDescription, setEditingDescription] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
-  const [showAddMember, setShowAddMember] = useState(false);
   const [memberAddCount, setMemberAddCount] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
   const [showAddressPicker, setShowAddressPicker] = useState(false);
@@ -125,7 +124,6 @@ export default function GroupSettingsScreen() {
     try {
       const success = await addGroupMember(currentGroup.id, member.user_id || member.id);
       if (success) {
-        setShowAddMember(false);
         await loadAllData();
         Alert.alert('Success', `${member.display_name || 'Member'} added to group`);
       }
@@ -422,69 +420,53 @@ export default function GroupSettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Members ({currentGroupMembers.length})</Text>
-            <TouchableOpacity 
-              onPress={() => setShowAddMember(!showAddMember)}
-              style={styles.addButton}
-            >
-              <MaterialIcons name="add" size={20} color="#6366f1" />
-              <Text style={styles.addButtonText}>Add Member</Text>
-            </TouchableOpacity>
           </View>
 
-          {/* Add Member Interface */}
-          {showAddMember && (
-            <View style={styles.addMemberContainer}>
-              <Text style={styles.addMemberLabel}>Add friend or location</Text>
-              <AddressInput
-                key={`member-add-${memberAddCount}`}
-                placeholder="Search for friends or addresses..."
-                onPlaceSelected={async (selectedPlace) => {
-                  if (selectedPlace.type === 'friend') {
-                    // Handle friend selection - add them as a group member
-                    const friendMember = {
-                      id: selectedPlace.friendId,
-                      user_id: selectedPlace.friendId,
-                      display_name: selectedPlace.friendName,
-                      type: 'user',
-                    };
-                    await handleAddMember(friendMember);
-                  } else {
-                    // Handle address selection - add as custom location
-                    const customAddress = {
-                      display_name: selectedPlace.address.split(',')[0] || 'Custom Location',
-                      address: selectedPlace.address,
-                      coordinates: [selectedPlace.location.lng, selectedPlace.location.lat],
-                      placeId: selectedPlace.placeId,
-                      type: 'custom_address',
-                      isAttending: true,
-                    };
-                    
-                    // Add custom address to group
-                    try {
-                      if (currentGroup) {
-                        const dbLocation = await addCustomLocationToGroup(currentGroup.id, customAddress);
-                        await loadAllData();
-                      }
-                    } catch (error) {
-                      console.error('Error adding custom location:', error);
-                      Alert.alert('Error', 'Failed to add custom location');
-                    }
-                  }
+          {/* Add Member Interface - Always Visible */}
+          <View style={styles.addMemberContainer}>
+            <Text style={styles.addMemberLabel}>Add friend or location</Text>
+            <AddressInput
+              key={`member-add-${memberAddCount}`}
+              placeholder="Search for friends or addresses..."
+              onPlaceSelected={async (selectedPlace) => {
+                if (selectedPlace.type === 'friend') {
+                  // Handle friend selection - add them as a group member
+                  const friendMember = {
+                    id: selectedPlace.friendId,
+                    user_id: selectedPlace.friendId,
+                    display_name: selectedPlace.friendName,
+                    type: 'user',
+                  };
+                  await handleAddMember(friendMember);
+                } else {
+                  // Handle address selection - add as custom location
+                  const customAddress = {
+                    display_name: selectedPlace.address.split(',')[0] || 'Custom Location',
+                    address: selectedPlace.address,
+                    coordinates: [selectedPlace.location.lng, selectedPlace.location.lat],
+                    placeId: selectedPlace.placeId,
+                    type: 'custom_address',
+                    isAttending: true,
+                  };
                   
-                  // Increment counter to reset the input
-                  setMemberAddCount(prev => prev + 1);
-                }}
-                style={styles.addMemberInput}
-              />
-              
-              <TouchableOpacity
-                style={styles.cancelAddButton}
-                onPress={() => setShowAddMember(false)}
-              >
-                <Text style={styles.cancelAddButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+                  // Add custom address to group
+                  try {
+                    if (currentGroup) {
+                      const dbLocation = await addCustomLocationToGroup(currentGroup.id, customAddress);
+                      await loadAllData();
+                    }
+                  } catch (error) {
+                    console.error('Error adding custom location:', error);
+                    Alert.alert('Error', 'Failed to add custom location');
+                  }
+                }
+                
+                // Increment counter to reset the input
+                setMemberAddCount(prev => prev + 1);
+              }}
+              style={styles.addMemberInput}
+            />
+          </View>
 
           {/* Current Members List */}
           <View style={styles.membersList}>
@@ -784,20 +766,7 @@ const styles = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: 'top',
   },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f4ff',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 4,
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6366f1',
-  },
+
   memberItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -937,17 +906,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
   },
-  cancelAddButton: {
-    padding: 12,
-    backgroundColor: '#f0f4ff',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelAddButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6366f1',
-  },
+
   attendanceContainer: {
     marginTop: 8,
   },
