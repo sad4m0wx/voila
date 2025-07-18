@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated } from 'react-native';
 import MapView, { Marker, Polyline, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getGradientColors } from '../../theme/gradients';
@@ -16,12 +16,48 @@ const MapContainer = (props = {}) => {
     height = '100%',
     onBoundsChange = null,
     style = {},
-    onMapReady
+    onMapReady,
+    enableRouteAnimation = true, // New prop to enable/disable animation
+    routeAnimationDuration = 2000, // Animation duration in ms
+    routeAnimationDelay = 500 // Delay before starting animation
   } = props;
 
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
+  
+  // Route animation state - single progress value for all routes
+  const [animationProgress, setAnimationProgress] = useState(0);
+  const animationRef = useRef(new Animated.Value(0));
+
+  // Animate routes when they change
+  useEffect(() => {
+    if (!enableRouteAnimation || !mapReady || routes.length === 0) return;
+
+    // Reset animation
+    setAnimationProgress(0);
+    animationRef.current.setValue(0);
+
+    // Start animation after delay
+    setTimeout(() => {
+      Animated.timing(animationRef.current, {
+        toValue: 1,
+        duration: routeAnimationDuration,
+        useNativeDriver: false,
+      }).start();
+    }, routeAnimationDelay);
+
+    // Add listener to track progress
+    const listener = animationRef.current.addListener(({ value }) => {
+      setAnimationProgress(value);
+    });
+
+    // Cleanup function
+    return () => {
+      animationRef.current.stopAnimation();
+      animationRef.current.removeListener(listener);
+    };
+  }, [routes, mapReady, enableRouteAnimation, routeAnimationDuration, routeAnimationDelay]);
 
   // Initial region based on center prop - memoized
   const initialRegion = useMemo(() => ({
@@ -184,16 +220,35 @@ const MapContainer = (props = {}) => {
 
   // Helper function to get step color - memoized
   const getStepColor = useCallback((step, routeColor) => {
-    if (step.mode === 'walking') {
+    // Ensure we have a valid step with mode
+    if (!step || !step.mode) {
+      return routeColor || '#3b82f6';
+    }
+
+    const mode = step.mode.toLowerCase();
+    
+    if (mode === 'walking' || mode === 'walk') {
       return '#059669';
     }
-    if (step.mode === 'transit' && step.transit_details?.line?.color) {
-      const lineColor = step.transit_details.line.color;
-      return lineColor.startsWith('#') ? lineColor : `#${lineColor}`;
+    
+    if (mode === 'transit') {
+      // Check for transit line color first
+      if (step.transit_details?.line?.color) {
+        const lineColor = step.transit_details.line.color;
+        // Ensure it's a valid hex color
+        if (lineColor && typeof lineColor === 'string') {
+          return lineColor.startsWith('#') ? lineColor : `#${lineColor}`;
+        }
+      }
+      // Fallback transit color
+      return '#8B5CF6';
     }
-    if (step.mode === 'driving') {
+    
+    if (mode === 'driving' || mode === 'car') {
       return '#2563EB';
     }
+    
+    // Default fallback
     return routeColor || '#3b82f6';
   }, []);
 
@@ -203,22 +258,63 @@ const MapContainer = (props = {}) => {
 
     const polylines = [];
     
+    // Prioritize steps over geometry to avoid duplicate rendering
     if (route.steps && Array.isArray(route.steps) && route.steps.length > 0) {
-      route.steps.forEach((step, stepIndex) => {
-        if (!step.geometry?.coordinates || !Array.isArray(step.geometry.coordinates)) return;
-
+      const numSteps = route.steps.length;
+      // Divide animation progress among steps
+      for (let stepIndex = 0; stepIndex < numSteps; stepIndex++) {
+        const step = route.steps[stepIndex];
+        if (!step.geometry?.coordinates || !Array.isArray(step.geometry.coordinates)) continue;
         const stepCoords = step.geometry.coordinates;
-        if (stepCoords.length < 2) return;
-
-        const coordinates = stepCoords
+        if (stepCoords.length < 2) continue;
+        const allCoordinates = stepCoords
           .filter(coord => Array.isArray(coord) && coord.length >= 2 && !isNaN(coord[0]) && !isNaN(coord[1]))
-          .map(coord => ({
-            latitude: coord[1],
-            longitude: coord[0]
-          }));
+          .map(coord => ({ latitude: coord[1], longitude: coord[0] }));
+        if (allCoordinates.length < 2) continue;
 
-        if (coordinates.length < 2) return;
+        let coordinates = [];
+        if (enableRouteAnimation) {
+          if (animationProgress <= 0.01) {
+            // Don't render anything if animation hasn't started
+            continue;
+          }
+          // Step's animation window
+          const stepStart = stepIndex / numSteps;
+          const stepEnd = (stepIndex + 1) / numSteps;
+          const stepProgress = (animationProgress - stepStart) / (stepEnd - stepStart);
 
+          if (stepProgress <= 0) {
+            // Not started yet
+            continue;
+          } else if (stepProgress >= 1) {
+            // Fully drawn
+            coordinates = allCoordinates;
+          } else {
+            // Animate this step
+            const coordinateCount = Math.max(2, Math.floor(allCoordinates.length * stepProgress));
+            coordinates = allCoordinates.slice(0, coordinateCount);
+            // Smooth interpolation for the last segment
+            if (coordinateCount < allCoordinates.length && coordinateCount > 0) {
+              const lastIndex = coordinateCount - 1;
+              const nextIndex = coordinateCount;
+              const progress = (allCoordinates.length * stepProgress) - coordinateCount;
+              if (progress > 0 && nextIndex < allCoordinates.length) {
+                const lastCoord = allCoordinates[lastIndex];
+                const nextCoord = allCoordinates[nextIndex];
+                const interpolatedCoord = {
+                  latitude: lastCoord.latitude + (nextCoord.latitude - lastCoord.latitude) * progress,
+                  longitude: lastCoord.longitude + (nextCoord.longitude - lastCoord.longitude) * progress
+                };
+                coordinates = [...coordinates.slice(0, -1), interpolatedCoord];
+              }
+            }
+          }
+        } else {
+          coordinates = allCoordinates;
+        }
+        if (coordinates.length < 2) continue;
+        
+        // Get step color early and ensure it's applied correctly
         const stepColor = getStepColor(step, route.color);
         const uniqueKey = `route-${routeIndex}-step-${stepIndex}`;
 
@@ -232,31 +328,57 @@ const MapContainer = (props = {}) => {
             tappable={false}
           />
         );
-      });
-    } else if (route.geometry?.coordinates) {
-      const coordinates = route.geometry.coordinates
+      }
+      return polylines;
+    }
+    
+    // Only render geometry if there are no steps at all
+    if (route.geometry?.coordinates && route.geometry.coordinates.length > 0 && (!route.steps || route.steps.length === 0)) {
+      // Only use geometry if there are no steps to avoid duplicate rendering
+      const allCoordinates = route.geometry.coordinates
         .filter(coord => Array.isArray(coord) && coord.length >= 2 && !isNaN(coord[0]) && !isNaN(coord[1]))
-        .map(coord => ({
-          latitude: coord[1],
-          longitude: coord[0]
-        }));
-
-      if (coordinates.length >= 2) {
-        polylines.push(
-          <Polyline
-            key={`route-main-${routeIndex}`}
-            coordinates={coordinates}
-            strokeColor={route.color || '#3b82f6'}
-            strokeWidth={6}
-            geodesic={true}
-            tappable={false}
-          />
-        );
+        .map(coord => ({ latitude: coord[1], longitude: coord[0] }));
+      if (allCoordinates.length >= 2) {
+        let coordinates = [];
+        if (enableRouteAnimation) {
+          if (animationProgress <= 0.01) {
+            return polylines;
+          }
+          const coordinateCount = Math.max(2, Math.floor(allCoordinates.length * animationProgress));
+          coordinates = allCoordinates.slice(0, coordinateCount);
+          if (coordinateCount < allCoordinates.length && coordinateCount > 0) {
+            const lastIndex = coordinateCount - 1;
+            const nextIndex = coordinateCount;
+            const progress = (allCoordinates.length * animationProgress) - coordinateCount;
+            if (progress > 0 && nextIndex < allCoordinates.length) {
+              const lastCoord = allCoordinates[lastIndex];
+              const nextCoord = allCoordinates[nextIndex];
+              const interpolatedCoord = {
+                latitude: lastCoord.latitude + (nextCoord.latitude - lastCoord.latitude) * progress,
+                longitude: lastCoord.longitude + (nextCoord.longitude - lastCoord.longitude) * progress
+              };
+              coordinates = [...coordinates.slice(0, -1), interpolatedCoord];
+            }
+          }
+        } else {
+          coordinates = allCoordinates;
+        }
+        if (coordinates.length >= 2) {
+          polylines.push(
+            <Polyline
+              key={`route-main-${routeIndex}`}
+              coordinates={coordinates}
+              strokeColor={route.color || '#3b82f6'}
+              strokeWidth={6}
+              geodesic={true}
+              tappable={false}
+            />
+          );
+        }
       }
     }
-
     return polylines;
-  }, [getStepColor]);
+  }, [getStepColor, enableRouteAnimation, animationProgress]);
 
   // Render meeting zone circle - memoized
   const renderMeetingZoneCircle = useCallback(() => {
@@ -352,6 +474,9 @@ const areEqual = (prevProps, nextProps) => {
   if (prevProps.meetingPoint !== nextProps.meetingPoint) return false;
   if (prevProps.animateToResults !== nextProps.animateToResults) return false;
   if (prevProps.venueRadius !== nextProps.venueRadius) return false;
+  if (prevProps.enableRouteAnimation !== nextProps.enableRouteAnimation) return false;
+  if (prevProps.routeAnimationDuration !== nextProps.routeAnimationDuration) return false;
+  if (prevProps.routeAnimationDelay !== nextProps.routeAnimationDelay) return false;
   return true;
 };
 
