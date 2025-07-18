@@ -41,25 +41,37 @@ export default function GroupSettingsScreen() {
     removeCustomLocationFromGroup,
   } = useGroups();
 
-
+  // State
   const [editingName, setEditingName] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
-  const [groupName, setGroupName] = useState(currentGroup?.name || '');
+  const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberAddCount, setMemberAddCount] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
   const [showAddressPicker, setShowAddressPicker] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load group data when component mounts
-  useEffect(() => {
-    if (id && user) {
-      loadGroup(id);
-      loadUserAddresses(user.uid);
+  // Load data
+  const loadAllData = useCallback(async () => {
+    if (!id || !user) return;
+    setIsLoading(true);
+    try {
+      await loadGroup(id);
+      await loadGroupMembers(id);
+      await loadUserAddresses(user.uid);
+    } catch (e) {
+      // error handled by context
+    } finally {
+      setIsLoading(false);
     }
-  }, [id, user, loadGroup, loadUserAddresses]);
+  }, [id, user, loadGroup, loadGroupMembers, loadUserAddresses]);
 
-  // Update local state when group data changes
+  useEffect(() => {
+    loadAllData();
+  }, [id, user]);
+
+  // --- Sync local state with group data ---
   useEffect(() => {
     if (currentGroup) {
       setGroupName(currentGroup.name || '');
@@ -67,100 +79,77 @@ export default function GroupSettingsScreen() {
     }
   }, [currentGroup]);
 
-  // Check if current user is admin (removed - all members can manage)
-  const canManageGroup = currentGroupMembers.find(
+  const canManageGroup = currentGroupMembers?.find(
     member => member.user_id === user?.uid
   );
 
-  // Handle group name update
+  // --- Handlers ---
   const handleUpdateName = useCallback(async () => {
     if (!currentGroup || !groupName.trim() || groupName === currentGroup.name) {
       setEditingName(false);
       setGroupName(currentGroup?.name || '');
       return;
     }
-
     try {
       const success = await updateGroupInfo(currentGroup.id, { name: groupName.trim() });
       if (success) {
         setEditingName(false);
+        await loadAllData();
       }
-    } catch (error) {
-      console.error('Error updating group name:', error);
+    } catch (e) {
       Alert.alert('Error', 'Failed to update group name');
       setGroupName(currentGroup.name || '');
     }
-  }, [currentGroup, groupName, updateGroupInfo]);
+  }, [currentGroup, groupName, updateGroupInfo, loadAllData]);
 
-  // Handle group description update
   const handleUpdateDescription = useCallback(async () => {
     if (!currentGroup || groupDescription === (currentGroup.description || '')) {
       setEditingDescription(false);
       setGroupDescription(currentGroup?.description || '');
       return;
     }
-
     try {
-      const success = await updateGroupInfo(currentGroup.id, { 
-        description: groupDescription.trim() || null 
-      });
+      const success = await updateGroupInfo(currentGroup.id, { description: groupDescription.trim() || null });
       if (success) {
         setEditingDescription(false);
+        await loadAllData();
       }
-    } catch (error) {
-      console.error('Error updating group description:', error);
+    } catch (e) {
       Alert.alert('Error', 'Failed to update group description');
       setGroupDescription(currentGroup.description || '');
     }
-  }, [currentGroup, groupDescription, updateGroupInfo]);
+  }, [currentGroup, groupDescription, updateGroupInfo, loadAllData]);
 
-  // Add member to group
-  const handleAddMember = useCallback(async (member: any) => {
+  const handleAddMember = useCallback(async (member) => {
     if (!currentGroup) return;
-    
     try {
       const success = await addGroupMember(currentGroup.id, member.user_id || member.id);
       if (success) {
         setShowAddMember(false);
-        // Reload group members to show the new member
-        await loadGroupMembers(currentGroup.id);
+        await loadAllData();
         Alert.alert('Success', `${member.display_name || 'Member'} added to group`);
       }
-    } catch (error) {
-      console.error('Error adding member:', error);
+    } catch (e) {
       Alert.alert('Error', 'Failed to add member to group');
     }
-  }, [currentGroup, addGroupMember, loadGroupMembers]);
+  }, [currentGroup, addGroupMember, loadAllData]);
 
-  // Handle address selection from address picker
-  const handleAddressSelected = useCallback(async (selectedAddress: any) => {
+  const handleAddressSelected = useCallback(async (selectedAddress) => {
     if (!currentGroup || !user?.uid) return;
-
     try {
-      // Update the user's address preference for this group
-      // For now, we'll update the attendance record with the new address coordinates
-      // This is a temporary solution until we add proper address preference to the schema
       await updateMyAttendance(currentGroup.id, true, {
-        lat: selectedAddress.coordinates[1], // latitude
-        lng: selectedAddress.coordinates[0]  // longitude
+        lat: selectedAddress.coordinates[1],
+        lng: selectedAddress.coordinates[0],
       });
-      
-      // Reload members to get updated information
-      await loadGroupMembers(currentGroup.id);
-      
+      await loadAllData();
       Alert.alert('Success', `Your ${selectedAddress.name} address preference has been updated for this group`);
-      
-    } catch (error) {
-      console.error('Error updating user address preference:', error);
+    } catch (e) {
       Alert.alert('Error', 'Failed to update your address preference');
     }
-  }, [currentGroup, updateMyAttendance, loadGroupMembers, user]);
+  }, [currentGroup, updateMyAttendance, loadAllData, user]);
 
-  // Handle removing member
-  const handleRemoveMember = useCallback((member: any) => {
+  const handleRemoveMember = useCallback((member) => {
     if (!currentGroup) return;
-
-    // Check if this is a custom location
     if (member.type === 'custom_location') {
       Alert.alert(
         'Remove Location',
@@ -172,16 +161,13 @@ export default function GroupSettingsScreen() {
             style: 'destructive',
             onPress: async () => {
               try {
-                // Extract the actual location ID from the member ID
                 const locationId = member.id.replace('custom_location_', '');
                 const success = await removeCustomLocationFromGroup(locationId);
                 if (success) {
                   Alert.alert('Success', 'Custom location removed successfully');
-                  // Reload group members to update the list
-                  await loadGroupMembers(currentGroup.id);
+                  await loadAllData();
                 }
-              } catch (error) {
-                console.error('Error removing custom location:', error);
+              } catch (e) {
                 Alert.alert('Error', 'Failed to remove custom location');
               }
             },
@@ -190,15 +176,12 @@ export default function GroupSettingsScreen() {
       );
       return;
     }
-
-    // Handle regular user members
     const isRemovingSelf = member.user_id === user?.uid;
     const actionText = isRemovingSelf ? 'leave' : 'remove';
     const title = isRemovingSelf ? 'Leave Group' : 'Remove Member';
-    const message = isRemovingSelf 
+    const message = isRemovingSelf
       ? 'Are you sure you want to leave this group?'
       : `Are you sure you want to remove ${member.display_name} from the group?`;
-
     Alert.alert(
       title,
       message,
@@ -212,26 +195,23 @@ export default function GroupSettingsScreen() {
               const success = await removeGroupMember(currentGroup.id, member.user_id);
               if (success) {
                 if (isRemovingSelf) {
-                  // Navigate back to groups list if user left the group
                   router.replace('/groups');
                 } else {
                   Alert.alert('Success', 'Member removed successfully');
+                  await loadAllData();
                 }
               }
-            } catch (error) {
-              console.error('Error removing member:', error);
+            } catch (e) {
               Alert.alert('Error', `Failed to ${actionText} member`);
             }
           },
         },
       ]
     );
-  }, [currentGroup, user, removeGroupMember, removeCustomLocationFromGroup, loadGroupMembers]);
+  }, [currentGroup, user, removeGroupMember, removeCustomLocationFromGroup, loadAllData]);
 
-  // Handle reset attendance
   const handleResetAttendance = useCallback(() => {
     if (!currentGroup || !canManageGroup) return;
-
     Alert.alert(
       'Reset All Attendance',
       'Are you sure you want to reset all attendance for this group? This will remove all current attendance confirmations.',
@@ -245,23 +225,20 @@ export default function GroupSettingsScreen() {
               const success = await resetGroupAttendance(currentGroup.id);
               if (success) {
                 setSuccessMessage('All attendance has been reset');
-                // Clear success message after 3 seconds
+                await loadAllData();
                 setTimeout(() => setSuccessMessage(''), 3000);
               }
-            } catch (error) {
-              console.error('Error resetting attendance:', error);
+            } catch (e) {
               Alert.alert('Error', 'Failed to reset attendance');
             }
           },
         },
       ]
     );
-  }, [currentGroup, canManageGroup, resetGroupAttendance]);
+  }, [currentGroup, canManageGroup, resetGroupAttendance, loadAllData]);
 
-  // Handle delete group
   const handleDeleteGroup = useCallback(() => {
     if (!currentGroup || currentGroup.created_by !== user?.uid) return;
-
     Alert.alert(
       'Delete Group',
       `Are you sure you want to delete "${currentGroup.name}"? This action cannot be undone and will remove the group for all members.`,
@@ -274,11 +251,9 @@ export default function GroupSettingsScreen() {
             try {
               const success = await deleteGroup(currentGroup.id);
               if (success) {
-                // Navigate back to groups list
                 router.replace('/groups');
               }
-            } catch (error) {
-              console.error('Error deleting group:', error);
+            } catch (e) {
               Alert.alert('Error', 'Failed to delete group');
             }
           },
@@ -298,7 +273,7 @@ export default function GroupSettingsScreen() {
     );
   }
 
-  if (!currentGroup && !loading) {
+  if (!currentGroup) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorState}>
@@ -488,7 +463,7 @@ export default function GroupSettingsScreen() {
                     try {
                       if (currentGroup) {
                         const dbLocation = await addCustomLocationToGroup(currentGroup.id, customAddress);
-                        await loadGroupMembers(currentGroup.id);
+                        await loadAllData();
                       }
                     } catch (error) {
                       console.error('Error adding custom location:', error);
@@ -553,7 +528,7 @@ export default function GroupSettingsScreen() {
                                       await updateUserAttendance(currentGroup.id, member.user_id, isAttending);
                                       // Reload members to get updated attendance
                                       if (currentGroup) {
-                                        await loadGroupMembers(currentGroup.id);
+                                        await loadAllData();
                                       }
                                     }
                                   }
@@ -576,7 +551,7 @@ export default function GroupSettingsScreen() {
                             }
                             // Reload members to get updated attendance
                             if (currentGroup) {
-                              await loadGroupMembers(currentGroup.id);
+                              await loadAllData();
                             }
                           } catch (error) {
                             console.error('Error updating attendance:', error);
@@ -622,7 +597,7 @@ export default function GroupSettingsScreen() {
                                 }
                                 // Reload members list
                                 if (currentGroup) {
-                                  await loadGroupMembers(currentGroup.id);
+                                  await loadAllData();
                                 }
                               } catch (error) {
                                 console.error('Error removing item:', error);

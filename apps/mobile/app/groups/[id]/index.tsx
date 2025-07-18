@@ -105,23 +105,25 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         // Add attendee markers
         attendeeAddresses.forEach((addr, index) => {
             if (addr && addr.lat && addr.lng && typeof addr.lat === 'number' && typeof addr.lng === 'number') {
-                allMarkers.push({
+                const marker = {
                     position: [addr.lng, addr.lat],
                     title: addr.name || `Attendee ${index + 1}`,
                     type: 'location',
                     number: index + 1
-                });
+                };
+                allMarkers.push(marker);
             }
         });
 
         // Add meeting point marker
         if (meetingPoint && meetingPoint.coordinates && Array.isArray(meetingPoint.coordinates) && meetingPoint.coordinates.length >= 2) {
-            allMarkers.push({
+            const meetingMarker = {
                 position: meetingPoint.coordinates,
                 title: meetingPoint.name || 'Meeting Point',
                 type: 'meeting-point',
                 info: `Meeting Point: ${meetingPoint.name || 'Unknown'}`
-            });
+            };
+            allMarkers.push(meetingMarker);
         }
 
         return allMarkers;
@@ -143,27 +145,23 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         const newMarkers = createMarkers();
         const newCenter = getCenterPosition();
         
-        // If we have valid routes and this is the first load, set everything immediately
-        if (stableRoutes.length === 0 && validatedRoutes.length > 0) {
+        if (validatedRoutes.length > 0 || newMarkers.length > 0) {
             setStableRoutes(validatedRoutes);
             setStableMarkers(newMarkers);
             setStableCenter(newCenter);
             return;
         }
         
-        // For subsequent updates, use a short debounce to prevent rapid changes during swiping
-        routeUpdateTimeoutRef.current = setTimeout(() => {
-            setStableRoutes(validatedRoutes);
-            setStableMarkers(newMarkers);
-            setStableCenter(newCenter);
-        }, 150); // Slightly longer debounce for stability
+        setStableRoutes([]);
+        setStableMarkers([]);
+        setStableCenter(newCenter);
 
         return () => {
             if (routeUpdateTimeoutRef.current) {
                 clearTimeout(routeUpdateTimeoutRef.current);
             }
         };
-    }, [routes, validateRoutes, createMarkers, getCenterPosition, stableRoutes.length]);
+    }, [routes, validateRoutes, createMarkers, getCenterPosition]);
 
     return (
         <View style={[styles.mapContainer, { height: 280 }]}>
@@ -217,10 +215,6 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
     );
 }
 
-
-
-
-
 export default function GroupScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { user, addresses } = useAuth();
@@ -238,232 +232,182 @@ export default function GroupScreen() {
         clearError,
     } = useGroups();
 
-    const [myAttendance, setMyAttendance] = useState<any | null>(null);
-    const [meetingPoint, setMeetingPoint] = useState<any | null>(null);
-    const [attendeeAddresses, setAttendeeAddresses] = useState<any[]>([]);
-    const [isCalculatingMeetingPoint, setIsCalculatingMeetingPoint] = useState(false);
+    // [REFACTOR START]
+    // --- State ---
+    const [myAttendance, setMyAttendance] = useState(null);
+    const [meetingPoint, setMeetingPoint] = useState(null);
+    const [attendeeAddresses, setAttendeeAddresses] = useState([]);
     const [currentMeetingPointIndex, setCurrentMeetingPointIndex] = useState(0);
-    const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isCalculatingMeetingPoint, setIsCalculatingMeetingPoint] = useState(false);
+    const meetingPointCalcRef = useRef(0);
 
-    // Load group data when component mounts
-    useEffect(() => {
-        if (id && user) {
-            loadGroup(id);
-            loadMyAttendance();
-        }
-    }, [id, user, loadGroup]);
+    // --- Centralized Data Loading ---
+    const loadAllData = useCallback(async () => {
+      if (!id || !user) return;
+      setIsLoading(true);
+      try {
+        await loadGroup(id);
+        await loadGroupMembers(id);
+        const attendance = await getMyAttendance(id);
+        setMyAttendance(attendance);
+      } catch (e) {
+        setMyAttendance(null);
+      } finally {
+        setIsLoading(false);
+      }
+    }, [id, user, loadGroup, loadGroupMembers, getMyAttendance]);
 
-    // Reload group members when group changes
     useEffect(() => {
-        if (currentGroup?.id && user) {
-            loadGroupMembers(currentGroup.id);
-        }
-    }, [currentGroup?.id, user, loadGroupMembers]);
+      loadAllData();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, user]);
 
-    // Track when initial loading is complete
-    useEffect(() => {
-        if (currentGroup && currentGroupMembers.length > 0 && myAttendance !== null) {
-            setIsInitialLoading(false);
-        } else if (currentGroup && myAttendance !== null) {
-            // Even if no members, we have the basic data
-            setIsInitialLoading(false);
-        }
-    }, [currentGroup, currentGroupMembers, myAttendance]);
-
-    // Sync attendance state with group members data
-    useEffect(() => {
-        if (user && currentGroupMembers.length > 0) {
-            const myMember = currentGroupMembers.find(member => member.user_id === user.uid);
-            if (myMember?.attendance) {
-                // Convert the group member attendance format to match what getMyAttendance returns
-                const syncedAttendance = {
-                    group_id: currentGroup?.id,
-                    user_id: user.uid,
-                    is_attending: myMember.attendance.isAttending,
-                    location_lat: myMember.attendance.location_lat,
-                    location_lng: myMember.attendance.location_lng,
-                    confirmed_at: myMember.attendance.confirmedAt,
-                };
-                setMyAttendance(syncedAttendance);
+    // --- Meeting Point Calculation (debounced, robust) ---
+    const calculateMeetingPoint = useCallback(async (members, group) => {
+      if (!members?.length || !group?.id) {
+        setMeetingPoint(null);
+        setAttendeeAddresses([]);
+        return;
+      }
+      const attendees = members.filter(m => m.attendance?.isAttending);
+      if (attendees.length < 2) {
+        setMeetingPoint(null);
+        setAttendeeAddresses([]);
+        return;
+      }
+      setIsCalculatingMeetingPoint(true);
+      const calcId = ++meetingPointCalcRef.current;
+      try {
+        const userAddressesMap = await getGroupMemberAddresses(group.id);
+        const addressesArr = [];
+        for (const attendee of attendees) {
+          if (attendee.type === 'custom_location') {
+            if (attendee.coordinates && attendee.coordinates.length >= 2) {
+              addressesArr.push({
+                address: attendee.address || attendee.display_name,
+                lat: attendee.coordinates[1],
+                lng: attendee.coordinates[0],
+                name: attendee.display_name,
+                type: 'custom_location',
+              });
             }
-        }
-    }, [currentGroupMembers, user, currentGroup?.id]);
-
-    // Load current user's attendance
-    const loadMyAttendance = useCallback(async () => {
-        if (!id || !user) return;
-
-        try {
-            const attendance = await getMyAttendance(id);
-            setMyAttendance(attendance);
-        } catch (error) {
-            console.error('Error loading attendance:', error);
-        }
-    }, [id, user, getMyAttendance]);
-
-    // Calculate meeting point when we have enough attendees
-    const calculateMeetingPoint = useCallback(async () => {
-        if (!currentGroupMembers.length || !currentGroup?.id) return;
-
-        const attendees = currentGroupMembers.filter(member => member.attendance?.isAttending);
-
-        if (attendees.length < 2) {
-            setMeetingPoint(null);
-            return;
-        }
-
-        setIsCalculatingMeetingPoint(true);
-        try {
-            const userAddressesMap = await getGroupMemberAddresses(currentGroup.id);
-            const attendeeAddresses = [];
-
-            for (const attendee of attendees) {
-                if (attendee.type === 'custom_location') {
-                    // Handle custom locations - they already have coordinates
-                    if (attendee.coordinates && attendee.coordinates.length >= 2) {
-                        attendeeAddresses.push({
-                            address: attendee.address || attendee.display_name,
-                            lat: attendee.coordinates[1], // [lng, lat] format
-                            lng: attendee.coordinates[0],
-                            name: attendee.display_name,
-                            type: 'custom_location'
-                        });
-                    }
-                } else if (attendee.is_me) {
-                    // Handle current user
-                    const userAddress = addresses?.find(addr => addr.is_default) || addresses?.[0];
-                    if (userAddress) {
-                        attendeeAddresses.push({
-                            address: userAddress.formatted_address || userAddress.name || `${userAddress.latitude}, ${userAddress.longitude}`,
-                            lat: userAddress.latitude,
-                            lng: userAddress.longitude,
-                            name: attendee.display_name || 'You',
-                            type: 'user'
-                        });
-                    }
-                } else if (attendee.user_id) {
-                    // Handle other users
-                    const userAddress = userAddressesMap[attendee.user_id];
-                    if (userAddress) {
-                        attendeeAddresses.push({
-                            address: userAddress.address,
-                            lat: userAddress.latitude,
-                            lng: userAddress.longitude,
-                            name: attendee.display_name || 'User',
-                            type: 'user'
-                        });
-                    } else {
-                        // Fallback for users without addresses (if current user has address)
-                        const currentUserAddress = addresses?.find(addr => addr.is_default) || addresses?.[0];
-                        if (currentUserAddress) {
-                            const latOffset = (Math.random() - 0.5) * 0.02;
-                            const lngOffset = (Math.random() - 0.5) * 0.02;
-                            attendeeAddresses.push({
-                                address: `${attendee.display_name}'s Location (estimated)`,
-                                lat: currentUserAddress.latitude + latOffset,
-                                lng: currentUserAddress.longitude + lngOffset,
-                                name: attendee.display_name || 'User',
-                                type: 'user'
-                            });
-                        }
-                    }
-                }
+          } else if (attendee.is_me) {
+            const userAddress = addresses?.find(a => a.is_default) || addresses?.[0];
+            if (userAddress) {
+              addressesArr.push({
+                address: userAddress.formatted_address || userAddress.name || `${userAddress.latitude}, ${userAddress.longitude}`,
+                lat: userAddress.latitude,
+                lng: userAddress.longitude,
+                name: attendee.display_name || 'You',
+                type: 'user',
+              });
             }
-
-            // Store attendee addresses for the map
-            setAttendeeAddresses(attendeeAddresses);
-
-            if (attendeeAddresses.length < 2) {
-                setMeetingPoint(null);
-                return;
+          } else if (attendee.user_id) {
+            const userAddress = userAddressesMap[attendee.user_id];
+            if (userAddress) {
+              addressesArr.push({
+                address: userAddress.address,
+                lat: userAddress.latitude,
+                lng: userAddress.longitude,
+                name: attendee.display_name || 'User',
+                type: 'user',
+              });
+            } else {
+              const currentUserAddress = addresses?.find(a => a.is_default) || addresses?.[0];
+              if (currentUserAddress) {
+                const latOffset = (Math.random() - 0.5) * 0.02;
+                const lngOffset = (Math.random() - 0.5) * 0.02;
+                addressesArr.push({
+                  address: `${attendee.display_name}'s Location (estimated)`,
+                  lat: currentUserAddress.latitude + latOffset,
+                  lng: currentUserAddress.longitude + lngOffset,
+                  name: attendee.display_name || 'User',
+                  type: 'user',
+                });
+              }
             }
-
-            const apiAddresses = attendeeAddresses
-                .filter(addr => addr.address && addr.lat && addr.lng)
-                .map((addr, index) => ({
-                    id: `addr-${index}`,
-                    value: addr.address,
-                    coordinates: [addr.lng, addr.lat]
-                }));
-
-            if (apiAddresses.length < 2) {
-                setMeetingPoint(null);
-                return;
-            }
-
-            const result = await findOptimalMeetingPoint(apiAddresses, {
-                transportation_mode: 'transit',
-                venue_types: ['restaurant', 'cafe', 'bar'],
-                search_radius: 1000
-            });
-
-            setMeetingPoint(result);
-        } catch (error) {
-            console.error('Error calculating meeting point:', error);
-            setMeetingPoint(null);
-        } finally {
-            setIsCalculatingMeetingPoint(false);
+          }
         }
-    }, [currentGroupMembers, addresses, getGroupMemberAddresses, currentGroup]);
+        setAttendeeAddresses(addressesArr);
+        if (addressesArr.length < 2) {
+          setMeetingPoint(null);
+          return;
+        }
+        const apiAddresses = addressesArr.filter(a => a.address && a.lat && a.lng).map((a, i) => ({
+          id: `addr-${i}`,
+          value: a.address,
+          coordinates: [a.lng, a.lat],
+        }));
+        if (apiAddresses.length < 2) {
+          setMeetingPoint(null);
+          return;
+        }
+        const result = await findOptimalMeetingPoint(apiAddresses, {
+          transportation_mode: 'transit',
+          venue_types: ['restaurant', 'cafe', 'bar'],
+          search_radius: 1000,
+        });
+        // Only set if this is the latest calculation
+        if (meetingPointCalcRef.current === calcId) {
+          setMeetingPoint(result);
+        }
+      } catch (e) {
+        if (meetingPointCalcRef.current === calcId) {
+          setMeetingPoint(null);
+        }
+      } finally {
+        if (meetingPointCalcRef.current === calcId) {
+          setIsCalculatingMeetingPoint(false);
+        }
+      }
+    }, [addresses, getGroupMemberAddresses]);
 
+    // --- Trigger meeting point calculation when members/addresses change ---
     useEffect(() => {
-        calculateMeetingPoint();
-    }, [calculateMeetingPoint]);
+      if (!currentGroup || !currentGroupMembers) return;
+      calculateMeetingPoint(currentGroupMembers, currentGroup);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentGroup, currentGroupMembers, addresses]);
 
+    // --- Attendance Handlers (no redundant reloads) ---
     const handleAttendanceConfirm = useCallback(async () => {
-        if (!currentGroup || !user) return;
-
-        try {
-            const defaultAddress = addresses.find(addr => addr.is_default) || addresses[0];
-            const location = defaultAddress ? {
-                lat: defaultAddress.latitude,
-                lng: defaultAddress.longitude,
-            } : null;
-
-            const success = await updateMyAttendance(currentGroup.id, true, location);
-
-            if (success) {
-                await Promise.all([
-                    loadMyAttendance(),
-                    loadGroupMembers(currentGroup.id)
-                ]);
-            }
-        } catch (error) {
-            console.error('Error confirming attendance:', error);
-            Alert.alert('Error', 'Failed to confirm attendance. Please try again.');
+      if (!currentGroup || !user) return;
+      try {
+        const defaultAddress = addresses.find(a => a.is_default) || addresses[0];
+        const location = defaultAddress ? { lat: defaultAddress.latitude, lng: defaultAddress.longitude } : null;
+        const success = await updateMyAttendance(currentGroup.id, true, location);
+        if (success) {
+          await loadAllData();
         }
-    }, [currentGroup, user, addresses, updateMyAttendance, loadMyAttendance]);
+      } catch (e) {
+        Alert.alert('Error', 'Failed to confirm attendance. Please try again.');
+      }
+    }, [currentGroup, user, addresses, updateMyAttendance, loadAllData]);
 
     const handleAttendanceCancel = useCallback(async () => {
-        if (!currentGroup || !user) return;
-
-        try {
-            const success = await updateMyAttendance(currentGroup.id, false, null);
-
-            if (success) {
-                await Promise.all([
-                    loadMyAttendance(),
-                    loadGroupMembers(currentGroup.id)
-                ]);
-            }
-        } catch (error) {
-            console.error('Error cancelling attendance:', error);
-            Alert.alert('Error', 'Failed to cancel attendance. Please try again.');
+      if (!currentGroup || !user) return;
+      try {
+        const success = await updateMyAttendance(currentGroup.id, false, null);
+        if (success) {
+          await loadAllData();
         }
-    }, [currentGroup, user, updateMyAttendance, loadMyAttendance]);
+      } catch (e) {
+        Alert.alert('Error', 'Failed to cancel attendance. Please try again.');
+      }
+    }, [currentGroup, user, updateMyAttendance, loadAllData]);
 
     const handleSettingsPress = useCallback(() => {
-        if (!currentGroup) return;
-        router.push(`/groups/${currentGroup.id}/settings`);
+      if (!currentGroup) return;
+      router.push(`/groups/${currentGroup.id}/settings`);
     }, [currentGroup]);
 
     useEffect(() => {
-        return () => {
-            if (error) {
-                clearError();
-            }
-        };
+      return () => {
+        if (error) clearError();
+      };
     }, [error, clearError]);
+    // [REFACTOR END]
 
     // Helper function to get current meeting point
     const getCurrentMeetingPoint = () => {
@@ -484,7 +428,7 @@ export default function GroupScreen() {
     }
 
     // Show loading screen while initial data is being fetched
-    if (isInitialLoading || loading) {
+    if (isLoading || loading) {
         return (
             <View style={styles.container}>
                 {/* Background */}

@@ -294,18 +294,16 @@ const MapContainer = (props = {}) => {
     onBoundsChange({ bounds });
   }, [onBoundsChange, isAnimating]);
 
-  // Memoize map content to prevent unnecessary re-renders
-  const mapContent = useMemo(() => {
-    if (!mapReady) return null;
-    
-    return (
+  let mapContent = null;
+  if (mapReady) {
+    mapContent = (
       <>
         {markers.map((marker, index) => renderMarker(marker, index))}
         {routes.map((route, index) => renderRoute(route, index))}
         {renderMeetingZoneCircle()}
       </>
     );
-  }, [mapReady, markers, routes, renderMarker, renderRoute, renderMeetingZoneCircle]);
+  }
 
   return (
     <View style={[styles.container, { height }, style]}>
