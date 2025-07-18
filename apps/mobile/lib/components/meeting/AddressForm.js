@@ -198,7 +198,7 @@ const AddressForm = ({
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Where is everyone?</Text>
-        <Text style={styles.subtitle}>Find your perfect meeting spot!</Text>
+        <Text style={styles.subtitle}>Find tonight's meeting spot!</Text>
       </View>
       
       {/* Error Message */}
@@ -296,6 +296,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     alignItems: 'center',
     paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   title: {
     fontSize: 18,
