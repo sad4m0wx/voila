@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Animated,
@@ -33,6 +33,8 @@ export default function SlideToConfirm({
   const translateX = useRef(new Animated.Value(0)).current;
   const velocity = useRef({ x: 0, y: 0 }).current;
   const lastMove = useRef({ x: 0, timestamp: 0 }).current;
+  const isDraggingRef = useRef(false);
+  const completedRef = useRef(false);
   
   // Use size-based constants
   const trackHeight = size === "small" ? SMALL_TRACK_HEIGHT : TRACK_HEIGHT;
@@ -40,45 +42,124 @@ export default function SlideToConfirm({
   
   // Handle new attendance props
   const actualIsConfirmed = isAttending !== undefined ? isAttending : isConfirmed;
-  const actualOnConfirm = onAttendanceChange ? () => onAttendanceChange(true) : onConfirm;
-  const actualOnCancel = onAttendanceChange ? () => onAttendanceChange(false) : onCancel;
+  const actualOnConfirm = useCallback(() => {
+    if (onAttendanceChange) {
+      onAttendanceChange(true);
+    } else if (onConfirm) {
+      onConfirm();
+    }
+  }, [onAttendanceChange, onConfirm]);
+  
+  const actualOnCancel = useCallback(() => {
+    if (onAttendanceChange) {
+      onAttendanceChange(false);
+    } else if (onCancel) {
+      onCancel();
+    }
+  }, [onAttendanceChange, onCancel]);
   
   const maxTranslation = Math.max(0, trackWidth - thumbSize - 8); // 4px padding on each side
 
+  // Memoize expensive calculations
+  const { trackColors, fillColors, trackPositions, fillPositions, thumbBorderColor, textColor } = useMemo(() => {
+    const trackGradientName = actualIsConfirmed ? COMPONENT_GRADIENTS.attendingTrack : COMPONENT_GRADIENTS.notAttendingTrack;
+    const fillGradientName = actualIsConfirmed ? COMPONENT_GRADIENTS.attendingFill : COMPONENT_GRADIENTS.notAttendingFill;
+    
+    return {
+      trackColors: getGradientColors(trackGradientName),
+      fillColors: getGradientColors(fillGradientName),
+      trackPositions: getGradientPositions(trackGradientName),
+      fillPositions: getGradientPositions(fillGradientName),
+      thumbBorderColor: actualIsConfirmed ? "#22c55e" : "#ef4444",
+      textColor: actualIsConfirmed ? "#166534" : "#991b1b"
+    };
+  }, [actualIsConfirmed]);
+
+  // Memoize text and icon
+  const { currentText, currentIcon } = useMemo(() => {
+    const displayText = label || (actualIsConfirmed ? confirmText : cancelText);
+    return {
+      currentText: completed ? (actualIsConfirmed ? "Cancelling..." : "Confirming...") : displayText,
+      currentIcon: actualIsConfirmed ? "check" : "close"
+    };
+  }, [label, actualIsConfirmed, confirmText, cancelText, completed]);
+
   // Initialize position based on current state
   useEffect(() => {
-    if (trackWidth > 0 && !isDragging && !completed) {
+    if (trackWidth > 0 && !isDraggingRef.current && !completedRef.current) {
       const targetPosition = actualIsConfirmed ? maxTranslation : 0;
       Animated.timing(translateX, {
         toValue: targetPosition,
         duration: 200,
-        useNativeDriver: false,
+        useNativeDriver: true, // Enable native driver for better performance
       }).start();
     }
-  }, [actualIsConfirmed, trackWidth, maxTranslation, isDragging, completed]);
+  }, [actualIsConfirmed, trackWidth, maxTranslation]);
 
-  // Track velocity for inertia
-  const updateVelocity = (gestureState) => {
+  // Update refs when state changes
+  useEffect(() => {
+    isDraggingRef.current = isDragging;
+  }, [isDragging]);
+
+  useEffect(() => {
+    completedRef.current = completed;
+  }, [completed]);
+
+  // Optimized velocity tracking with throttling
+  const updateVelocity = useCallback((gestureState) => {
     const now = Date.now();
     const dt = now - lastMove.timestamp;
     
-    if (dt > 0) {
+    if (dt > 0 && dt < 50) { // More responsive velocity calculation
       velocity.x = (gestureState.dx - lastMove.x) / dt * 1000; // pixels per second
     }
     
     lastMove.x = gestureState.dx;
     lastMove.timestamp = now;
-  };
+  }, []);
 
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled && !completed,
+  // Memoized completion handler
+  const handleComplete = useCallback(() => {
+    if (disabled || completedRef.current) return;
+    
+    setCompleted(true);
+    
+    // Determine target position and action
+    const targetPosition = actualIsConfirmed ? 0 : maxTranslation;
+    
+    // Ensure we're at the target position
+    Animated.timing(translateX, {
+      toValue: targetPosition,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      // Trigger the appropriate action
+      setTimeout(() => {
+        if (actualIsConfirmed) {
+          actualOnCancel();
+        } else {
+          actualOnConfirm();
+        }
+        
+        // Reset completed state
+        setTimeout(() => {
+          setCompleted(false);
+        }, 200);
+      }, 200);
+    });
+  }, [disabled, actualIsConfirmed, maxTranslation, actualOnCancel, actualOnConfirm]);
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => !disabled && !completedRef.current,
     onMoveShouldSetPanResponder: (evt, gestureState) => {
-      // Only respond to horizontal gestures
-      return !disabled && !completed && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 8;
+      // Only respond to horizontal gestures with optimized threshold
+      return !disabled && !completedRef.current && 
+             Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && 
+             Math.abs(gestureState.dx) > 8;
     },
     
     onPanResponderGrant: (evt, gestureState) => {
-      if (disabled || completed) return;
+      if (disabled || completedRef.current) return;
       setIsDragging(true);
       
       // Initialize velocity tracking
@@ -91,10 +172,12 @@ export default function SlideToConfirm({
     },
     
     onPanResponderMove: (evt, gestureState) => {
-      if (disabled || completed) return;
+      if (disabled || completedRef.current) return;
       
-      // Update velocity for inertia calculation
-      updateVelocity(gestureState);
+      // Update velocity for inertia calculation (optimized)
+      if (Math.abs(gestureState.dx - lastMove.x) > 1) {
+        updateVelocity(gestureState);
+      }
       
       // Calculate new position based on current state and gesture
       const startPosition = actualIsConfirmed ? maxTranslation : 0;
@@ -110,7 +193,7 @@ export default function SlideToConfirm({
     },
     
     onPanResponderRelease: (evt, gestureState) => {
-      if (disabled || completed) return;
+      if (disabled || completedRef.current) return;
       
       setIsDragging(false);
       
@@ -149,7 +232,7 @@ export default function SlideToConfirm({
       Animated.timing(translateX, {
         toValue: targetValue,
         duration,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start(() => {
         if (targetValue !== startPosition) {
           handleComplete();
@@ -158,60 +241,26 @@ export default function SlideToConfirm({
     },
     
     onPanResponderTerminationRequest: () => false, // Don't allow termination during drag
-  });
+  }), [disabled, actualIsConfirmed, maxTranslation, updateVelocity, handleComplete]);
 
-  const handleComplete = () => {
-    if (disabled || completed) return;
-    
-    setCompleted(true);
-    
-    // Determine target position and action
-    const targetPosition = actualIsConfirmed ? 0 : maxTranslation;
-    
-    // Ensure we're at the target position
-    Animated.timing(translateX, {
-      toValue: targetPosition,
-      duration: 150,
-      useNativeDriver: false,
-    }).start(() => {
-      // Trigger the appropriate action
-      setTimeout(() => {
-        if (actualIsConfirmed) {
-          actualOnCancel && actualOnCancel();
-        } else {
-          actualOnConfirm && actualOnConfirm();
-        }
-        
-        // Reset completed state
-        setTimeout(() => {
-          setCompleted(false);
-        }, 200);
-      }, 200);
-    });
-  };
-
-  const handleTrackLayout = (event) => {
+  const handleTrackLayout = useCallback((event) => {
     const { width } = event.nativeEvent.layout;
     setTrackWidth(width);
-  };
+  }, []);
 
-  // Display current state instead of action
-  const displayText = label || (actualIsConfirmed ? confirmText : cancelText);
-  const currentText = completed ? (actualIsConfirmed ? "Cancelling..." : "Confirming...") : displayText;
-  const currentIcon = actualIsConfirmed ? "check" : "close";
-  
-  // Get gradient colors based on state
-  const trackGradientName = actualIsConfirmed ? COMPONENT_GRADIENTS.attendingTrack : COMPONENT_GRADIENTS.notAttendingTrack;
-  const fillGradientName = actualIsConfirmed ? COMPONENT_GRADIENTS.attendingFill : COMPONENT_GRADIENTS.notAttendingFill;
-  
-  const trackColors = getGradientColors(trackGradientName);
-  const fillColors = getGradientColors(fillGradientName);
-  const trackPositions = getGradientPositions(trackGradientName);
-  const fillPositions = getGradientPositions(fillGradientName);
-  
-  const thumbBorderColor = actualIsConfirmed ? "#22c55e" : "#ef4444";
-  const iconColor = actualIsConfirmed ? "#16a34a" : "#dc2626";
-  const textColor = actualIsConfirmed ? "#166534" : "#991b1b";
+  // Memoized animated scale for fill (native driver compatible)
+  const animatedFillScale = useMemo(() => {
+    return translateX.interpolate({
+      inputRange: [0, maxTranslation],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+  }, [translateX, maxTranslation]);
+
+  // Memoized animated opacity for text
+  const textOpacity = useMemo(() => {
+    return (isDragging || completed) ? 0.4 : 1;
+  }, [isDragging, completed]);
 
   return (
     <View style={[styles.container, style]}>
@@ -226,22 +275,24 @@ export default function SlideToConfirm({
         onLayout={handleTrackLayout}
       >
         {/* Animated gradient fill */}
-        <Animated.View 
-          style={[
-            styles.fillContainer,
-            { 
-              width: Animated.add(translateX, thumbSize),
-              borderRadius: (trackHeight - 8) / 2
-            }
-          ]} 
-        >
-          <GradientView
-            colors={fillColors}
-            start={fillPositions.start}
-            end={fillPositions.end}
-            style={styles.fill}
-          />
-        </Animated.View>
+        <View style={[styles.fillContainer, { borderRadius: (trackHeight - 8) / 2, overflow: 'hidden' }]}>
+          <Animated.View 
+            style={[
+              styles.fill,
+              { 
+                width: maxTranslation + thumbSize,
+                transform: [{ scaleX: animatedFillScale }],
+              }
+            ]} 
+          >
+            <GradientView
+              colors={fillColors}
+              start={fillPositions.start}
+              end={fillPositions.end}
+              style={styles.fillGradient}
+            />
+          </Animated.View>
+        </View>
         
         {/* Text */}
         <View style={[styles.textContainer, { paddingLeft: thumbSize + 8 }]}>
@@ -250,7 +301,7 @@ export default function SlideToConfirm({
               styles.text,
               { 
                 color: textColor,
-                opacity: (isDragging || completed) ? 0.4 : 1,
+                opacity: textOpacity,
                 fontSize: size === "small" ? 12 : 14
               }
             ]}
@@ -316,9 +367,16 @@ const styles = StyleSheet.create({
   },
   fill: {
     position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+  },
+  fillGradient: {
+    position: 'absolute',
     left: 4,
     top: 4,
     bottom: 4,
+    right: 4,
   },
   textContainer: {
     position: 'absolute',
