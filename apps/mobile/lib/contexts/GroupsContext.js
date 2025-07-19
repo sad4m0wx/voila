@@ -531,6 +531,19 @@ export function GroupsProvider({ children }) {
       await groupsService.addGroupMember(groupId, userId, user.uid);
       // Reload group members
       await loadGroupMembers(groupId);
+
+      // Show confirmation alert after successful add
+      try {
+        const { Alert } = require('react-native');
+        Alert.alert(
+          'Member Added',
+          'The member has been successfully added to the group.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      } catch (e) {
+        // If Alert is not available, do nothing
+      }
+
       return true;
     } catch (error) {
       console.error('Error adding group member:', error);
@@ -580,6 +593,19 @@ export function GroupsProvider({ children }) {
     try {
       const result = await groupsService.addCustomLocationToGroup(groupId, location, user.uid);
       console.log('✅ Custom location added to group:', result);
+
+      // Show confirmation alert after successful add
+      try {
+        const { Alert } = require('react-native');
+        Alert.alert(
+          'Custom Location Added',
+          'The custom location has been successfully added to the group.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      } catch (e) {
+        // If Alert is not available, do nothing
+      }
+
       return result;
     } catch (error) {
       console.error('Error adding custom location to group:', error);
