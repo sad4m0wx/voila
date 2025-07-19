@@ -18,14 +18,20 @@ export default {
     ],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: 'com.voila.mobile'
+      bundleIdentifier: 'fr.voila-app',
+      appleTeamId: '',
+      config: {
+        googleMaps: {
+          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY
+        }
+      }
     },
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/images/adaptive-icon.png',
         backgroundColor: '#ffffff'
       },
-      package: 'com.voila.mobile',
+      package: 'fr.voila-app',
       minSdkVersion: 24,
       config: {
         googleMaps: {
