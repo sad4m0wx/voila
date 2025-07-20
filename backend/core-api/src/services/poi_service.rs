@@ -78,6 +78,21 @@ impl PoiService {
 
         let bbox = self.calculate_bounding_box(polygons);
         
+        // Check if the bounding box is outside Paris bounds
+        let paris_bbox = HeatmapBoundingBox {
+            north: 48.9021,
+            south: 48.8155,
+            east: 2.4699,
+            west: 2.2241,
+        };
+        
+        // If the bounding box is completely outside Paris, return empty result
+        if bbox.north < paris_bbox.south || bbox.south > paris_bbox.north ||
+           bbox.east < paris_bbox.west || bbox.west > paris_bbox.east {
+            info!("🏢 Bounding box outside Paris bounds, returning empty POI list");
+            return Ok(Vec::new());
+        }
+        
         let mut all_pois = Vec::new();
         
         let transit_pois = self.fetch_transit_hubs(&bbox).await?;
@@ -553,12 +568,35 @@ impl PoiService {
         if let Some(heatmap) = self.heatmap.lock().unwrap().as_ref() {
             return Some(self.calculate_heat_from_grid(location, &heatmap));
         } else {
-            let all_pois = self.get_pois_in_polygons(&[Polygon::new(
+            // If no heatmap is available, return 0.0 for locations outside Paris
+            // or create a small bounding box around the location for POI fetching
+            let paris_bbox = HeatmapBoundingBox {
+                north: 48.9021,
+                south: 48.8155,
+                east: 2.4699,
+                west: 2.2241,
+            };
+            
+            // Check if location is within Paris bounds
+            if location.latitude < paris_bbox.south || location.latitude > paris_bbox.north ||
+               location.longitude < paris_bbox.west || location.longitude > paris_bbox.east {
+                return Some(0.0); // Outside Paris bounds, return 0 heat
+            }
+            
+            // Create a small bounding box around the location for POI fetching
+            let bbox_size = 0.01; // ~1km radius
+            let search_polygon = Polygon::new(
                 geo::LineString::from(vec![
-                    (location.longitude, location.latitude),
+                    (location.longitude - bbox_size, location.latitude - bbox_size),
+                    (location.longitude + bbox_size, location.latitude - bbox_size),
+                    (location.longitude + bbox_size, location.latitude + bbox_size),
+                    (location.longitude - bbox_size, location.latitude + bbox_size),
+                    (location.longitude - bbox_size, location.latitude - bbox_size),
                 ]),
                 vec![],
-            )]).await.unwrap();
+            );
+            
+            let all_pois = self.get_pois_in_polygons(&[search_polygon]).await.unwrap_or_default();
             Some(self.calculate_location_heat(location, &all_pois))
         }
     }
