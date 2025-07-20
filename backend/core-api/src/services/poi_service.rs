@@ -458,12 +458,12 @@ impl PoiService {
     pub async fn generate_paris_heatmap(&self) -> Result<CityHeatmap> {
         info!("🗺️ Generating Paris citywide heatmap...");
         
-        // Paris bounding box (approximate)
+        // Paris + suburbs bounding box (covers greater Paris area)
         let paris_bbox = HeatmapBoundingBox {
-            north: 48.9021,  // Northern Paris suburbs
-            south: 48.8155,  // Southern Paris
-            east: 2.4699,    // Eastern Paris
-            west: 2.2241,    // Western Paris
+            north: 49.05,   // North of Paris, covers northern suburbs
+            south: 48.75,   // South of Paris, covers southern suburbs
+            east: 2.60,     // East of Paris, covers eastern suburbs
+            west: 2.10,     // West of Paris, covers western suburbs
         };
         
         const GRID_SIZE: usize = 200; // 200x200 grid for fine-grained heat
