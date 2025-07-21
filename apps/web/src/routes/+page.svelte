@@ -489,15 +489,6 @@
                         </a>
                       {:else}
                         <!-- Sign In Button (when not logged in) -->
-                        <a 
-                          href="/auth/login" 
-                          class="mobile-btn-ghost px-4 py-2 bg-white/95 backdrop-blur-xl shadow-lg border border-white/20 rounded-2xl text-sm font-medium text-gray-700 flex items-center space-x-2"
-                        >
-                          <span>Sign In</span>
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                          </svg>
-                        </a>
                       {/if}
                       
                       {#if meetingPoint}
@@ -657,14 +648,11 @@
                     {/if}
                   </div>
 
-                  <!-- Onboarding Flow for Non-logged Users -->
+                  <!-- Onboarding Flow for Non-logged Users 
                   {#if !$authStore.user && !isCalculating && !showResults}
                     <div class="mt-6 space-y-6">
-                      <!-- How It Works Section -->
                       <div class="mobile-card-elevated p-6">                  
-                        <!-- Flow Steps - Horizontal Layout -->
                         <div class="flex items-center justify-between space-x-2">
-                          <!-- Step 1 -->
                           <div class="flex-1 text-center">
                             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg mx-auto mb-2">
                               <span class="text-white text-lg">👥</span>
@@ -672,12 +660,12 @@
                             <h4 class="font-semibold text-gray-800 text-xs mb-1">Add your friends</h4>
                           </div>
                           
-                          <!-- Arrow -->
+
                           <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                           </svg>
                           
-                          <!-- Step 2 -->
+
                           <div class="flex-1 text-center">
                             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg mx-auto mb-2">
                               <span class="text-white text-lg">📱</span>
@@ -685,12 +673,12 @@
                             <h4 class="font-semibold text-gray-800 text-xs mb-1">Create groups</h4>
                           </div>
                           
-                          <!-- Arrow -->
+
                           <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                           </svg>
                           
-                          <!-- Step 3 -->
+
                           <div class="flex-1 text-center">
                             <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg mx-auto mb-2">
                               <span class="text-white text-lg">📍</span>
@@ -699,7 +687,7 @@
                           </div>
                         </div>
                         
-                        <!-- Start Button -->
+
                         <div class="mt-2 pt-4 border-t border-gray-100">
                           <a 
                             href="/auth/register" 
@@ -711,7 +699,7 @@
                         </div>
                       </div>
                     </div>
-                  {/if}
+                  {/if} -->
                 </div>
               </div>
             </div>

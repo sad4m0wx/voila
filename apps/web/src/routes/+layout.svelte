@@ -128,10 +128,6 @@
             </main>
           </PullToRefresh>
         </div>
-        <!-- Responsive Navigation - only show for authenticated users and not on auth pages -->
-        {#if $authStore.user && !isAuthPage}
-          <ResponsiveNavigation />
-        {/if}
       </div>
     {:else}
       <!-- Desktop Layout (no pull-to-refresh) -->
