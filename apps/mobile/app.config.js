@@ -21,9 +21,7 @@ export default {
       bundleIdentifier: 'fr.voila-app',
       appleTeamId: '',
       config: {
-        googleMaps: {
-          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY
-        }
+        googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY
       }
     },
     android: {
