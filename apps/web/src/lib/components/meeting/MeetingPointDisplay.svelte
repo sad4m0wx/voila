@@ -16,6 +16,7 @@
   export let isCalculating = false;
   export let addresses = []; // For mobile card mode
   export let variant = 'full'; // 'full', 'card', 'compact'
+  export let isShareView = false;
   
   let showRouteDetails = false;
   let showAddressForm = false;
@@ -419,24 +420,19 @@
 
         <!-- Stats Summary -->
         {#if variant !== 'card' && meetingPoint.travelTimes}
-          <div class="grid grid-cols-2 gap-3 p-3 bg-primary-50 rounded-lg mb-4">
+          <div class="grid grid-cols-1 gap-3 p-3 bg-primary-50 rounded-lg mb-4">
             <div class="text-center">
               <div class="text-xl font-bold text-primary-700">
                 {Math.round(meetingPoint.travelTimes.reduce((sum, time) => sum + parseInt(time.duration), 0) / meetingPoint.travelTimes.length)}
               </div>
               <div class="text-xs text-primary-600 font-medium">Avg. Travel Time</div>
             </div>
-            <div class="text-center">
-              <div class="text-xl font-bold text-primary-700">
-                {Math.max(...meetingPoint.travelTimes.map(time => parseInt(time.duration)))}
-              </div>
-              <div class="text-xs text-primary-600 font-medium">Max Travel Time</div>
-            </div>
+            
           </div>
         {/if}
 
         <!-- Travel Times -->
-        {#if meetingPoint.travelTimes && meetingPoint.travelTimes.length > 0}
+        {#if meetingPoint.travelTimes && meetingPoint.travelTimes.length > 0 && !isShareView}
           <div class="mb-4">
             <h3 class="text-sm font-semibold mb-3 flex items-center text-secondary-800">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-2 text-primary-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -476,7 +472,7 @@
         <!-- Summary Stats and Route Details Toggle -->
         <div class="space-y-3">
           <!-- Route Details Toggle -->
-          {#if routes && routes.length > 0}
+          {#if routes && routes.length > 0 && !isShareView}
             <button 
               class="w-full btn btn-outline btn-sm text-xs"
               on:click={() => showRouteDetails = !showRouteDetails}
@@ -492,7 +488,7 @@
     </div>
 
     <!-- Route Details -->
-    {#if showRouteDetails && routes && routes.length > 0}
+    {#if showRouteDetails && routes && routes.length > 0 && !isShareView}
       <div class="mb-4" bind:this={routeDetailsElement}>
         <div class="bg-white/70 backdrop-blur-sm rounded-xl border border-white/30 shadow-lg overflow-hidden">
           <div class="px-4 py-3 bg-gradient-to-r from-primary-50 to-primary-100 border-b border-primary-200">

@@ -49,6 +49,8 @@
   let scrollY = 0;
   let parallaxContainer;
 
+  let isShareView = false;
+
   onMount(() => {
     const handleScroll = () => {
       scrollY = window.scrollY;
@@ -79,6 +81,7 @@
   async function checkForSharedMeetingPoint() {
     const urlParams = new URLSearchParams(window.location.search);
     const shareId = urlParams.get('share');
+    isShareView = !!shareId;
     
     if (shareId) {
       try {
@@ -597,6 +600,7 @@
                               <p class="text-xs text-green-600">{addresses.length} locations analyzed</p>
                             </div>
                           </div>
+                          {#if !isShareView}
                           <button 
                             class="mobile-btn-ghost text-xs px-3 py-1.5 bg-white/80 text-green-700 border border-green-300 flex items-center space-x-1"
                             on:click={startNewSearch}
@@ -606,6 +610,7 @@
                             </svg>
                             <span>New Search</span>
                           </button>
+                          {/if}
                         </div>
                         
                         <!-- Results -->
@@ -617,11 +622,12 @@
                           {routes}
                           {isCalculating}
                           showGoogleMaps={true}
-                          variant="card"
+                          variant={isShareView ? 'share' : 'card'}
                           on:venue-selected={(e) => console.log("Venue selected:", e.detail)}
                           on:toggle-results={toggleResults}
                           on:meeting-point-change={handleMeetingPointChange}
                           on:open-google-maps={openInGoogleMaps}
+                          isShareView={isShareView}
                         />
                       </div>
                       
@@ -768,6 +774,7 @@
                               </div>
                             </div>
                           </div>
+                          {#if !isShareView}
                           <button 
                             class="btn btn-outline btn-sm text-xs px-4 py-2 bg-white/80 hover:bg-white border-green-300 text-green-700 hover:text-green-800 flex items-center space-x-1"
                             on:click={startNewSearch}
@@ -777,6 +784,7 @@
                             </svg>
                             <span>New Search</span>
                           </button>
+                          {/if}
                         </div>
                       </div>
                     </div>
@@ -841,11 +849,12 @@
                         {routes}
                         {isCalculating}
                         showGoogleMaps={true}
-                        variant="full"
+                        variant={isShareView ? 'share' : 'full'}
                         on:venue-selected={(e) => console.log("Venue selected:", e.detail)}
                         on:toggle-results={toggleResults}
                         on:meeting-point-change={handleMeetingPointChange}
                         on:open-google-maps={openInGoogleMaps}
+                        isShareView={isShareView}
                       />
                       
                       <!-- Heatmap Info -->
