@@ -403,7 +403,7 @@
 <div class="min-h-screen relative overflow-hidden">
   <!-- Enhanced Background Layout - Full Viewport -->
   <div
-    class="fixed {isMobile ? 'inset-0' : 'top-20 left-0 right-0 bottom-0'} z-10 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100"
+    class="fixed {isMobile ? 'inset-0' : 'top-0 left-0 right-0 bottom-0'} z-10 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100"
   >
     <!-- Enhanced Background with Multiple Layers -->
     <div

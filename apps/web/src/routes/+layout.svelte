@@ -1,6 +1,5 @@
 <script>
   import "../app.css";
-  import Navbar from "$components/core/Navbar.svelte";
   import AuthProvider from "$components/auth/AuthProvider.svelte";
   import ResponsiveNavigation from "$components/core/ResponsiveNavigation.svelte";
   import PullToRefresh from "$components/core/PullToRefresh.svelte";
@@ -126,7 +125,6 @@
       </div>
     {:else}
       <!-- Desktop Layout (no pull-to-refresh) -->
-      <Navbar />
       
       <main class="flex-grow container mx-auto px-4 py-8">
         <slot />
