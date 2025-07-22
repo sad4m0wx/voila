@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -37,7 +37,7 @@ interface GroupCardProps {
   onPress: () => void;
 }
 
-function GroupCard({ group, onPress }: GroupCardProps) {
+const GroupCard = memo(({ group, onPress }: GroupCardProps) => { 
   return (
     <TouchableOpacity style={styles.groupCard} onPress={onPress}>
       <View style={styles.groupCardHeader}>
@@ -51,7 +51,7 @@ function GroupCard({ group, onPress }: GroupCardProps) {
       </View>
     </TouchableOpacity>
   );
-}
+});
 
 interface CreateGroupModalProps {
   visible: boolean;
