@@ -14,12 +14,12 @@ import {
   Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { googleMapsService } from '../../services/map/GoogleMapsService';
-import { preloadIsochroneForAddress } from '../../services/preloadApi';
-import { useGroups } from '../../contexts/GroupsContext';
-import { useAuth } from '../../contexts/AuthContext';
-import { contactService } from '../../services/contactService';
-import { isInIleDeFrance } from '../../utils';
+import { googleMapsService } from '@/services/map/GoogleMapsService';
+import { preloadIsochroneForAddress } from '@/services/preloadApi';
+import { useGroups } from '@/contexts/GroupsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { contactService } from '@/services/contactService';
+import { isInIleDeFrance } from '@/utils';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 

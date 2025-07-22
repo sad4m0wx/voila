@@ -8,11 +8,10 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import AddressInput from '../maps/AddressInput';
-import { AddressPicker } from '../utils';
-import { useAuth } from '../../contexts/AuthContext';
-import { useGroups } from '../../contexts/GroupsContext';
-import { GradientView } from '../core';
+import AddressInput from '@/components/maps/AddressInput';
+import { AddressPicker } from '@/components/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { GradientView } from '@/components/core';
 
 const AddressForm = ({
   addresses = [],
@@ -23,8 +22,6 @@ const AddressForm = ({
   error = null
 }) => {
   const { user, addresses: userAddresses } = useAuth();
-  const { createNewGroup } = useGroups();
-  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [showAddressPicker, setShowAddressPicker] = useState(false);
   const router = useRouter();
 
