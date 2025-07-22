@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroups } from '@/contexts/GroupsContext';
+import { useGroupMembers } from '@/contexts/GroupMembersContext';
 import { router } from 'expo-router';
 import { contactService } from '@/services/contactService';
 import { AddressInput } from '@/components/maps';
@@ -252,7 +253,7 @@ export default function GroupsScreen() {
     loading,
     error,
     loadUserGroups,
-    createNewGroup,
+    createGroup,
     clearError,
   } = useGroups();
 
@@ -281,14 +282,13 @@ export default function GroupsScreen() {
   const handleCreateGroup = useCallback(async (name: string, memberIds: string[], customAddresses: any[] = []) => {
     setIsCreating(true);
     try {
-      const newGroup = await createNewGroup(
+      const newGroup = await createGroup(
         { name },
         memberIds,
         customAddresses
       );
       
       if (newGroup) {
-        // Navigate to the new group
         router.push(`/groups/${newGroup.id}`);
       }
     } catch (error) {
@@ -297,7 +297,7 @@ export default function GroupsScreen() {
     } finally {
       setIsCreating(false);
     }
-  }, [createNewGroup]);
+  }, [createGroup]); 
 
   // Handle group press
   const handleGroupPress = useCallback((group: Group) => {

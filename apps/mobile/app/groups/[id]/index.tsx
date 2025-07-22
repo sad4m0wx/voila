@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -20,6 +20,9 @@ import { SlideToConfirm, LoadingIndicator } from '@/components/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGroups } from '@/contexts/GroupsContext';
 import { useMeetingPoint } from '@/contexts/MeetingPointContext';
+import { useGroupMembers } from '@/contexts/GroupMembersContext';
+import { useGroupAttendance } from '@/contexts/GroupAttendanceContext';
+import groupsService from '@/services/groupsService';
 import RouteDetailsToggle from '@/components/meeting/RouteDetailsToggle';
 import CompactActionsCard from '@/components/meeting/CompactActionsCard';
 import MeetingPointResults from '@/components/meeting/MeetingPointResults';
@@ -79,7 +82,7 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
             if (!route) {
                 return null;
             }
-            
+
             // Always return the complete route with all properties preserved
             const validatedRoute = {
                 ...route,
@@ -91,10 +94,10 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
                 opacity: route.opacity || 0.8,
                 geometry: route.geometry || { coordinates: [] }
             };
-            
+
             return validatedRoute;
         }).filter(route => route !== null);
-        
+
         return validatedRoutes;
     }, []);
 
@@ -144,14 +147,14 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
         const validatedRoutes = validateRoutes(routes);
         const newMarkers = createMarkers();
         const newCenter = getCenterPosition();
-        
+
         if (validatedRoutes.length > 0 || newMarkers.length > 0) {
             setStableRoutes(validatedRoutes);
             setStableMarkers(newMarkers);
             setStableCenter(newCenter);
             return;
         }
-        
+
         setStableRoutes([]);
         setStableMarkers([]);
         setStableCenter(newCenter);
@@ -178,7 +181,7 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
                         <MaterialIcons name="arrow-back" size={20} color="#111827" />
                     </TouchableOpacity>
                 </GradientView>
-                
+
                 <GradientView
                     gradientName="lightPurple"
                     style={[styles.groupTitleContainer, GRADIENT_STYLES.header]}
@@ -187,7 +190,7 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
                         {currentGroup?.name || 'Group'}
                     </Text>
                 </GradientView>
-                
+
                 <View style={styles.rightButtons}>
                     <GradientView
                         gradientName="lightBlue"
@@ -220,110 +223,145 @@ export default function GroupScreen() {
     const { user, addresses } = useAuth();
     const {
         currentGroup,
-        currentGroupMembers,
-        loading,
-        error,
+        loading: groupsLoading,
+        error: groupsError,
         loadGroup,
-        loadGroupMembers,
-        updateMyAttendance,
-        getGroupMemberAddresses,
-        clearError,
+        clearError: clearGroupsError,
     } = useGroups();
+
+    const {
+        getGroupMembers,
+        loadGroupMembers,
+        loading: membersLoading,
+        error: membersError,
+        clearError: clearMembersError,
+    } = useGroupMembers();
+
+    const {
+        updateMyAttendance,
+        loading: attendanceLoading,
+        error: attendanceError,
+    } = useGroupAttendance();
+
+    // Memoize currentGroupMembers and addresses to prevent unnecessary re-renders
+    const currentGroupMembers = useMemo(() => getGroupMembers(id), [getGroupMembers, id]);
+    const memoizedAddresses = useMemo(() => addresses, [addresses]);
+
     const {
         calculateMeetingPoint,
         getCachedMeetingPoint,
         isCalculatingMeetingPoint,
     } = useMeetingPoint();
 
+    const isLoading = groupsLoading || membersLoading || attendanceLoading;
+    const error = groupsError || membersError || attendanceError;
+
+    const clearError = useCallback(() => {
+        clearGroupsError();
+        clearMembersError();
+      }, [clearGroupsError, clearMembersError]);
+    
+
+
     // [REFACTOR START]
     // --- State ---
     const [meetingPoint, setMeetingPoint] = useState(null);
     const [attendeeAddresses, setAttendeeAddresses] = useState([]);
     const [currentMeetingPointIndex, setCurrentMeetingPointIndex] = useState(0);
-    const [isLoading, setIsLoading] = useState(true);
     const [hasInitialMeetingPoint, setHasInitialMeetingPoint] = useState(false);
 
     // --- Centralized Data Loading ---
     const loadAllData = useCallback(async () => {
-      if (!id || !user) return;
-      setIsLoading(true);
-      try {
-        await loadGroup(id);
-        await loadGroupMembers(id);
-      } catch (e) {
-        // Error handled by context
-      } finally {
-        setIsLoading(false);
-      }
-    }, [id, user, loadGroup, loadGroupMembers]);
+        if (!id || !user) return;
+        
+        try {
+          await Promise.all([
+            loadGroup(id),
+            loadGroupMembers(id)
+          ]);
+        } catch (error) {
+          console.error('Error loading group data:', error);
+        }
+      }, [id, user, loadGroup, loadGroupMembers]);
+    
+
+
 
     useEffect(() => {
-      loadAllData();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+        loadAllData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, user]);
 
     // --- Immediate Cache Check and Async Calculation ---
     useEffect(() => {
-      if (!currentGroup || !currentGroupMembers || !addresses) return;
-      
-      // First, check cache immediately for instant UI update
-      const cachedResult = getCachedMeetingPoint(currentGroupMembers, addresses);
-      if (cachedResult) {
-        setMeetingPoint(cachedResult.meetingPoint);
-        setAttendeeAddresses(cachedResult.attendeeAddresses);
-        setHasInitialMeetingPoint(true);
-        return; // No need to calculate if we have cache
-      }
-      
-      // If no cache, calculate asynchronously
-      const calculateAndSetMeetingPoint = async () => {
-        const result = await calculateMeetingPoint(currentGroupMembers, addresses, () => 
-          getGroupMemberAddresses(currentGroup.id)
-        );
-        setMeetingPoint(result.meetingPoint);
-        setAttendeeAddresses(result.attendeeAddresses);
-        setHasInitialMeetingPoint(true);
-      };
-      
-      calculateAndSetMeetingPoint();
-    }, [currentGroup, currentGroupMembers, addresses, calculateMeetingPoint, getCachedMeetingPoint, getGroupMemberAddresses]);
+        if (!currentGroup || !currentGroupMembers || !memoizedAddresses) return;
+
+        // First, check cache immediately for instant UI update
+        const cachedResult = getCachedMeetingPoint(currentGroupMembers, memoizedAddresses);
+        if (cachedResult) {
+            setMeetingPoint(cachedResult.meetingPoint);
+            setAttendeeAddresses(cachedResult.attendeeAddresses);
+            setHasInitialMeetingPoint(true);
+            return; // No need to calculate if we have cache
+        }
+
+        // If no cache, calculate asynchronously
+        const calculateAndSetMeetingPoint = async () => {
+            const result = await calculateMeetingPoint(currentGroupMembers, memoizedAddresses, () =>
+                groupsService.getGroupMemberAddresses(currentGroup.id, user.uid)
+            );
+            setMeetingPoint(result.meetingPoint);
+            setAttendeeAddresses(result.attendeeAddresses);
+            setHasInitialMeetingPoint(true);
+        };
+
+        calculateAndSetMeetingPoint();
+    }, [currentGroup, currentGroupMembers, memoizedAddresses, calculateMeetingPoint, getCachedMeetingPoint, user.uid]);
 
     // --- Attendance Handlers (no redundant reloads) ---
     const handleAttendanceConfirm = useCallback(async () => {
-      if (!currentGroup || !user) return;
-      try {
-        const defaultAddress = addresses.find(a => a.is_default) || addresses[0];
-        const location = defaultAddress ? { lat: defaultAddress.latitude, lng: defaultAddress.longitude } : null;
-        const success = await updateMyAttendance(currentGroup.id, true, location);
-        if (success) {
-          await loadAllData();
+        if (!currentGroup || !user) return;
+        try {
+            const defaultAddress = addresses.find(a => a.is_default) || addresses[0];
+            const location = defaultAddress ? { lat: defaultAddress.latitude, lng: defaultAddress.longitude } : null;
+            const success = await updateMyAttendance(currentGroup.id, true, location);
+            if (success) {
+                // Reload group and members to get up-to-date attendance
+                await Promise.all([
+                    loadGroup(currentGroup.id),
+                    loadGroupMembers(currentGroup.id)
+                ]);
+            }
+        } catch (e) {
+            Alert.alert('Error', 'Failed to confirm attendance. Please try again.');
         }
-      } catch (e) {
-        Alert.alert('Error', 'Failed to confirm attendance. Please try again.');
-      }
-    }, [currentGroup, user, addresses, updateMyAttendance, loadAllData]);
+    }, [currentGroup, user, addresses, updateMyAttendance, loadGroup, loadGroupMembers]);
 
     const handleAttendanceCancel = useCallback(async () => {
-      if (!currentGroup || !user) return;
-      try {
-        const success = await updateMyAttendance(currentGroup.id, false, null);
-        if (success) {
-          await loadAllData();
+        if (!currentGroup || !user) return;
+        try {
+            const success = await updateMyAttendance(currentGroup.id, false, null);
+            if (success) {
+                // Reload group and members to get up-to-date attendance
+                await Promise.all([
+                    loadGroup(currentGroup.id),
+                    loadGroupMembers(currentGroup.id)
+                ]);
+            }
+        } catch (e) {
+            Alert.alert('Error', 'Failed to cancel attendance. Please try again.');
         }
-      } catch (e) {
-        Alert.alert('Error', 'Failed to cancel attendance. Please try again.');
-      }
-    }, [currentGroup, user, updateMyAttendance, loadAllData]);
+    }, [currentGroup, user, updateMyAttendance, loadGroup, loadGroupMembers]);
 
     const handleSettingsPress = useCallback(() => {
-      if (!currentGroup) return;
-      router.push(`/groups/${currentGroup.id}/settings`);
+        if (!currentGroup) return;
+        router.push(`/groups/${currentGroup.id}/settings`);
     }, [currentGroup]);
 
     useEffect(() => {
-      return () => {
-        if (error) clearError();
-      };
+        return () => {
+            if (error) clearError();
+        };
     }, [error, clearError]);
     // [REFACTOR END]
 
@@ -346,14 +384,14 @@ export default function GroupScreen() {
     }
 
     // Show loading screen while initial data is being fetched
-    if (isLoading || loading || (!hasInitialMeetingPoint && isCalculatingMeetingPoint)) {
+    if (isLoading || (!hasInitialMeetingPoint && isCalculatingMeetingPoint)) {
         return (
             <View style={styles.container}>
                 {/* Background */}
                 <View style={styles.backgroundContainer}>
                     <MetroBackground />
                 </View>
-                
+
                 <SafeAreaView style={styles.loadingContainer}>
                     <View style={styles.loadingContent}>
                         <LoadingIndicator size="large" />
@@ -370,7 +408,7 @@ export default function GroupScreen() {
         );
     }
 
-    if (!currentGroup && !loading) {
+    if (!currentGroup && !isLoading) {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.errorState}>
@@ -412,7 +450,7 @@ export default function GroupScreen() {
                                 <Text style={styles.backgroundLoadingText}>Updating meeting point...</Text>
                             </View>
                         )}
-                        
+
                         {/* Slide to Confirm */}
                         <View style={styles.slideContainer}>
                             <SlideToConfirm
@@ -421,12 +459,12 @@ export default function GroupScreen() {
                                 onConfirm={handleAttendanceConfirm}
                                 onCancel={handleAttendanceCancel}
                                 isConfirmed={currentGroupMembers.find(m => m.is_me)?.attendance?.isAttending || false}
-                                disabled={loading}
+                                disabled={isLoading}
                             />
                         </View>
 
                         {/* Attendees Count Button */}
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.attendeesButton}
                             onPress={handleSettingsPress}
                         >
@@ -560,22 +598,22 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-      headerButton: {
-    borderRadius: 16,
-    width: 42,
-    height: 42,
-  },
-  headerButtonContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-      groupTitleContainer: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    maxWidth: '60%',
-  },
+    headerButton: {
+        borderRadius: 16,
+        width: 42,
+        height: 42,
+    },
+    headerButtonContent: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    groupTitleContainer: {
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        maxWidth: '60%',
+    },
     floatingGroupTitle: {
         fontSize: 16,
         fontWeight: '700',
@@ -650,8 +688,6 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 24,
     },
-
-
     errorState: {
         flex: 1,
         justifyContent: 'center',
@@ -700,5 +736,4 @@ const styles = StyleSheet.create({
         color: '#6b7280',
         marginLeft: 8,
     },
-
 }); 

@@ -2,9 +2,9 @@ import React from 'react';
 import { View, Text, StyleSheet, Animated, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { GroupsProvider } from '../contexts/GroupsContext';
-import { MeetingPointProvider } from '../contexts/MeetingPointContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { GroupsCompositeProvider } from '@/contexts/GroupsCompositeProvider';
+import { MeetingPointProvider } from '@/contexts/MeetingPointContext';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import LoadingIndicator from './utils/LoadingIndicator';
 import { GradientView } from './core';
@@ -107,13 +107,13 @@ const AppInitializer = ({ children }) => {
 const AppProviders = ({ children }) => {
   return (
     <AuthProvider>
-      <GroupsProvider>
+      <GroupsCompositeProvider>
         <MeetingPointProvider>
           <AppInitializer>
             {children}
           </AppInitializer>
         </MeetingPointProvider>
-      </GroupsProvider>
+      </GroupsCompositeProvider>
     </AuthProvider>
   );
 };

@@ -13,9 +13,11 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth, } from '@/contexts/AuthContext';
 import { useGroups } from '@/contexts/GroupsContext';
+import { useGroupAttendance } from '@/contexts/GroupAttendanceContext';
+import { useGroupMembers } from '@/contexts/GroupMembersContext';
 import { AddressInput } from '@/components/maps';
 import { AddressPicker, SlideToConfirm } from '@/components/utils';
-
+import groupsService from '@/services/groupsService';
 
 
 export default function GroupSettingsScreen() {
@@ -23,23 +25,42 @@ export default function GroupSettingsScreen() {
   const { user, addresses: userAddresses, loadUserAddresses } = useAuth();
   const {
     currentGroup,
-    currentGroupMembers,
-    loading,
-    error,
+    loading: groupsLoading,
+    error: groupsError,
     loadGroup,
+    updateGroup, // Note: renamed from updateGroupInfo
+    deleteGroup,
+    clearError: clearGroupsError,
+  } = useGroups();
+
+  const {
+    getGroupMembers,
     loadGroupMembers,
-    updateGroupInfo,
     addGroupMember,
     removeGroupMember,
-    resetGroupAttendance,
-    deleteGroup,
-    clearError,
-    addCustomLocationToGroup,
+    loading: membersLoading,
+    error: membersError,
+    clearError: clearMembersError,
+  } = useGroupMembers();
+
+  const {
     updateMyAttendance,
-    updateUserAttendance,
     updateCustomLocationAttendance,
-    removeCustomLocationFromGroup,
-  } = useGroups();
+    updateUserAttendance,
+    resetGroupAttendance,
+    loading: attendanceLoading,
+    error: attendanceError,
+  } = useGroupAttendance();
+
+  // Get current group members using the new pattern
+  const currentGroupMembers = getGroupMembers(id);
+
+  const isLoading = groupsLoading || membersLoading || attendanceLoading;
+  const error = groupsError || membersError || attendanceError;
+  const clearError = useCallback(() => {
+    clearGroupsError();
+    clearMembersError();
+  }, [clearGroupsError, clearMembersError]);
 
   // State
   const [editingName, setEditingName] = useState(false);
@@ -49,22 +70,19 @@ export default function GroupSettingsScreen() {
   const [memberAddCount, setMemberAddCount] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
   const [showAddressPicker, setShowAddressPicker] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load data
   const loadAllData = useCallback(async () => {
     if (!id || !user) return;
-    setIsLoading(true);
     try {
-      await loadGroup(id);
-      await loadGroupMembers(id);
-      await loadUserAddresses(user.uid);
-    } catch (e) {
-      // error handled by context
-    } finally {
-      setIsLoading(false);
+      await Promise.all([
+        loadGroup(id),
+        loadGroupMembers(id)
+      ]);
+    } catch (error) {
+      console.error('Error loading data:', error);
     }
-  }, [id, user, loadGroup, loadGroupMembers, loadUserAddresses]);
+  }, [id, user, loadGroup, loadGroupMembers]);
+
 
   useEffect(() => {
     loadAllData();
@@ -78,11 +96,12 @@ export default function GroupSettingsScreen() {
     }
   }, [currentGroup]);
 
-  const canManageGroup = currentGroupMembers?.find(
+  const canManageGroup = currentGroupMembers.find(
     member => member.user_id === user?.uid
   );
 
   // --- Handlers ---
+
   const handleUpdateName = useCallback(async () => {
     if (!currentGroup || !groupName.trim() || groupName === currentGroup.name) {
       setEditingName(false);
@@ -90,7 +109,7 @@ export default function GroupSettingsScreen() {
       return;
     }
     try {
-      const success = await updateGroupInfo(currentGroup.id, { name: groupName.trim() });
+      const success = await updateGroup(currentGroup.id, { name: groupName.trim() });
       if (success) {
         setEditingName(false);
         await loadAllData();
@@ -99,7 +118,7 @@ export default function GroupSettingsScreen() {
       Alert.alert('Error', 'Failed to update group name');
       setGroupName(currentGroup.name || '');
     }
-  }, [currentGroup, groupName, updateGroupInfo, loadAllData]);
+  }, [currentGroup, groupName, updateGroup, loadAllData]);
 
   const handleUpdateDescription = useCallback(async () => {
     if (!currentGroup || groupDescription === (currentGroup.description || '')) {
@@ -108,7 +127,7 @@ export default function GroupSettingsScreen() {
       return;
     }
     try {
-      const success = await updateGroupInfo(currentGroup.id, { description: groupDescription.trim() || null });
+      const success = await updateGroup(currentGroup.id, { description: groupDescription.trim() || null });
       if (success) {
         setEditingDescription(false);
         await loadAllData();
@@ -117,7 +136,7 @@ export default function GroupSettingsScreen() {
       Alert.alert('Error', 'Failed to update group description');
       setGroupDescription(currentGroup.description || '');
     }
-  }, [currentGroup, groupDescription, updateGroupInfo, loadAllData]);
+  }, [currentGroup, groupDescription, updateGroup, loadAllData]);
 
   const handleAddMember = useCallback(async (member) => {
     if (!currentGroup) return;
@@ -160,7 +179,7 @@ export default function GroupSettingsScreen() {
             onPress: async () => {
               try {
                 const locationId = member.id.replace('custom_location_', '');
-                const success = await removeCustomLocationFromGroup(locationId);
+                const success = await groupsService.removeCustomLocationFromGroup(currentGroup.id, locationId);
                 if (success) {
                   Alert.alert('Success', 'Custom location removed successfully');
                   await loadAllData();
@@ -206,7 +225,7 @@ export default function GroupSettingsScreen() {
         },
       ]
     );
-  }, [currentGroup, user, removeGroupMember, removeCustomLocationFromGroup, loadAllData]);
+  }, [currentGroup, user, removeGroupMember, loadAllData]);
 
   const handleResetAttendance = useCallback(() => {
     if (!currentGroup || !canManageGroup) return;
@@ -452,7 +471,7 @@ export default function GroupSettingsScreen() {
                   // Add custom address to group
                   try {
                     if (currentGroup) {
-                      const dbLocation = await addCustomLocationToGroup(currentGroup.id, customAddress);
+                      const dbLocation = await groupsService.addCustomLocationToGroup(currentGroup.id, customAddress);
                       await loadAllData();
                     }
                   } catch (error) {
@@ -573,7 +592,7 @@ export default function GroupSettingsScreen() {
                                     ? member.id.replace('custom_location_', '') 
                                     : member.id;
                                   
-                                  await removeCustomLocationFromGroup(actualId);
+                                  await groupsService.removeCustomLocationFromGroup(currentGroup.id, actualId);
                                 } else {
                                   await handleRemoveMember(member);
                                 }

@@ -1,6 +1,6 @@
-// Export contexts
-export { default as AuthContext, AuthProvider, useAuth } from './AuthContext';
-export { default as GroupsContext, GroupsProvider, useGroups } from './GroupsContext';
-
-// Re-export for convenience
-export { default as AppProviders } from '../components/AppProviders'; 
+export { AuthContext, AuthProvider, useAuth } from './AuthContext';
+export { GroupsContext, GroupsProvider, useGroups } from './GroupsContext';
+export { GroupMembersProvider, useGroupMembers } from './GroupMembersContext';
+export { GroupAttendanceProvider, useGroupAttendance } from './GroupAttendanceContext';
+export { GroupsCompositeProvider } from './GroupsCompositeProvider';
+export { default as AppProviders } from '../components/AppProviders';

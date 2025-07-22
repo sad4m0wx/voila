@@ -41,7 +41,7 @@ export default function HomeScreen() {
   const { share } = useLocalSearchParams();
   const router = useRouter();
   const { user, isFullyOnboarded, addresses: userAddresses } = useAuth();
-  const { createNewGroup } = useGroups();
+  const { createGroup } = useGroups();
   
   // State
   const [addresses, setAddresses] = useState([
@@ -420,7 +420,7 @@ export default function HomeScreen() {
                   }
                 });
 
-                const newGroup = await createNewGroup(
+                const newGroup = await createGroup(
                   { name: groupName },
                   friendMembers,
                   customAddresses
