@@ -7,7 +7,7 @@ import { getGradientColors } from '../../theme/gradients';
 const DEFAULT_CENTER = [2.3522, 48.8566];
 const DEFAULT_ZOOM = 12;
 const DEFAULT_DELTAS = { latitudeDelta: 0.0922, longitudeDelta: 0.0421 };
-const EDGE_PADDING = { top: 50, right: 50, bottom: 50, left: 50 };
+const EDGE_PADDING = { top: 120, right: 75, bottom: 75, left: 75 };
 const GRADIENT_COLOR_CACHE = new Map();
 
 const getGradientColorCached = (gradientName) => {
