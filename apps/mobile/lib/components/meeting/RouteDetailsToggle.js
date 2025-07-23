@@ -44,7 +44,6 @@ const RouteDetailsToggle = ({ routes, travelTimes }) => {
           <View style={styles.modalContent}>
             <SafeAreaView style={styles.modalContentInner}>
               <View style={styles.modalHeader}>
-                <View style={styles.modalHeaderHandle} />
                 <Text style={styles.modalTitle}>Route Details</Text>
                 <TouchableOpacity 
                   onPress={() => setShowRouteDetails(false)}
@@ -136,16 +135,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
   },
-  modalHeaderHandle: {
-    position: 'absolute',
-    top: 8,
-    left: '50%',
-    width: 40,
-    height: 4,
-    marginLeft: -20,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 2,
-  },
+
   modalTitle: {
     flex: 1,
     fontSize: 16,
