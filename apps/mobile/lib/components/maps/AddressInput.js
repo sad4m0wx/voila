@@ -10,8 +10,9 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
-  Alert
+  Alert,
+  PanResponder,
+  Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { googleMapsService } from '@/services/map/GoogleMapsService';
@@ -21,7 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { contactService } from '@/services/contactService';
 import { isInIleDeFrance } from '@/utils';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { height: screenHeight } = Dimensions.get('window');
 
 const AddressInput = ({
   value = '',
@@ -38,162 +39,114 @@ const AddressInput = ({
   const [friends, setFriends] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [contactsLoaded, setContactsLoaded] = useState(false);
-  
-  // Use refs to track debounce timeouts and component mount state
+
   const debounceTimeoutRef = useRef(null);
   const isMountedRef = useRef(true);
-  
-  // Get context functions with defensive checks
+  const translateY = useRef(new Animated.Value(0)).current;
+  const dragThreshold = 80;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 5 && gestureState.dy > 0;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          translateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > dragThreshold) {
+          Animated.timing(translateY, {
+            toValue: 500,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            translateY.setValue(0);
+            handleModalClose();
+          });
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
+
   const groupsContext = useGroups();
   const authContext = useAuth();
-  
   const findUsersByPhoneNumbers = groupsContext?.findUsersByPhoneNumbers;
   const getUserAddresses = groupsContext?.getUserAddresses;
   const user = authContext?.user;
-  
-  // Defensive check for context functions
   const contextAvailable = !!(findUsersByPhoneNumbers && getUserAddresses && user);
-  
-  if (!contextAvailable) {
-    console.warn('AddressInput: Groups context functions or user not available');
-  }
 
-  // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     };
   }, []);
 
-  // Load contacts when component mounts (same as AddMemberComponent)
   useEffect(() => {
-    if (contextAvailable) {
-      loadContacts();
-    }
+    if (contextAvailable) loadContacts();
   }, [contextAvailable]);
 
   const loadContacts = async () => {
     try {
-      // Check if component is still mounted
-      if (!isMountedRef.current) return;
-
-      // Ensure contactService is available
-      if (!contactService) {
-        console.warn('AddressInput: Contact service not available');
-        return;
-      }
-
-      // Check permission status
+      if (!isMountedRef.current || !contactService) return;
       const permissionStatus = await contactService.getPermissionStatus();
-      
       if (!isMountedRef.current) return;
-
       if (permissionStatus !== 'granted') {
         const granted = await contactService.showPermissionDialog();
-        if (!granted || !isMountedRef.current) {
-          console.warn('AddressInput: Contact permission not granted');
-          return;
-        }
+        if (!granted || !isMountedRef.current) return;
       }
-
-      // Load contacts
       await contactService.loadContacts();
-      if (isMountedRef.current) {
-        setContactsLoaded(true);
-        console.log('AddressInput: Contacts loaded successfully', contactService.contacts?.length || 0);
-      }
-      
-    } catch (error) {
-      console.error('AddressInput: Error loading contacts:', error);
-      // Don't throw the error, just log it and continue
-      if (isMountedRef.current) {
-        setContactsLoaded(false);
-      }
+      if (isMountedRef.current) setContactsLoaded(true);
+    } catch {
+      if (isMountedRef.current) setContactsLoaded(false);
     }
   };
 
-  // Search friends by name (using the same approach as AddMemberComponent)
   const searchFriends = useCallback(async (input) => {
-    if (!input || input.trim().length < 2) {
-      return [];
-    }
-
-    if (!contextAvailable) {
-      console.warn('AddressInput: Context not available, skipping friend search');
-      return [];
-    }
-
-    if (!contactsLoaded || !contactService?.contacts || contactService.contacts.length === 0) {
-      console.warn('AddressInput: Contacts not loaded yet, skipping friend search. Loaded:', contactsLoaded, 'Count:', contactService?.contacts?.length || 0);
-      return [];
-    }
-
+    if (!input || input.trim().length < 2 || !contextAvailable || !contactsLoaded || !contactService?.contacts?.length) return [];
     try {
-      // First, search through device contacts by name (same as AddMemberComponent)
       const term = input.toLowerCase().trim();
       const filteredContacts = contactService.contacts.filter(contact =>
         contact.name.toLowerCase().includes(term) ||
         contact.firstName.toLowerCase().includes(term) ||
         contact.lastName.toLowerCase().includes(term)
       );
-
-      if (filteredContacts.length === 0) {
-        return [];
-      }
-
-      // Extract phone numbers from filtered contacts
-      const phoneNumbers = filteredContacts.flatMap(contact => 
-        contact.phoneNumbers.map(phone => phone.normalized)
-      ).filter(phone => phone);
-
-      if (phoneNumbers.length === 0) {
-        return [];
-      }
-
-      // Query database for these specific phone numbers
+      if (!filteredContacts.length) return [];
+      const phoneNumbers = filteredContacts.flatMap(contact => contact.phoneNumbers.map(phone => phone.normalized)).filter(Boolean);
+      if (!phoneNumbers.length) return [];
       const registeredData = await findUsersByPhoneNumbers(phoneNumbers);
-
-      if (registeredData.length === 0) {
-        return [];
-      }
-
-      // Create map of registered phone numbers to user data
+      if (!registeredData.length) return [];
       const registeredPhoneMap = new Map();
       registeredData.forEach(user => {
         const dbPhone = user.phone_number;
         registeredPhoneMap.set(dbPhone, user);
-        
-        // Also store with/without + variations
-        if (dbPhone.startsWith('+')) {
-          registeredPhoneMap.set(dbPhone.substring(1), user);
-        } else {
-          registeredPhoneMap.set('+' + dbPhone, user);
-        }
+        if (dbPhone.startsWith('+')) registeredPhoneMap.set(dbPhone.substring(1), user);
+        else registeredPhoneMap.set('+' + dbPhone, user);
       });
-
-      // Find registered contacts and get their addresses
-      const registeredContacts = [];
-      
-      filteredContacts.forEach(contact => {
+      const registeredContacts = filteredContacts.map(contact => {
         let matchedUserData = null;
-        
-        // Check each phone number in the contact
         for (const phoneObj of contact.phoneNumbers) {
           const contactNormalized = phoneObj.normalized;
-          
           if (registeredPhoneMap.has(contactNormalized)) {
             matchedUserData = registeredPhoneMap.get(contactNormalized);
             break;
           }
-          
-          // Try without + prefix
           if (contactNormalized.startsWith('+')) {
             const withoutPlus = contactNormalized.substring(1);
             if (registeredPhoneMap.has(withoutPlus)) {
@@ -201,8 +154,6 @@ const AddressInput = ({
               break;
             }
           }
-          
-          // Try with + prefix
           if (!contactNormalized.startsWith('+')) {
             const withPlus = '+' + contactNormalized;
             if (registeredPhoneMap.has(withPlus)) {
@@ -211,64 +162,34 @@ const AddressInput = ({
             }
           }
         }
-
-        if (matchedUserData) {
-          registeredContacts.push({
-            ...contact,
-            userData: matchedUserData,
-            type: 'friend',
-            isRegistered: true,
-          });
-        }
-      });
-
-      if (registeredContacts.length === 0) {
-        console.log('AddressInput: No registered contacts found');
-        return [];
-      }
-
-      // Get addresses for the registered users
-      const userIds = registeredContacts.map(contact => contact.userData.id);
-      
-      // Debug: Check if getUserAddresses function exists
-      if (!getUserAddresses) {
-        console.error('AddressInput: getUserAddresses function not available');
-        return [];
-      }
-      
-      const addressesMap = await getUserAddresses(userIds);
-      
-      // Combine contacts with their addresses
-      const friendsWithAddresses = registeredContacts.map(contact => {
-        const userAddress = addressesMap[contact.userData.id];
-        
-        return {
+        return matchedUserData ? {
           ...contact,
-          address: userAddress ? (
-            userAddress.formatted_address || 
-            userAddress.name || 
-            `${userAddress.latitude}, ${userAddress.longitude}`
-          ) : null,
-          location: userAddress ? {
-            lat: userAddress.latitude,
-            lng: userAddress.longitude
-          } : null,
+          userData: matchedUserData,
+          type: 'friend',
+          isRegistered: true,
+        } : null;
+      }).filter(Boolean);
+      
+      if (!registeredContacts.length) return [];
+      const userIds = registeredContacts.map(contact => contact.userData.id);
+      if (!getUserAddresses) return [];
+      const addressesMap = await getUserAddresses(userIds);
+      return registeredContacts.map(contact => {
+        const userAddress = addressesMap[contact.userData.id];
+        return userAddress ? {
+          ...contact,
+          address: userAddress.formatted_address || userAddress.name || `${userAddress.latitude}, ${userAddress.longitude}`,
+          location: { lat: userAddress.latitude, lng: userAddress.longitude },
           placeId: userAddress?.place_id || null,
-          display_name: contact.name, // Use contact name instead of user display_name
-          id: contact.userData.id // Use user ID
-        };
-      });
-      
-      const filteredFriends = friendsWithAddresses.filter(friend => friend.address);
-      
-      return filteredFriends;
-    } catch (error) {
-      console.error('AddressInput: Error searching friends:', error);
+          display_name: contact.name,
+          id: contact.userData.id
+        } : null;
+      }).filter(Boolean);
+    } catch {
       return [];
     }
   }, [findUsersByPhoneNumbers, getUserAddresses, contextAvailable, contactsLoaded]);
 
-  // Get place predictions from Google Places API
   const fetchPredictions = useCallback(async (input) => {
     if (!input || input.trim().length < 2) {
       if (isMountedRef.current) {
@@ -278,38 +199,22 @@ const AddressInput = ({
       }
       return;
     }
-
-    if (isMountedRef.current) {
-      setIsLoading(true);
-    }
+    if (isMountedRef.current) setIsLoading(true);
     
     try {
-      // Search for both friends and places
       const [friendResults, placeResults] = await Promise.all([
-        searchFriends(input).catch(err => {
-          console.warn('AddressInput: Friend search failed:', err);
-          return [];
-        }),
-        googleMapsService.getPlacePredictions(input, bounds).catch(err => {
-          console.warn('AddressInput: Place search failed:', err);
-          return [];
-        })
+        searchFriends(input).catch(() => []),
+        googleMapsService.getPlacePredictions(input, bounds).catch(() => [])
       ]);
 
-      // Only update state if component is still mounted
       if (!isMountedRef.current) return;
 
-      // Format place results
-      const formattedPlaces = placeResults.map(place => ({
-        ...place,
-        type: 'place'
-      }));
-
+      const formattedPlaces = placeResults.map(place => ({ ...place, type: 'place' }));
+      
       setFriends(friendResults);
       setPredictions(formattedPlaces);
       setShowPredictions(friendResults.length > 0 || formattedPlaces.length > 0);
     } catch (error) {
-      console.error('Error fetching predictions:', error);
       if (isMountedRef.current) {
         onError && onError({ error: error.message });
         setFriends([]);
@@ -317,32 +222,21 @@ const AddressInput = ({
         setShowPredictions(false);
       }
     } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, [bounds, onError, searchFriends]);
 
-  // Debounced version of fetchPredictions
-  const debouncedFetchPredictions = useCallback(
-    (input) => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-      debounceTimeoutRef.current = setTimeout(() => {
-        if (isMountedRef.current) {
-          fetchPredictions(input);
-        }
-      }, 300);
-    },
-    [fetchPredictions]
-  );
+  const debouncedFetchPredictions = useCallback((input) => {
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    debounceTimeoutRef.current = setTimeout(() => {
+      if (isMountedRef.current) fetchPredictions(input);
+    }, 300);
+  }, [fetchPredictions]);
 
-  // Handle input changes
   const handleInputChange = (text) => {
     setInputValue(text);
     onInput && onInput({ value: text });
-    
+
     if (text.trim()) {
       debouncedFetchPredictions(text);
     } else {
@@ -352,18 +246,15 @@ const AddressInput = ({
     }
   };
 
-  // Handle place selection (both friends and places)
   const handlePlaceSelection = async (selection) => {
     if (!isMountedRef.current) return;
-    
+
     setIsLoading(true);
     setShowPredictions(false);
-    
+
     try {
       let selectedPlace;
-      
       if (selection.type === 'friend') {
-        // Handle friend selection
         if (!isInIleDeFrance(selection.location)) {
           Alert.alert(
             'Location Not Supported',
@@ -372,28 +263,18 @@ const AddressInput = ({
           setIsLoading(false);
           return;
         }
-
         selectedPlace = {
           address: selection.address,
           location: selection.location,
           placeId: selection.placeId,
           friendName: selection.display_name,
           friendId: selection.id,
-          type: 'friend' // Mark as friend selection
+          type: 'friend'
         };
-        
-        // Show friend's name in the input field instead of their address
-        if (isMountedRef.current) {
-          setInputValue(selection.display_name);
-        }
+        setInputValue(selection.display_name);
       } else {
-        // Handle Google place selection
         const placeDetails = await googleMapsService.getPlaceDetails(selection.place_id);
-        
-        // Check if component is still mounted after async operation
         if (!isMountedRef.current) return;
-
-        // Validate location is within Île-de-France
         if (!isInIleDeFrance(placeDetails.location)) {
           Alert.alert(
             'Location Not Supported',
@@ -402,43 +283,29 @@ const AddressInput = ({
           setIsLoading(false);
           return;
         }
-        
         selectedPlace = {
           address: placeDetails.address,
           location: placeDetails.location,
           placeId: placeDetails.placeId
         };
-        
         setInputValue(placeDetails.address);
       }
-
       onPlaceSelected && onPlaceSelected(selectedPlace);
-
-      // Close modal and reset state only if still mounted
       if (isMountedRef.current) {
         setShowModal(false);
-        setIsFocused(false);
       }
-
-      // Trigger preload if enabled and we have location
       if (enablePreload && selectedPlace.location) {
         preloadIsochroneForAddress(selectedPlace.location).catch(error => {
           console.warn('Preload failed (non-critical):', error);
         });
       }
     } catch (error) {
-      console.error('Error handling place selection:', error);
-      if (isMountedRef.current) {
-        onError && onError({ error: error.message });
-      }
+      if (isMountedRef.current) onError && onError({ error: error.message });
     } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
+      if (isMountedRef.current) setIsLoading(false);
     }
   };
 
-  // Clear input
   const handleClear = () => {
     setInputValue('');
     setFriends([]);
@@ -447,30 +314,21 @@ const AddressInput = ({
     onInput && onInput({ value: '' });
   };
 
-  // Handle focus - open modal
   const handleFocus = () => {
-    setIsFocused(true);
     setShowModal(true);
-    
-    // Debug: Check if contacts are loaded when modal opens
-    console.log('AddressInput: Modal opened. Contacts loaded:', contactsLoaded, 'Count:', contactService.contacts?.length || 0);
   };
 
-  // Handle modal close
   const handleModalClose = () => {
     setShowModal(false);
-    setIsFocused(false);
     setShowPredictions(false);
     setFriends([]);
     setPredictions([]);
   };
 
-  // Update input value when prop changes
   useEffect(() => {
     setInputValue(value);
   }, [value]);
 
-  // Render friend item
   const renderFriend = (item, index) => (
     <TouchableOpacity
       key={`friend-${item.id}`}
@@ -501,7 +359,6 @@ const AddressInput = ({
     </TouchableOpacity>
   );
 
-  // Render prediction item
   const renderPrediction = (item, index) => (
     <TouchableOpacity
       key={item.place_id}
@@ -534,23 +391,22 @@ const AddressInput = ({
   return (
     <>
       {/* Main Input Field */}
-      <TouchableOpacity 
-        style={styles.container} 
+      <TouchableOpacity
+        style={styles.container}
         onPress={handleFocus}
         disabled={disabled}
       >
         <View style={[
           styles.inputContainer,
-          isFocused && styles.inputFocused,
           disabled && styles.inputDisabled
         ]}>
           {/* Location Icon */}
           <View style={styles.leftIcon}>
             <Text style={styles.locationIcon}>📍</Text>
           </View>
-          
+
           {/* Display Text (not editable here) */}
-          <Text 
+          <Text
             style={[
               styles.inputText,
               !inputValue && styles.placeholderText
@@ -560,7 +416,7 @@ const AddressInput = ({
           >
             {inputValue || placeholder}
           </Text>
-          
+
           {/* Clear Button */}
           {inputValue && !disabled && (
             <TouchableOpacity
@@ -577,100 +433,92 @@ const AddressInput = ({
       <Modal
         visible={showModal}
         animationType="slide"
-        presentationStyle="fullScreen"
+        transparent={true}
         onRequestClose={handleModalClose}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <KeyboardAvoidingView 
-            style={styles.modalContent} 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <View style={styles.modalContainerOverlayed}>
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={handleModalClose}
+          />
+          <Animated.View
+            style={[
+              styles.bottomSheetContainer,
+              { transform: [{ translateY }] }
+            ]}
           >
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity 
-                style={styles.backButton}
-                onPress={handleModalClose}
-              >
-                <Text style={styles.backIcon}>←</Text>
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Enter Address</Text>
-              <View style={styles.headerSpacer} />
-            </View>
-
-            {/* Search Input */}
-            <View style={styles.searchContainer}>
-              <View style={styles.searchInputContainer}>
-                <View style={styles.leftIcon}>
-                  {isLoading ? (
-                    <ActivityIndicator size="small" color="#6b7280" />
-                  ) : (
-                    <Text style={styles.locationIcon}>📍</Text>
-                  )}
-                </View>
-                
-                <TextInput
-                  style={styles.searchInput}
-                  value={inputValue}
-                  placeholder={placeholder}
-                  placeholderTextColor="#9ca3af"
-                  onChangeText={handleInputChange}
-                  autoFocus={true}
-                  autoCorrect={false}
-                  autoCapitalize="words"
-                />
-                
-                {inputValue && (
-                  <TouchableOpacity
-                    style={styles.rightIcon}
-                    onPress={handleClear}
-                  >
-                    <Text style={styles.clearIcon}>✕</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-
-            {/* Results List */}
-            <ScrollView 
-              style={styles.predictionsContainer}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+            <KeyboardAvoidingView 
+              style={styles.bottomSheetContent} 
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             >
-              {showPredictions && (friends.length > 0 || predictions.length > 0) ? (
-                <View style={styles.predictionsList}>
-                  {/* Friends Section */}
-                  {friends.length > 0 && (
-                    <>
-                      <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Friends</Text>
-                      </View>
-                      {friends.map((item, index) => renderFriend(item, index))}
-                    </>
-                  )}
-                  
-                  {/* Places Section */}
-                  {predictions.length > 0 && (
-                    <>
-                      {friends.length > 0 && <View style={styles.sectionDivider} />}
-                      <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Places</Text>
-                      </View>
-                      {predictions.map((item, index) => renderPrediction(item, index))}
-                    </>
+              <View style={styles.searchContainer}>
+                <View style={styles.searchInputContainer}>
+                  <View style={styles.leftIcon}>
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color="#6b7280" />
+                    ) : (
+                      <Text style={styles.locationIcon}>📍</Text>
+                    )}
+                  </View>
+                  <TextInput
+                    style={styles.searchInput}
+                    value={inputValue}
+                    placeholder={placeholder}
+                    placeholderTextColor="#9ca3af"
+                    onChangeText={handleInputChange}
+                    autoFocus={true}
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                  />
+                  {inputValue && (
+                    <TouchableOpacity
+                      style={styles.rightIcon}
+                      onPress={handleClear}
+                    >
+                      <Text style={styles.clearIcon}>✕</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
-              ) : (
-                inputValue.length >= 2 && !isLoading && (
-                  <View style={styles.noPredictions}>
-                    <Text style={styles.noPredictionsText}>
-                      No addresses or friends found. Try a different search.
-                    </Text>
+              </View>
+              <ScrollView 
+                style={styles.predictionsContainer}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {showPredictions && (friends.length > 0 || predictions.length > 0) ? (
+                  <View style={styles.predictionsList}>
+                    {friends.length > 0 && (
+                      <>
+                        <View style={styles.sectionHeader}>
+                          <Text style={styles.sectionTitle}>Friends</Text>
+                        </View>
+                        {friends.map((item, index) => renderFriend(item, index))}
+                      </>
+                    )}
+                    {predictions.length > 0 && (
+                      <>
+                        {friends.length > 0 && <View style={styles.sectionDivider} />}
+                        <View style={styles.sectionHeader}>
+                          <Text style={styles.sectionTitle}>Places</Text>
+                        </View>
+                        {predictions.map((item, index) => renderPrediction(item, index))}
+                      </>
+                    )}
                   </View>
-                )
-              )}
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
+                ) : (
+                  inputValue.length >= 2 && !isLoading && (
+                    <View style={styles.noPredictions}>
+                      <Text style={styles.noPredictionsText}>
+                        No addresses or friends found. Try a different search.
+                      </Text>
+                    </View>
+                  )
+                )}
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </Animated.View>
+        </View>
       </Modal>
     </>
   );
@@ -690,17 +538,10 @@ const styles = {
     paddingHorizontal: 12,
     height: 48,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
-  },
-  inputFocused: {
-    borderColor: '#3b82f6',
-    borderWidth: 2,
   },
   inputDisabled: {
     backgroundColor: '#f9fafb',
@@ -732,16 +573,27 @@ const styles = {
     fontSize: 14,
     color: '#6b7280',
   },
-  
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
+  bottomSheetContainer: {
+    width: '100%',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: screenHeight * 0.8,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  modalContent: {
+  bottomSheetContent: {
     flex: 1,
   },
-  modalHeader: {
+  modalHeaderWithClose: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -750,31 +602,35 @@ const styles = {
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    position: 'relative',
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+  modalHeaderHandle: {
+    position: 'absolute',
+    top: 8,
+    left: '50%',
+    width: 40,
+    height: 4,
+    marginLeft: -20,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 2,
   },
-  backIcon: {
-    fontSize: 18,
-    color: '#3b82f6',
-    marginRight: 4,
+  closeButton: {
+    padding: 8,
+    borderRadius: 8,
+    position: 'absolute',
+    right: 8,
+    top: 8,
   },
-  backText: {
-    fontSize: 16,
-    color: '#3b82f6',
-    fontWeight: '500',
+  closeIcon: {
+    fontSize: 22,
+    color: '#64748b',
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#1f2937',
-    textAlign: 'center',
-    flex: 2,
-  },
-  headerSpacer: {
     flex: 1,
+    textAlign: 'center',
   },
   searchContainer: {
     padding: 16,
@@ -861,12 +717,6 @@ const styles = {
     fontSize: 14,
     color: '#6b7280',
   },
-  friendLabel: {
-    fontSize: 12,
-    color: '#3b82f6',
-    fontWeight: '500',
-    marginTop: 2,
-  },
   noPredictions: {
     padding: 20,
     alignItems: 'center',
@@ -875,6 +725,18 @@ const styles = {
     fontSize: 14,
     color: '#6b7280',
     textAlign: 'center',
+  },
+  modalContainerOverlayed: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
 };
 
