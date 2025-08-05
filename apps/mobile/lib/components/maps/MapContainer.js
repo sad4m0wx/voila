@@ -491,50 +491,6 @@ const MapContainer = memo((props = {}) => {
   );
 });
 
-// Enhanced memoization with more granular comparisons
-const areEqual = (prevProps, nextProps) => {
-  // Fast checks for primitive values
-  if (prevProps.height !== nextProps.height) return false;
-  if (prevProps.animateToResults !== nextProps.animateToResults) return false;
-  if (prevProps.venueRadius !== nextProps.venueRadius) return false;
-  if (prevProps.enableRouteAnimation !== nextProps.enableRouteAnimation) return false;
-  if (prevProps.routeAnimationDuration !== nextProps.routeAnimationDuration) return false;
-  if (prevProps.routeAnimationDelay !== nextProps.routeAnimationDelay) return false;
-  
-  // Center comparison
-  if (prevProps.center?.[0] !== nextProps.center?.[0] || 
-      prevProps.center?.[1] !== nextProps.center?.[1]) return false;
-  
-  // Array length comparisons first (fast)
-  if (prevProps.markers?.length !== nextProps.markers?.length) return false;
-  if (prevProps.routes?.length !== nextProps.routes?.length) return false;
-  
-  // Meeting point comparison
-  if (prevProps.meetingPoint?.coordinates?.[0] !== nextProps.meetingPoint?.coordinates?.[0] ||
-      prevProps.meetingPoint?.coordinates?.[1] !== nextProps.meetingPoint?.coordinates?.[1]) return false;
-  
-  // Deep markers comparison (only if lengths match)
-  if (prevProps.markers && nextProps.markers && prevProps.markers.length > 0) {
-    for (let i = 0; i < prevProps.markers.length; i++) {
-      const prevMarker = prevProps.markers[i];
-      const nextMarker = nextProps.markers[i];
-      if (prevMarker?.position?.[0] !== nextMarker?.position?.[0] ||
-          prevMarker?.position?.[1] !== nextMarker?.position?.[1] ||
-          prevMarker?.type !== nextMarker?.type) return false;
-    }
-  }
-  
-  // Routes comparison (simplified - only check steps count)
-  if (prevProps.routes && nextProps.routes && prevProps.routes.length > 0) {
-    for (let i = 0; i < prevProps.routes.length; i++) {
-      const prevRoute = prevProps.routes[i];
-      const nextRoute = nextProps.routes[i];
-      if (prevRoute?.steps?.length !== nextRoute?.steps?.length) return false;
-    }
-  }
-  
-  return true;
-};
 
 const styles = StyleSheet.create({
   container: {
