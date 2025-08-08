@@ -131,6 +131,11 @@ const MeetingPointResults = ({
           snapToAlignment="start"
           decelerationRate="fast"
           snapToInterval={screenWidth}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          windowSize={3}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
         />
       </View>
     </View>

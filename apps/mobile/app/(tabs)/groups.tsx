@@ -384,6 +384,11 @@ export default function GroupsScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={11}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
         />
       )}
 

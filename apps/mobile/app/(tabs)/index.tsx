@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -321,7 +321,7 @@ export default function HomeScreen() {
     return markers;
   };
 
-  const mapMarkers = createMapMarkers();
+  const mapMarkers = useMemo(() => createMapMarkers(), [addresses, meetingPoint, venues]);
 
   // Start new search
   const handleStartNewSearch = () => {

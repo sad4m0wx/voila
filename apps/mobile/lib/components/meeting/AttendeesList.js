@@ -13,9 +13,7 @@ import { GRADIENT_STYLES } from '../../theme/gradients';
  * Individual Attendee Item Component
  * Memoized to prevent re-renders when other attendees change
  */
-const AttendeeItem = memo(({ member }) => {
-  console.log(`👤 Rendering AttendeeItem for ${member.display_name}`);
-  
+const AttendeeItem = memo(({ member }) => {  
   return (
     <GradientView 
       key={member.id} 
@@ -65,7 +63,6 @@ const AttendeesList = memo(({
   isExpanded, 
   onToggle 
 }) => {
-  console.log('👥 Rendering AttendeesList');
 
   // Memoized attendees summary
   const attendeesSummary = useMemo(() => {

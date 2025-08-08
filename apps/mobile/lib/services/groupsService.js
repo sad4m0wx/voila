@@ -704,9 +704,6 @@ class GroupsService {
       if (error) {
         console.error('Error fixing phone numbers:', error);
         
-        // If the function doesn't exist, try direct update
-        console.log('Trying direct update approach...');
-        
         // Update current user's profile with their phone number
         const { error: updateError } = await supabase
           .from('profiles')
@@ -717,12 +714,10 @@ class GroupsService {
           console.error('Error updating current user phone:', updateError);
           return false;
         } else {
-          console.log('Updated current user phone number');
           return true;
         }
       }
 
-      console.log('Phone numbers fixed successfully');
       return true;
     } catch (error) {
       console.error('Error in fixPhoneNumbers:', error);
