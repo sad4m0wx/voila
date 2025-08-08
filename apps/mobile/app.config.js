@@ -7,7 +7,7 @@ export default {
     icon: './assets/images/icon.png',
     scheme: 'voila',
     userInterfaceStyle: 'automatic',
-    newArchEnabled: false,
+    newArchEnabled: true,
     splash: {
       image: './assets/images/splash-icon.png',
       resizeMode: 'contain',
@@ -31,6 +31,7 @@ export default {
       },
       package: 'fr.voila-app',
       minSdkVersion: 24,
+      edgeToEdgeEnabled: true,
       config: {
         googleMaps: {
           apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_GEOCODE_API_KEY
