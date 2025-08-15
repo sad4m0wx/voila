@@ -21,46 +21,32 @@ const CompactActionsCard = ({
     ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
     : 0;
 
-  const handleShareLocation = async () => {
-    if (!meetingPoint || !meetingPoint.coordinates) {
-      Alert.alert('Error', 'No location to share');
-      return;
-    }
-
-    try {
-      const coords = meetingPoint.coordinates;
-      const shareData = {
-        title: `Meeting Point: ${meetingPoint.name}`,
-        message: `Let's meet at ${meetingPoint.name}\nhttps://maps.google.com/?q=${coords[1]},${coords[0]}`,
-      };
-
-      await Share.share(shareData);
-    } catch (error) {
-      console.error('Error sharing:', error);
-      Alert.alert('Error', 'Failed to share location');
-    }
-  };
-
   const handleShareMeetingPoint = async () => {
     if (!addresses || addresses.length < 2) {
       Alert.alert('Error', 'Cannot share this meeting point - missing location data');
       return;
     }
 
+    // Map addresses to the expected format for sharing
+    const shareAddresses = addresses.map((addr, i) => ({
+      id: addr.id?.toString() || `addr-${i}`,
+      value: addr.value || addr.address || '',
+      coordinates: addr.coordinates || (addr.lng !== undefined && addr.lat !== undefined ? [addr.lng, addr.lat] : undefined)
+    }));
+
     setIsSharing(true);
 
     try {
-      const shareResult = await createShareLink(addresses);
+      const shareResult = await createShareLink(shareAddresses);
       
       if (!shareResult.success) {
         throw new Error(shareResult.error);
       }
 
       // Share the meeting point
-      const coords = meetingPoint.coordinates;
       const shareData = {
         title: `Meeting Point: ${meetingPoint.name}`,
-        message: `I found the perfect place for us to meet! Check out this meeting point:\n\n${shareResult.shareUrl}`,
+        message: `I found the perfect place for us to meet! Check out this meeting point: `,
         url: shareResult.shareUrl
       };
 
