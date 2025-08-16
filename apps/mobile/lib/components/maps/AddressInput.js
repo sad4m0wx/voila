@@ -21,6 +21,7 @@ import { useGroups } from '@/contexts/GroupsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { contactService } from '@/services/contactService';
 import { isInIleDeFrance } from '@/utils';
+import { inviteContact } from '@/services/shareService';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -128,10 +129,14 @@ const AddressInput = ({
         contact.lastName.toLowerCase().includes(term)
       );
       if (!filteredContacts.length) return [];
-      const phoneNumbers = filteredContacts.flatMap(contact => contact.phoneNumbers.map(phone => phone.normalized)).filter(Boolean);
-      if (!phoneNumbers.length) return [];
-      const registeredData = await findUsersByPhoneNumbers(phoneNumbers);
-      if (!registeredData.length) return [];
+
+      const phoneNumbers = filteredContacts
+        .flatMap(contact => contact.phoneNumbers.map(phone => phone.normalized))
+        .filter(Boolean);
+
+      // Find registered users among these contacts
+      const registeredData = await findUsersByPhoneNumbers(phoneNumbers).catch(() => []);
+
       const registeredPhoneMap = new Map();
       registeredData.forEach(user => {
         const dbPhone = user.phone_number;
@@ -139,7 +144,11 @@ const AddressInput = ({
         if (dbPhone.startsWith('+')) registeredPhoneMap.set(dbPhone.substring(1), user);
         else registeredPhoneMap.set('+' + dbPhone, user);
       });
-      const registeredContacts = filteredContacts.map(contact => {
+
+      const registeredContacts = [];
+      const unregisteredContacts = [];
+
+      filteredContacts.forEach(contact => {
         let matchedUserData = null;
         for (const phoneObj of contact.phoneNumbers) {
           const contactNormalized = phoneObj.normalized;
@@ -162,29 +171,43 @@ const AddressInput = ({
             }
           }
         }
-        return matchedUserData ? {
-          ...contact,
-          userData: matchedUserData,
+        if (matchedUserData) {
+          registeredContacts.push({ contact, userData: matchedUserData });
+        } else {
+          unregisteredContacts.push(contact);
+        }
+      });
+
+      // Fetch addresses for registered users (if any)
+      let addressesMap = {};
+      if (registeredContacts.length && getUserAddresses) {
+        const userIds = registeredContacts.map(({ userData }) => userData.id);
+        addressesMap = await getUserAddresses(userIds).catch(() => ({}));
+      }
+
+      // Format results: registered first, then unregistered
+      const formattedRegistered = registeredContacts.map(({ contact, userData }) => {
+        const userAddress = addressesMap[userData.id];
+        return {
+          id: userData.id,
+          display_name: contact.name,
+          address: userAddress?.formatted_address || userAddress?.name || `${userAddress?.latitude}, ${userAddress?.longitude}`,
+          location: userAddress ? { lat: userAddress.latitude, lng: userAddress.longitude } : null,
+          placeId: userAddress?.place_id || null,
           type: 'friend',
           isRegistered: true,
-        } : null;
-      }).filter(Boolean);
-      
-      if (!registeredContacts.length) return [];
-      const userIds = registeredContacts.map(contact => contact.userData.id);
-      if (!getUserAddresses) return [];
-      const addressesMap = await getUserAddresses(userIds);
-      return registeredContacts.map(contact => {
-        const userAddress = addressesMap[contact.userData.id];
-        return userAddress ? {
-          ...contact,
-          address: userAddress.formatted_address || userAddress.name || `${userAddress.latitude}, ${userAddress.longitude}`,
-          location: { lat: userAddress.latitude, lng: userAddress.longitude },
-          placeId: userAddress?.place_id || null,
-          display_name: contact.name,
-          id: contact.userData.id
-        } : null;
-      }).filter(Boolean);
+        };
+      }).filter(item => item.address && item.location);
+
+      const formattedUnregistered = unregisteredContacts.map(contact => ({
+        id: contact.id,
+        display_name: contact.name,
+        address: 'Invite to Voilà',
+        type: 'contact',
+        isRegistered: false,
+      }));
+
+      return [...formattedRegistered, ...formattedUnregistered].slice(0, 10);
     } catch {
       return [];
     }
@@ -306,6 +329,15 @@ const AddressInput = ({
     }
   };
 
+  const handleInvite = async (contactItem) => {
+    try {
+      const firstName = (contactItem?.display_name || '').split(' ')[0] || '';
+      await inviteContact(firstName);
+    } catch (e) {
+      console.error('Invite failed:', e);
+    }
+  };
+
   const handleClear = () => {
     setInputValue('');
     setFriends([]);
@@ -337,7 +369,7 @@ const AddressInput = ({
         styles.friendItem,
         index === friends.length - 1 && predictions.length === 0 && styles.predictionItemLast
       ]}
-      onPress={() => handlePlaceSelection(item)}
+      onPress={() => item.isRegistered ? handlePlaceSelection(item) : handleInvite(item)}
     >
       <View style={styles.predictionIcon}>
         <Text style={styles.friendIcon}>👤</Text>
@@ -353,9 +385,14 @@ const AddressInput = ({
           numberOfLines={1}
           ellipsizeMode="tail"
         >
-          {item.address}
+          {item.isRegistered ? item.address : 'Invite to Voilà'}
         </Text>
       </View>
+      {!item.isRegistered && (
+        <View style={styles.inviteButton}>
+          <Text style={styles.inviteButtonText}>Invite</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 
@@ -491,7 +528,7 @@ const AddressInput = ({
                     {friends.length > 0 && (
                       <>
                         <View style={styles.sectionHeader}>
-                          <Text style={styles.sectionTitle}>Friends</Text>
+                          <Text style={styles.sectionTitle}>Contacts</Text>
                         </View>
                         {friends.map((item, index) => renderFriend(item, index))}
                       </>
@@ -510,7 +547,7 @@ const AddressInput = ({
                   inputValue.length >= 2 && !isLoading && (
                     <View style={styles.noPredictions}>
                       <Text style={styles.noPredictionsText}>
-                        No addresses or friends found. Try a different search.
+                        No addresses or contacts found. Try a different search.
                       </Text>
                     </View>
                   )
@@ -579,7 +616,7 @@ const styles = {
     bottom: 0,
     left: 0,
     right: 0,
-    height: screenHeight * 0.8,
+    height: screenHeight * 0.85,
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -737,6 +774,19 @@ const styles = {
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  inviteButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#eef2ff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+  },
+  inviteButtonText: {
+    color: '#4f46e5',
+    fontSize: 12,
+    fontWeight: '600',
   },
 };
 

@@ -219,4 +219,40 @@ export async function copyToClipboard(text) {
     
     return true; // Consider showing the alert as success
   }
+}
+
+/**
+ * Build share content to invite a contact to the app
+ * @param {string} [inviteeName]
+ * @returns {{ title: string, message: string, url: string }}
+ */
+export function createInviteContent(inviteeName = '') {
+  const appLink = process.env.EXPO_PUBLIC_INVITE_APP_LINK || 'https://voila.metromate.app';
+  const salutation = inviteeName ? ` ${inviteeName}` : '';
+  return {
+    title: 'Join me on Voilà',
+    message: `Hey${salutation}! Join me on Voilà so we can find perfect meeting spots together. Download the app:`,
+    url: appLink,
+  };
+}
+
+/**
+ * Open native share sheet to invite a contact to the app
+ * @param {string} [inviteeName]
+ * @returns {Promise<boolean>}
+ */
+export async function inviteContact(inviteeName = '') {
+  try {
+    const content = createInviteContent(inviteeName);
+    // Use native share
+    const result = await Share.share({
+      title: content.title,
+      message: content.message,
+      url: content.url,
+    });
+    return result.action !== Share.dismissedAction;
+  } catch (error) {
+    console.error('❌ Invite sharing failed:', error);
+    return false;
+  }
 } 
