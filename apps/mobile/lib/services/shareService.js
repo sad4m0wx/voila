@@ -1,5 +1,5 @@
 import { CORE_API_URL } from '../config';
-import { Share, Alert } from 'react-native';
+import { Share, Alert, Linking, Platform } from 'react-native';
 
 // Try to import expo-clipboard with fallback
 let Clipboard = null;
@@ -256,3 +256,37 @@ export async function inviteContact(inviteeName = '') {
     return false;
   }
 } 
+
+/**
+ * Invite a contact via SMS by opening the SMS composer with a prefilled message
+ * @param {string} phoneNumber - Target phone number
+ * @param {string} [inviteeName]
+ * @returns {Promise<boolean>}
+ */
+export async function inviteContactViaSms(phoneNumber, inviteeName = '') {
+  try {
+    if (!phoneNumber) {
+      throw new Error('No phone number provided');
+    }
+
+    const content = createInviteContent(inviteeName);
+    const body = `${content.message}\n${content.url}`;
+    const separator = Platform.OS === 'ios' ? '&' : '?';
+    const url = `sms:${phoneNumber}${separator}body=${encodeURIComponent(body)}`;
+
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      throw new Error('SMS app unavailable');
+    }
+
+    await Linking.openURL(url);
+    return true;
+  } catch (error) {
+    console.error('❌ SMS invite failed:', error);
+    Alert.alert(
+      'Unable to open Messages',
+      'Please try again or use the share option to copy the invite link.'
+    );
+    return false;
+  }
+}

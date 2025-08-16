@@ -21,7 +21,7 @@ import { useGroups } from '@/contexts/GroupsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { contactService } from '@/services/contactService';
 import { isInIleDeFrance } from '@/utils';
-import { inviteContact } from '@/services/shareService';
+import { inviteContactViaSms, inviteContact } from '@/services/shareService';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -205,6 +205,8 @@ const AddressInput = ({
         address: 'Invite to Voilà',
         type: 'contact',
         isRegistered: false,
+        phoneNumber: contact.phoneNumbers?.[0]?.number || null,
+        phoneNumberNormalized: contact.phoneNumbers?.[0]?.normalized || null,
       }));
 
       return [...formattedRegistered, ...formattedUnregistered].slice(0, 10);
@@ -332,7 +334,12 @@ const AddressInput = ({
   const handleInvite = async (contactItem) => {
     try {
       const firstName = (contactItem?.display_name || '').split(' ')[0] || '';
-      await inviteContact(firstName);
+      const phone = contactItem?.phoneNumberNormalized || contactItem?.phoneNumber || null;
+      if (phone) {
+        await inviteContactViaSms(phone, firstName);
+      } else {
+        await inviteContact(firstName);
+      }
     } catch (e) {
       console.error('Invite failed:', e);
     }
