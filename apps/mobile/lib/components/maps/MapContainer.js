@@ -203,7 +203,7 @@ const MapContainer = memo((props = {}) => {
     onBoundsChange = null,
     style = {},
     onMapReady,
-    enableRouteAnimation = true,
+    enableRouteAnimation = false,
     routeAnimationDuration = 2000,
     routeAnimationDelay = 500
   } = props;
@@ -297,9 +297,8 @@ const MapContainer = memo((props = {}) => {
     };
   }, [routes.length, mapReady, enableRouteAnimation, routeAnimationDuration, routeAnimationDelay]);
 
-  // Optimized auto-fit effect with debouncing
   useEffect(() => {
-    if (!mapRef.current || !mapReady || markers.length === 0 || isAnimating) return;
+    if (!mapRef.current || !mapReady || markers.length === 0 || isAnimating || animateToResults) return;
 
     const allCoordinates = markers
       .filter(marker => marker.position?.length >= 2)
@@ -310,72 +309,58 @@ const MapContainer = memo((props = {}) => {
 
     if (allCoordinates.length === 0) return;
 
-    setIsAnimating(true);
-    
-    const timeoutId = setTimeout(() => {
-      if (!mapRef.current) return;
-
-      try {
-        if (allCoordinates.length === 1) {
-          mapRef.current.animateToRegion({
-            ...allCoordinates[0],
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          }, 1000);
-        } else {
-          mapRef.current.fitToCoordinates(allCoordinates, {
-            edgePadding: EDGE_PADDING,
-            animated: true,
-          });
-        }
-        
-        setTimeout(() => setIsAnimating(false), 1000);
-      } catch (error) {
-        console.warn('Map animation failed:', error);
-        setIsAnimating(false);
+    try {
+      setIsAnimating(true);
+      if (allCoordinates.length === 1) {
+        mapRef.current.animateToRegion({
+          ...allCoordinates[0],
+          latitudeDelta: 0.012,
+          longitudeDelta: 0.012,
+        }, 600);
+      } else {
+        mapRef.current.fitToCoordinates(allCoordinates, {
+          edgePadding: EDGE_PADDING,
+          animated: true,
+        });
       }
-    }, 500);
+      setTimeout(() => setIsAnimating(false), 600);
+    } catch (error) {
+      console.warn('Map animation failed:', error);
+      setIsAnimating(false);
+    }
+  }, [markers.length, mapReady, animateToResults]);
 
-    return () => clearTimeout(timeoutId);
-  }, [markers.length, mapReady]); // Only depend on length to avoid excessive recalculation
 
-  // Optimized meeting point animation effect
   useEffect(() => {
     if (!mapRef.current || !mapReady || !animateToResults || 
         !meetingPoint?.coordinates || isAnimating) return;
 
-    setIsAnimating(true);
-    
-    const timeoutId = setTimeout(() => {
-      if (!mapRef.current) return;
+    try {
+      setIsAnimating(true);
 
-      try {
-        let latitudeDelta = 0.01;
-        let longitudeDelta = 0.01;
-        
-        if (meetingZoneRadius > 1000) {
-          latitudeDelta = 0.02;
-          longitudeDelta = 0.02;
-        } else if (meetingZoneRadius > 500) {
-          latitudeDelta = 0.015;
-          longitudeDelta = 0.015;
-        }
-
-        mapRef.current.animateToRegion({
-          latitude: meetingPoint.coordinates[1],
-          longitude: meetingPoint.coordinates[0],
-          latitudeDelta,
-          longitudeDelta,
-        }, 1500);
-        
-        setTimeout(() => setIsAnimating(false), 1500);
-      } catch (error) {
-        console.warn('Meeting point animation failed:', error);
-        setIsAnimating(false);
+      let latitudeDelta = 0.012;
+      let longitudeDelta = 0.012;
+      
+      if (meetingZoneRadius > 1000) {
+        latitudeDelta = 0.02;
+        longitudeDelta = 0.02;
+      } else if (meetingZoneRadius > 500) {
+        latitudeDelta = 0.016;
+        longitudeDelta = 0.016;
       }
-    }, 500);
 
-    return () => clearTimeout(timeoutId);
+      mapRef.current.animateToRegion({
+        latitude: meetingPoint.coordinates[1],
+        longitude: meetingPoint.coordinates[0],
+        latitudeDelta,
+        longitudeDelta,
+      }, 800);
+      
+      setTimeout(() => setIsAnimating(false), 800);
+    } catch (error) {
+      console.warn('Meeting point animation failed:', error);
+      setIsAnimating(false);
+    }
   }, [animateToResults, meetingPoint?.coordinates?.[0], meetingPoint?.coordinates?.[1], meetingZoneRadius, mapReady]);
 
   // Memoized markers rendering
