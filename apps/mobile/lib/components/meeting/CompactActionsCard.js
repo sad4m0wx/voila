@@ -11,7 +11,8 @@ const CompactActionsCard = ({
   onStartNewSearch, 
   onCreateGroup, 
   addresses,
-  mode = 'main' // 'main' or 'group'
+  mode = 'main',
+  attending = false 
 }) => {
   const [isSharing, setIsSharing] = useState(false);
 
@@ -171,6 +172,17 @@ const CompactActionsCard = ({
 
   return (
     <View style={styles.container}>
+      {/* Meeting Point Name */}
+      <Text
+        style={styles.meetAtText}
+        numberOfLines={mode === 'group' && !attending ? 3 : 2}
+      >
+        {meetingPoint?.name
+          ? mode === 'group' && !attending
+            ? `Your friends are meeting around ${meetingPoint.name}\n...for now`
+            : `Let's meet around ${meetingPoint.name}!`
+          : ''}
+      </Text>
       {/* Travel Time Stats - Remove header section since new search button moved */}
       <View style={styles.statsHeader}>
         <View style={styles.statsContent}>
@@ -252,12 +264,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent', // Remove white background
     borderRadius: 0, // Remove border radius
     padding: 16,
+    paddingBottom: 0,
     shadowColor: 'transparent', // Remove shadow
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0,
     shadowRadius: 0,
     elevation: 0, // Remove elevation
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  meetAtText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 10,
   },
   spacer: {
     flex: 1,

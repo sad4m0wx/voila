@@ -486,6 +486,7 @@ export default function GroupScreen() {
                             currentMeetingPointIndex={currentMeetingPointIndex}
                             setCurrentMeetingPointIndex={setCurrentMeetingPointIndex}
                             mode="group"
+                            attending={currentGroupMembers.find(m => m.is_me)?.attendance?.isAttending || false}
                             addresses={attendeeAddresses}
                         />
                     )}
@@ -530,7 +531,7 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     attendeesButton: {
-        marginBottom: 16,
+        marginBottom: 10,
     },
     attendeesButtonContent: {
         flexDirection: 'row',
@@ -542,7 +543,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#f3f4f6',
     },
     attendeesButtonText: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '600',
         color: '#111827',
         marginLeft: 8,

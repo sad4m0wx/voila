@@ -22,6 +22,7 @@ const MeetingPointResults = ({
   onStartNewSearch,
   onCreateGroup,
   mode = 'main',
+  attending = false,
   addresses = []
 }) => {
   if (!meetingPoint) return null;
@@ -42,6 +43,7 @@ const MeetingPointResults = ({
             onCreateGroup={mode === 'main' ? onCreateGroup : null}
             addresses={addresses}
             mode={mode}
+            attending={attending}
           />
 
           <RouteDetailsToggle
