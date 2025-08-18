@@ -267,9 +267,10 @@ export default function HomeScreen() {
   // Create map markers for all locations
   const createMapMarkers = () => {
     const markers = [];
+    let count = 0;
 
     // Add markers for addresses (including friends)
-    addresses.forEach((address, index) => {
+    addresses.forEach((address) => {
       let coordinates = null;
       let title = null;
 
@@ -285,11 +286,12 @@ export default function HomeScreen() {
       }
 
       if (coordinates) {
+        count += 1;
         markers.push({
           position: coordinates,
           title: title,
           type: 'location',
-          number: index + 1
+          number: count
         });
       }
     });
@@ -305,8 +307,11 @@ export default function HomeScreen() {
     }
 
     // Add markers for venues
-    if (venues && venues.length > 0) {
-      venues.forEach((venue, i) => {
+    if (showVenues && venues && venues.length > 0) {
+      const maxVenues = 50;
+      let added = 0;
+      for (let i = 0; i < venues.length && added < maxVenues; i++) {
+        const venue = venues[i];
         if (venue && venue.location) {
           markers.push({
             position: venue.location,
@@ -314,8 +319,9 @@ export default function HomeScreen() {
             type: 'venue',
             info: `${venue.name || `Venue ${i + 1}`}\n${venue.address || ''}`
           });
+          added += 1;
         }
-      });
+      }
     }
 
     return markers;

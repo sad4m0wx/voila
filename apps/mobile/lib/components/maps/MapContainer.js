@@ -55,15 +55,23 @@ const OptimizedMarker = memo(({ marker, index, getMarkerColor, getMarkerIcon }) 
     [marker.type, getMarkerIcon]
   );
 
+  // Ensure vector icons render once, then stop tracking for performance
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  useEffect(() => {
+    setTracksViewChanges(true);
+    const t = setTimeout(() => setTracksViewChanges(false), 300);
+    return () => clearTimeout(t);
+  }, [marker.number, markerIcon]);
+
   return (
     <Marker
       key={`marker-${marker.type}-${index}-${marker.position[0]}-${marker.position[1]}`}
       coordinate={coordinate}
       title={marker.title}
       description={marker.info}
-      tracksViewChanges={false} 
+      tracksViewChanges={tracksViewChanges}
     >
-      <View style={[styles.customMarker, { backgroundColor: markerColor }]}>
+      <View style={[styles.customMarker, { backgroundColor: markerColor }]} renderToHardwareTextureAndroid shouldRasterizeIOS>
         <MaterialIcons name={markerIcon} size={16} color="white" />
         {marker.number && (
           <View style={styles.markerNumber}>
@@ -76,6 +84,15 @@ const OptimizedMarker = memo(({ marker, index, getMarkerColor, getMarkerIcon }) 
 });
 
 const Route = memo(({ route, routeIndex, animationProgress, enableRouteAnimation, getStepColor }) => {
+  // Simple downsampling to limit polyline points for performance
+  const downsampleCoordinates = useCallback((coords, maxPoints = 300) => {
+    if (!Array.isArray(coords) || coords.length <= maxPoints) return coords;
+    const step = Math.ceil(coords.length / maxPoints);
+    const reduced = [];
+    for (let i = 0; i < coords.length; i += step) reduced.push(coords[i]);
+    if (reduced[reduced.length - 1] !== coords[coords.length - 1]) reduced.push(coords[coords.length - 1]);
+    return reduced;
+  }, []);
   const renderRoutePolylines = useMemo(() => {
     if (!route) return [];
 
@@ -89,10 +106,11 @@ const Route = memo(({ route, routeIndex, animationProgress, enableRouteAnimation
         const step = route.steps[stepIndex];
         if (!step.geometry?.coordinates?.length || step.geometry.coordinates.length < 2) continue;
         
-        const allCoordinates = step.geometry.coordinates
+        const allCoordinatesRaw = step.geometry.coordinates
           .filter(coord => Array.isArray(coord) && coord.length >= 2 && 
                           !isNaN(coord[0]) && !isNaN(coord[1]))
-          .map(coord => ({ latitude: coord[1], longitude: coord[0] }));
+        const allCoordinatesSampled = downsampleCoordinates(allCoordinatesRaw);
+        const allCoordinates = allCoordinatesSampled.map(coord => ({ latitude: coord[1], longitude: coord[0] }));
         
         if (allCoordinates.length < 2) continue;
 
@@ -132,6 +150,7 @@ const Route = memo(({ route, routeIndex, animationProgress, enableRouteAnimation
             <Polyline
               key={`route-${routeIndex}-step-${stepIndex}`}
               coordinates={coordinates}
+              strokeColor={getStepColor(step, route.color)}
               strokeColors={[getStepColor(step, route.color)]}
               strokeWidth={6}
               geodesic={true}
@@ -143,10 +162,11 @@ const Route = memo(({ route, routeIndex, animationProgress, enableRouteAnimation
     } 
     // Fallback to geometry if no steps
     else if (route.geometry?.coordinates?.length >= 2) {
-      const allCoordinates = route.geometry.coordinates
+      const allCoordinatesRaw = route.geometry.coordinates
         .filter(coord => Array.isArray(coord) && coord.length >= 2 && 
                         !isNaN(coord[0]) && !isNaN(coord[1]))
-        .map(coord => ({ latitude: coord[1], longitude: coord[0] }));
+      const allCoordinatesSampled = downsampleCoordinates(allCoordinatesRaw);
+      const allCoordinates = allCoordinatesSampled.map(coord => ({ latitude: coord[1], longitude: coord[0] }));
       
       if (allCoordinates.length >= 2) {
         let coordinates = [];
@@ -175,6 +195,7 @@ const Route = memo(({ route, routeIndex, animationProgress, enableRouteAnimation
               key={`route-main-${routeIndex}`}
               coordinates={coordinates}
               strokeColor={route.color || '#3b82f6'}
+              strokeColors={[route.color || '#3b82f6']}
               strokeWidth={6}
               geodesic={true}
               tappable={false}
@@ -185,7 +206,7 @@ const Route = memo(({ route, routeIndex, animationProgress, enableRouteAnimation
     }
     
     return polylines;
-  }, [route, routeIndex, animationProgress, enableRouteAnimation, getStepColor]);
+  }, [route, routeIndex, animationProgress, enableRouteAnimation, getStepColor, downsampleCoordinates]);
 
   return <>{renderRoutePolylines}</>;
 });
@@ -458,6 +479,7 @@ const MapContainer = memo((props = {}) => {
         loadingEnabled={true}
         loadingIndicatorColor="#3b82f6"
         loadingBackgroundColor="#f3f4f6"
+        cacheEnabled={Platform.OS === 'ios'}
         showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -495,10 +517,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'white',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2.5,
+    elevation: 2,
+    // Hint to rasterize for perf
+    shouldRasterizeIOS: true,
+    renderToHardwareTextureAndroid: true,
   },
   markerNumber: {
     position: 'absolute',

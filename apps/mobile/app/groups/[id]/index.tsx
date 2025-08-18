@@ -23,8 +23,6 @@ import { useMeetingPoint } from '@/contexts/MeetingPointContext';
 import { useGroupMembers } from '@/contexts/GroupMembersContext';
 import { useGroupAttendance } from '@/contexts/GroupAttendanceContext';
 import groupsService from '@/services/groupsService';
-import RouteDetailsToggle from '@/components/meeting/RouteDetailsToggle';
-import CompactActionsCard from '@/components/meeting/CompactActionsCard';
 import MeetingPointResults from '@/components/meeting/MeetingPointResults';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -104,15 +102,16 @@ function MapDisplay({ meetingPoint, routes, attendeeAddresses, currentGroup, onB
     // Create markers for the map
     const createMarkers = useCallback(() => {
         const allMarkers = [];
+        let count = 0;
 
         // Add attendee markers
-        attendeeAddresses.forEach((addr, index) => {
+        attendeeAddresses.forEach((addr) => {
             if (addr && addr.lat && addr.lng && typeof addr.lat === 'number' && typeof addr.lng === 'number') {
                 const marker = {
                     position: [addr.lng, addr.lat],
-                    title: addr.name || `Attendee ${index + 1}`,
+                    title: addr.name || `Attendee ${count + 1}`,
                     type: 'location',
-                    number: index + 1
+                    number: (count += 1)
                 };
                 allMarkers.push(marker);
             }
