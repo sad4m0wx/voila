@@ -24,11 +24,11 @@ pub struct PointOfInterest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PoiType {
-    TransitHub,      // Metro stations, bus terminals, train stations
-    Venue,      // Restaurants, cafes, bars
-    Shopping,        // Malls, markets, shops
-    Entertainment,   // Cinemas, theaters, parks
-    PublicSpace,     // Squares, plazas, landmarks
+    TransitHub,      // Metro/train stations
+    Neighborhood,    // place=neighbourhood|quarter|suburb|district|borough
+    PublicSpace,     // Deprecated for snapping
+    Street,          // Important streets/avenues (center point of ways)
+    Venue,           // Restaurants, cafes, bars (kept for heatmap only)
     Other(String),
 }
 
@@ -37,9 +37,9 @@ impl PoiType {
         match self {
             PoiType::TransitHub => 0.8,      // Highest priority - excellent for meetings
             PoiType::Venue => 0.8,      // Good meeting spots
-            PoiType::PublicSpace => 0.6,     // Public squares, landmarks
-            PoiType::Shopping => 0.6,        // Malls, markets
-            PoiType::Entertainment => 0.6,   // Parks, cinemas
+            PoiType::Neighborhood => 0.7,
+            PoiType::PublicSpace => 0.6,
+            PoiType::Street => 0.6,          // Streets less ideal than plazas
             PoiType::Other(_) => 0.5,        // Default weight
         }
     }
@@ -66,7 +66,12 @@ impl PoiService {
         let cache_service = CacheService::global().await;
         let heatmap = cache_service.get_cached_heatmap().await;
 
-        Self { client, overpass_url, cache_service, heatmap: Arc::new(Mutex::new(heatmap)) }
+        Self {
+            client,
+            overpass_url,
+            cache_service,
+            heatmap: Arc::new(Mutex::new(heatmap)),
+        }
     }
 
     pub async fn get_pois_in_polygons(&self, polygons: &[Polygon<f64>]) -> Result<Vec<PointOfInterest>> {
@@ -140,6 +145,25 @@ impl PoiService {
         self.execute_overpass_query(&query, PoiType::TransitHub).await
     }
 
+    async fn fetch_transit_hubs_metro_only(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
+        let query = format!(
+            r#"
+            [out:json][timeout:25];
+            (
+              node["railway"="station"]({},{},{},{});
+              node["public_transport"="station"]({},{},{},{});
+              node["railway"="subway_entrance"]({},{},{},{});
+            );
+            out geom;
+            "#,
+            bbox.south, bbox.west, bbox.north, bbox.east,
+            bbox.south, bbox.west, bbox.north, bbox.east,
+            bbox.south, bbox.west, bbox.north, bbox.east,
+        );
+
+        self.execute_overpass_query(&query, PoiType::TransitHub).await
+    }
+
     async fn fetch_venues(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
         let query = format!(
             r#"
@@ -184,6 +208,38 @@ impl PoiService {
         self.execute_overpass_query(&query, PoiType::PublicSpace).await
     }
 
+    async fn fetch_neighborhoods(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
+        let query = format!(
+            r#"
+            [out:json][timeout:25];
+            (
+              node["place"~"neighbourhood|quarter|suburb|district|borough"]["name"]({},{},{},{});
+              way["place"~"neighbourhood|quarter|suburb|district|borough"]["name"]({},{},{},{});
+            );
+            out center geom;
+            "#,
+            bbox.south, bbox.west, bbox.north, bbox.east,
+            bbox.south, bbox.west, bbox.north, bbox.east,
+        );
+
+        self.execute_overpass_query(&query, PoiType::Neighborhood).await
+    }
+
+    async fn fetch_important_streets(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
+        let query = format!(
+            r#"
+            [out:json][timeout:25];
+            (
+              way["highway"~"trunk|primary|secondary|tertiary"]["name"]({},{},{},{});
+            );
+            out geom;
+            "#,
+            bbox.south, bbox.west, bbox.north, bbox.east,
+        );
+
+        self.execute_overpass_query(&query, PoiType::Street).await
+    }
+
     async fn execute_overpass_query(&self, query: &str, poi_type: PoiType) -> Result<Vec<PointOfInterest>> {
         debug!("Executing Overpass query for {:?}", poi_type);
         let start_time = Instant::now();
@@ -216,9 +272,12 @@ impl PoiService {
         let (lat, lon) = match element.element_type.as_str() {
             "node" => (element.lat?, element.lon?),
             "way" => {
-                // Use center coordinates for ways
                 if let Some(center) = element.center {
                     (center.lat, center.lon)
+                } else if let Some(ref geom) = element.geometry {
+                    if geom.is_empty() { return None; }
+                    let mid = geom.len() / 2;
+                    (geom[mid].lat, geom[mid].lon)
                 } else {
                     return None;
                 }
@@ -232,6 +291,8 @@ impl PoiService {
             .cloned()
             .unwrap_or_else(|| format!("Unnamed {}", match poi_type {
                 PoiType::TransitHub => "Transit Hub",
+                PoiType::Neighborhood => "Neighborhood",
+                PoiType::Street => "Street",
                 PoiType::Venue => "Venue",
                 PoiType::PublicSpace => "Public Space",
                 _ => "Location",
@@ -366,25 +427,63 @@ impl PoiService {
 
     fn calculate_poi_importance(&self, tags: &std::collections::HashMap<String, String>, poi_type: &PoiType) -> f64 {
         let mut importance = poi_type.importance_weight();
-                
-        if let Some(railway) = tags.get("railway") {
-            match railway.as_str() {
-                "station" => importance += 0.2,
-                "subway_entrance" => importance += 0.15,
-                _ => {}
+
+        match poi_type {
+            // Keep transit simple: stations slightly above entrances, no tourist signals
+            PoiType::TransitHub => {
+                if let Some(railway) = tags.get("railway") {
+                    match railway.as_str() {
+                        "station" => importance += 0.15,
+                        "subway_entrance" => importance += 0.05,
+                        _ => {}
+                    }
+                }
+                if let Some(public_transport) = tags.get("public_transport") {
+                    if public_transport == "station" { importance += 0.10; }
+                }
             }
-        }
-        
-        if let Some(public_transport) = tags.get("public_transport") {
-            match public_transport.as_str() {
-                "station" => importance += 0.2,
-                "stop_position" => importance += 0.1,
-                _ => {}
+            // Larger administrative places weigh more than tiny neighbourhoods
+            PoiType::Neighborhood => {
+                if let Some(place) = tags.get("place") {
+                    importance += match place.as_str() {
+                        "district" | "borough" => 0.20,
+                        "suburb" => 0.15,
+                        "quarter" => 0.10,
+                        "neighbourhood" => 0.05,
+                        _ => 0.0,
+                    };
+                }
             }
+            // Prefer classic civic spaces; avoid tourist/heritage signals entirely
+            PoiType::PublicSpace => {
+                if tags.get("place").map(|v| v == "square").unwrap_or(false) { importance += 0.15; }
+                if let Some(amenity) = tags.get("amenity") {
+                    if amenity == "marketplace" { importance += 0.15; }
+                    if amenity == "townhall" { importance += 0.05; }
+                }
+            }
+            // Streets: rank by highway class and common major-street names
+            PoiType::Street => {
+                if let Some(highway) = tags.get("highway") {
+                    importance += match highway.as_str() {
+                        "trunk" => 0.40,
+                        "primary" => 0.30,
+                        "secondary" => 0.15,
+                        "tertiary" => 0.08,
+                        _ => 0.0,
+                    };
+                }
+                if let Some(name) = tags.get("name") {
+                    let n = name.to_lowercase();
+                    if n.contains("avenue") || n.contains("boulevard") || n.contains("bd ") || n.starts_with("bd") || n.contains("quai") {
+                        importance += 0.1;
+                    }
+                }
+            }
+            _ => {}
         }
-        
-        // Cap importance at 1.0
-        importance.min(1.0)
+
+        importance.clamp(0.0, 1.0)
     }
 
     fn calculate_bounding_box(&self, polygons: &[Polygon<f64>]) -> BoundingBox {
@@ -634,6 +733,77 @@ impl PoiService {
         
         final_heat.clamp(0.0, 1.0)
     }
+
+    pub async fn find_nearest_snap_poi(&self, location: &Location, search_radius_meters: f64) -> Result<Option<PointOfInterest>> {
+        
+        // Convert meters to degrees (approximation)
+        let lat_radius_deg = search_radius_meters / 111_000.0;
+        let lon_radius_deg = search_radius_meters / (111_000.0 * location.latitude.to_radians().cos().abs().max(0.1));
+
+        let bbox = BoundingBox {
+            north: location.latitude + lat_radius_deg,
+            south: location.latitude - lat_radius_deg,
+            east: location.longitude + lon_radius_deg,
+            west: location.longitude - lon_radius_deg,
+        };
+
+        let (transit_res, neighborhoods_res, streets_res) = tokio::join!(
+            self.fetch_transit_hubs_metro_only(&bbox),
+            self.fetch_neighborhoods(&bbox),
+            self.fetch_important_streets(&bbox),
+        );
+
+        let mut candidates: Vec<PointOfInterest> = [
+            transit_res,
+            neighborhoods_res,
+            streets_res,
+        ]
+        .into_iter()
+        .filter_map(Result::ok)
+        .flatten()
+        .collect();
+
+        // If no candidates found, relax transit filter to include bus stops and re-fetch streets
+        if candidates.is_empty() {
+            let (transit_relaxed, streets_relaxed) = tokio::join!(
+                self.fetch_transit_hubs(&bbox),
+                self.fetch_important_streets(&bbox)
+            );
+            if let Ok(mut v) = transit_relaxed { candidates.append(&mut v); }
+            if let Ok(mut v) = streets_relaxed { candidates.append(&mut v); }
+        }
+
+        let mut filtered: Vec<(PointOfInterest, f64, u8)> = candidates
+            .into_iter()
+            .map(|poi| {
+                let distance = location.distance_to(&poi.location);
+                let priority = match poi.poi_type {
+                    PoiType::TransitHub => 0,
+                    PoiType::Street => 1,
+                    PoiType::Neighborhood => 2,
+                    _ => 3,
+                };
+                (poi, distance, priority)
+            })
+            .filter(|(_, distance, _)| *distance <= search_radius_meters)
+            .collect();
+
+        if filtered.is_empty() {
+            return Ok(None);
+        }
+
+        filtered.sort_by(|a, b| {
+            a.2.cmp(&b.2)
+                .then_with(|| b.0.importance.partial_cmp(&a.0.importance).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        if let Some((poi, _, _)) = filtered.into_iter().next() {
+            return Ok(Some(poi));
+        }
+        
+        Ok(None)
+    }
 }
 
 #[derive(Debug)]
@@ -657,6 +827,8 @@ struct OverpassElement {
     lat: Option<f64>,
     lon: Option<f64>,
     center: Option<OverpassCenter>,
+    #[serde(default)]
+    geometry: Option<Vec<OverpassCenter>>, 
     tags: std::collections::HashMap<String, String>,
 }
 

@@ -87,29 +87,71 @@ impl MeetingPointAlgorithm {
         let mut routes_per_point = Vec::new();
         
         for (i, ((optimal_point, routes), durations)) in optimal_points.iter().zip(all_routes.iter()).zip(all_durations.iter()).enumerate() {
+
+            const SNAP_RADIUS_METERS: f64 = 500.0;
+            let snapped_poi = self.poi_service
+                .find_nearest_snap_poi(optimal_point, SNAP_RADIUS_METERS)
+                .await
+                .unwrap_or(None);
+
+            let (mp_name, mp_coords, target_location) = if let Some(poi) = snapped_poi {
+                (
+                    match poi.poi_type {
+                        crate::services::poi_service::PoiType::TransitHub => format!("Métro {}", poi.name),
+                        crate::services::poi_service::PoiType::Street => format!("{}", poi.name),
+                        crate::services::poi_service::PoiType::Neighborhood => format!("Quartier {}", poi.name),
+                        _ => poi.name.clone(),
+                    },
+                    (poi.location.longitude, poi.location.latitude),
+                    Location::new(poi.location.latitude, poi.location.longitude),
+                )
+            } else {
+                (
+                    if i == 0 { "Optimal Meeting Point".to_string() } else { format!("Alternative Meeting Point {}", i + 1) },
+                    (optimal_point.longitude, optimal_point.latitude),
+                    optimal_point.clone(),
+                )
+            };
+
+            // Recompute routes to the final snapped target to ensure consistency
+            let route_results_recomputed = self.route_service.get_transit_routes(locations, &target_location).await;
+            let mut routes_for_point = Vec::new();
+            let mut durations_for_point = Vec::new();
+            for (route_result, (_id, _)) in route_results_recomputed.iter().zip(locations.iter()) {
+                if let Ok((duration, _distance, steps)) = route_result {
+                    routes_for_point.push(Route {
+                        geometry: LineString::new(vec![]),
+                        steps: steps.clone(),
+                    });
+                    durations_for_point.push(duration.as_secs() as u32);
+                } else {
+                    routes_for_point.push(Route {
+                        geometry: LineString::new(vec![]),
+                        steps: vec![],
+                    });
+                    durations_for_point.push(0);
+                }
+            }
+
             let meeting_point = MeetingPoint {
-                name: if i == 0 { 
-                    "Optimal Meeting Point".to_string() 
-                } else { 
-                    format!("Alternative Meeting Point {}", i + 1) 
-                },
-                coordinates: (optimal_point.longitude, optimal_point.latitude),
-                travel_times: routes.iter().zip(locations.iter()).zip(durations.iter()).map(|((route, (id, location)), &duration)| {
+                name: mp_name,
+                coordinates: mp_coords,
+                travel_times: routes_for_point.iter().zip(locations.iter()).zip(durations_for_point.iter()).map(|((route, (id, location)), &duration)| {
                     TravelTime {
                         id: id.clone(),
                         address: location.address.clone().unwrap_or_else(|| 
                             format!("{:.4}, {:.4}", location.latitude, location.longitude)
                         ),
-                        duration: duration / 60, // Convert seconds to minutes
+                        duration: if duration > 0 { duration / 60 } else { 0 }, // Convert seconds to minutes
                         distance: route.steps.iter().map(|step| step.distance).sum(),
-                        estimated: false,
+                        estimated: duration == 0,
                         transit_summary: None,
                     }
                 }).collect(),
             };
             
             meeting_points.push(meeting_point);
-            routes_per_point.push(routes.clone());
+            routes_per_point.push(routes_for_point);
         }
         
         // Step 7: Prepare debug data
@@ -165,9 +207,50 @@ impl MeetingPointAlgorithm {
             }
         }
         
+        // Snap centroid to nearest POI if available
+        const SNAP_RADIUS_METERS: f64 = 300.0;
+        let snapped_poi = self.poi_service
+            .find_nearest_snap_poi(center, SNAP_RADIUS_METERS)
+            .await
+            .unwrap_or(None);
+
+        let (mp_name, mp_coords) = if let Some(ref poi) = snapped_poi {
+            (
+                match poi.poi_type {
+                    crate::services::poi_service::PoiType::TransitHub => format!("Metro: {}", poi.name),
+                    crate::services::poi_service::PoiType::Street => format!("Street: {}", poi.name),
+                    crate::services::poi_service::PoiType::Neighborhood => format!("Neighborhood: {}", poi.name),
+                    _ => poi.name.clone(),
+                },
+                (poi.location.longitude, poi.location.latitude)
+            )
+        } else {
+            ("Centroid Meeting Point".to_string(), (center.longitude, center.latitude))
+        };
+
+        // Recompute routes to snapped centroid target if snapped
+        let target_location = if let Some(ref poi) = snapped_poi {
+            Location::new(poi.location.latitude, poi.location.longitude)
+        } else {
+            center.clone()
+        };
+
+        let recomputed = self.route_service.get_transit_routes(locations, &target_location).await;
+        let mut routes = Vec::new();
+        let mut durations = Vec::new();
+        for (route_result, (_id, _)) in recomputed.iter().zip(locations.iter()) {
+            if let Ok((duration, _distance, steps)) = route_result {
+                routes.push(Route { geometry: LineString::new(vec![]), steps: steps.clone() });
+                durations.push(duration.as_secs() as u32);
+            } else {
+                routes.push(Route { geometry: LineString::new(vec![]), steps: vec![] });
+                durations.push(0);
+            }
+        }
+
         let meeting_point = MeetingPoint {
-            name: "Centroid Meeting Point".to_string(),
-            coordinates: (center.longitude, center.latitude),
+            name: mp_name,
+            coordinates: mp_coords,
             travel_times: routes.iter().zip(locations.iter()).zip(durations.iter()).map(|((route, (id, location)), &duration)| {
                 TravelTime {
                     id: id.clone(),
