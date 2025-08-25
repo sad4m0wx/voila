@@ -3,11 +3,13 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::{Duration, Instant};
-use log::{info, debug};
+use log::{info, debug, warn};
 use geo::{Point, Contains, Polygon};
 use std::sync::Arc;
 use chrono;
 use crate::services::cache_service::CacheService;
+use futures::stream::{self, StreamExt};
+use tokio::time::sleep;
 use std::sync::Mutex;
 
 use crate::models::{Location, CityHeatmap, HeatmapBoundingBox};
@@ -51,6 +53,7 @@ pub struct PoiService {
     overpass_url: String,
     cache_service: Arc<CacheService>,
     heatmap: Arc<Mutex<Option<CityHeatmap>>>,
+    tile_size_deg: f64,
 }
 
 impl PoiService {
@@ -65,12 +68,14 @@ impl PoiService {
 
         let cache_service = CacheService::global().await;
         let heatmap = cache_service.get_cached_heatmap().await;
+        let tile_size_deg = 0.03;
 
         Self {
             client,
             overpass_url,
             cache_service,
             heatmap: Arc::new(Mutex::new(heatmap)),
+            tile_size_deg,
         }
     }
 
@@ -99,14 +104,16 @@ impl PoiService {
         }
         
         let mut all_pois = Vec::new();
+
+        let (transit_pois, venue_pois, public_space_pois) = tokio::join!(
+            self.fetch_transit_hubs(&bbox),
+            self.fetch_venues(&bbox),
+            self.fetch_public_spaces(&bbox),
+        );
         
-        let transit_pois = self.fetch_transit_hubs(&bbox).await?;
-        let venue_pois = self.fetch_venues(&bbox).await?;
-        let public_space_pois = self.fetch_public_spaces(&bbox).await?;
-        
-        all_pois.extend(transit_pois);
-        all_pois.extend(venue_pois);
-        all_pois.extend(public_space_pois);
+        all_pois.extend(transit_pois?);
+        all_pois.extend(venue_pois?);
+        all_pois.extend(public_space_pois?);
         
         // Filter POIs to only include those within intersection polygons
         let filtered_pois: Vec<PointOfInterest> = all_pois
@@ -123,121 +130,27 @@ impl PoiService {
     }
 
     async fn fetch_transit_hubs(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
-        let query = format!(
-            r#"
-            [out:json][timeout:25];
-            (
-              node["railway"="station"]({},{},{},{});
-              node["public_transport"="station"]({},{},{},{});
-              node["amenity"="bus_station"]({},{},{},{});
-              node["highway"="bus_stop"]({},{},{},{});
-              node["railway"="subway_entrance"]({},{},{},{});
-            );
-            out geom;
-            "#,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-        );
-
-        self.execute_overpass_query(&query, PoiType::TransitHub).await
+        self.execute_overpass_tiled(PoiQueryCategory::TransitAll, bbox).await
     }
 
     async fn fetch_transit_hubs_metro_only(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
-        let query = format!(
-            r#"
-            [out:json][timeout:25];
-            (
-              node["railway"="station"]({},{},{},{});
-              node["public_transport"="station"]({},{},{},{});
-              node["railway"="subway_entrance"]({},{},{},{});
-            );
-            out geom;
-            "#,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-        );
-
-        self.execute_overpass_query(&query, PoiType::TransitHub).await
+        self.execute_overpass_tiled(PoiQueryCategory::TransitMetroOnly, bbox).await
     }
 
     async fn fetch_venues(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
-        let query = format!(
-            r#"
-            [out:json][timeout:25];
-            (
-              node["amenity"="restaurant"]({},{},{},{});
-              node["amenity"="cafe"]({},{},{},{});
-              node["amenity"="bar"]({},{},{},{});
-              node["amenity"="pub"]({},{},{},{});
-            );
-            out geom;
-            "#,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-        );
-
-        self.execute_overpass_query(&query, PoiType::Venue).await
+        self.execute_overpass_tiled(PoiQueryCategory::Venues, bbox).await
     }
 
     async fn fetch_public_spaces(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
-        let query = format!(
-            r#"
-            [out:json][timeout:25];
-            (
-              node["leisure"="park"]({},{},{},{});
-              node["place"="square"]({},{},{},{});
-              node["tourism"="attraction"]({},{},{},{});
-              way["leisure"="park"]({},{},{},{});
-              way["place"="square"]({},{},{},{});
-            );
-            out center geom;
-            "#,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-        );
-
-        self.execute_overpass_query(&query, PoiType::PublicSpace).await
+        self.execute_overpass_tiled(PoiQueryCategory::PublicSpaces, bbox).await
     }
 
     async fn fetch_neighborhoods(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
-        let query = format!(
-            r#"
-            [out:json][timeout:25];
-            (
-              node["place"~"neighbourhood|quarter|suburb|district|borough"]["name"]({},{},{},{});
-              way["place"~"neighbourhood|quarter|suburb|district|borough"]["name"]({},{},{},{});
-            );
-            out center geom;
-            "#,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-        );
-
-        self.execute_overpass_query(&query, PoiType::Neighborhood).await
+        self.execute_overpass_tiled(PoiQueryCategory::Neighborhoods, bbox).await
     }
 
     async fn fetch_important_streets(&self, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
-        let query = format!(
-            r#"
-            [out:json][timeout:25];
-            (
-              way["highway"~"trunk|primary|secondary|tertiary"]["name"]({},{},{},{});
-            );
-            out geom;
-            "#,
-            bbox.south, bbox.west, bbox.north, bbox.east,
-        );
-
-        self.execute_overpass_query(&query, PoiType::Street).await
+        self.execute_overpass_tiled(PoiQueryCategory::Streets, bbox).await
     }
 
     async fn execute_overpass_query(&self, query: &str, poi_type: PoiType) -> Result<Vec<PointOfInterest>> {
@@ -266,6 +179,210 @@ impl PoiService {
         let elapsed_time = start_time.elapsed();
         info!("Converted {} elements to POIs for {:?} in {:?}", pois.len(), poi_type, elapsed_time);
         Ok(pois)
+    }
+
+    // =======================
+    // Tiled executor and helpers
+    // =======================
+
+    fn category_str(&self, category: &PoiQueryCategory) -> &'static str {
+        match category {
+            PoiQueryCategory::TransitAll => "transit_all",
+            PoiQueryCategory::TransitMetroOnly => "transit_metro",
+            PoiQueryCategory::Venues => "venues",
+            PoiQueryCategory::PublicSpaces => "public_spaces",
+            PoiQueryCategory::Neighborhoods => "neighborhoods",
+            PoiQueryCategory::Streets => "streets",
+        }
+    }
+
+    fn poi_type_for_category(&self, category: &PoiQueryCategory) -> PoiType {
+        match category {
+            PoiQueryCategory::TransitAll | PoiQueryCategory::TransitMetroOnly => PoiType::TransitHub,
+            PoiQueryCategory::Venues => PoiType::Venue,
+            PoiQueryCategory::PublicSpaces => PoiType::PublicSpace,
+            PoiQueryCategory::Neighborhoods => PoiType::Neighborhood,
+            PoiQueryCategory::Streets => PoiType::Street,
+        }
+    }
+
+    fn tile_indices_for_bbox(&self, bbox: &BoundingBox, tile_deg: f64) -> Vec<TileXY> {
+        let lat_start = (bbox.south / tile_deg).floor() as i64;
+        let lat_end = (bbox.north / tile_deg).floor() as i64;
+        let lon_start = (bbox.west / tile_deg).floor() as i64;
+        let lon_end = (bbox.east / tile_deg).floor() as i64;
+
+        let mut tiles = Vec::new();
+        for lat in lat_start..=lat_end {
+            for lon in lon_start..=lon_end {
+                tiles.push(TileXY { lat_index: lat, lon_index: lon });
+            }
+        }
+        tiles
+    }
+
+    fn tile_bbox(&self, tile: TileXY, tile_deg: f64) -> BoundingBox {
+        let south = (tile.lat_index as f64) * tile_deg;
+        let west = (tile.lon_index as f64) * tile_deg;
+        BoundingBox {
+            north: south + tile_deg,
+            south,
+            east: west + tile_deg,
+            west,
+        }
+    }
+
+    async fn execute_overpass_tiled(
+        &self,
+        category: PoiQueryCategory,
+        bbox: &BoundingBox,
+    ) -> Result<Vec<PointOfInterest>> {
+        let tiles = self.tile_indices_for_bbox(bbox, self.tile_size_deg);
+        if tiles.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let concurrency_limit = 6usize;
+        let tile_size_deg = self.tile_size_deg;
+        let cat = category;
+
+        let fetched_lists = stream::iter(tiles.into_iter().map(|tile| async move {
+            self.fetch_category_for_tile(tile, tile_size_deg, cat).await
+        }))
+        .buffer_unordered(concurrency_limit)
+        .collect::<Vec<_>>()
+        .await;
+
+        let mut results: Vec<PointOfInterest> = Vec::new();
+        for res in fetched_lists {
+            match res {
+                Ok(mut v) => results.append(&mut v),
+                Err(e) => warn!("POI tile fetch error: {}", e),
+            }
+        }
+
+        // Deduplicate by id
+        let mut seen = std::collections::HashSet::new();
+        results.retain(|poi| seen.insert(poi.id.clone()));
+        Ok(results)
+    }
+
+    async fn fetch_category_for_tile(
+        &self,
+        tile: TileXY,
+        tile_deg: f64,
+        category: PoiQueryCategory,
+    ) -> Result<Vec<PointOfInterest>> {
+        let cat_str = self.category_str(&category);
+
+        if let Some(pois) = self.cache_service
+            .get_cached_poi_tile(cat_str, tile_deg, tile.lat_index, tile.lon_index)
+            .await
+        {
+            return Ok(pois);
+        }
+
+        let lock_acquired = self.cache_service
+            .acquire_poi_tile_lock(cat_str, tile_deg, tile.lat_index, tile.lon_index, 120)
+            .await;
+
+        if !lock_acquired {
+            for _ in 0..6 {
+                sleep(Duration::from_millis(500)).await;
+                if let Some(pois) = self.cache_service
+                    .get_cached_poi_tile(cat_str, tile_deg, tile.lat_index, tile.lon_index)
+                    .await
+                {
+                    return Ok(pois);
+                }
+            }
+        }
+
+        let tile_bbox = self.tile_bbox(tile, tile_deg);
+        let query = self.build_overpass_query_for_category(&category, &tile_bbox);
+        let poi_type = self.poi_type_for_category(&category);
+        let pois = self.execute_overpass_query(&query, poi_type).await?;
+
+        let _ = self.cache_service
+            .cache_poi_tile(cat_str, tile_deg, tile.lat_index, tile.lon_index, &pois, None)
+            .await;
+
+        if lock_acquired {
+            self.cache_service
+                .release_poi_tile_lock(cat_str, tile_deg, tile.lat_index, tile.lon_index)
+                .await;
+        }
+
+        Ok(pois)
+    }
+
+    fn build_overpass_query_for_category(&self, category: &PoiQueryCategory, bbox: &BoundingBox) -> String {
+        match category {
+            PoiQueryCategory::TransitAll => format!(
+                r#"[out:json][timeout:25];(
+                    node["railway"="station"]({},{},{},{});
+                    node["public_transport"="station"]({},{},{},{});
+                    node["amenity"="bus_station"]({},{},{},{});
+                    node["highway"="bus_stop"]({},{},{},{});
+                    node["railway"="subway_entrance"]({},{},{},{});
+                );out geom;"#,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+            ),
+            PoiQueryCategory::TransitMetroOnly => format!(
+                r#"[out:json][timeout:25];(
+                    node["railway"="station"]({},{},{},{});
+                    node["public_transport"="station"]({},{},{},{});
+                    node["railway"="subway_entrance"]({},{},{},{});
+                );out geom;"#,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+            ),
+            PoiQueryCategory::Venues => format!(
+                r#"[out:json][timeout:25];(
+                    node["amenity"="restaurant"]({},{},{},{});
+                    node["amenity"="cafe"]({},{},{},{});
+                    node["amenity"="bar"]({},{},{},{});
+                    node["amenity"="pub"]({},{},{},{});
+                );out geom;"#,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+            ),
+            PoiQueryCategory::PublicSpaces => format!(
+                r#"[out:json][timeout:25];(
+                    node["leisure"="park"]({},{},{},{});
+                    node["place"="square"]({},{},{},{});
+                    node["tourism"="attraction"]({},{},{},{});
+                    way["leisure"="park"]({},{},{},{});
+                    way["place"="square"]({},{},{},{});
+                );out center geom;"#,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+            ),
+            PoiQueryCategory::Neighborhoods => format!(
+                r#"[out:json][timeout:25];(
+                    node["place"~"neighbourhood|quarter|suburb|district|borough"]["name"]({},{},{},{});
+                    way["place"~"neighbourhood|quarter|suburb|district|borough"]["name"]({},{},{},{});
+                );out center geom;"#,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+            ),
+            PoiQueryCategory::Streets => format!(
+                r#"[out:json][timeout:25];(
+                    way["highway"~"trunk|primary|secondary|tertiary"]["name"]({},{},{},{});
+                );out geom;"#,
+                bbox.south, bbox.west, bbox.north, bbox.east,
+            ),
+        }
     }
 
     fn convert_overpass_element_to_poi(&self, element: OverpassElement, poi_type: &PoiType) -> Option<PointOfInterest> {
@@ -598,11 +715,11 @@ impl PoiService {
         
         // Fetch all POI types in parallel
         let (transit_pois, venue_pois, public_space_pois) = tokio::join!(
-            self.fetch_transit_hubs(&bbox),
-            self.fetch_venues(&bbox),
-            self.fetch_public_spaces(&bbox)
+            self.fetch_category_direct(PoiQueryCategory::TransitAll, &bbox),
+            self.fetch_category_direct(PoiQueryCategory::Venues, &bbox),
+            self.fetch_category_direct(PoiQueryCategory::PublicSpaces, &bbox)
         );
-        
+
         all_pois.extend(transit_pois?);
         all_pois.extend(venue_pois?);
         all_pois.extend(public_space_pois?);
@@ -661,6 +778,12 @@ impl PoiService {
         info!("🗺️ Paris heatmap generated successfully in {:?} with {} POIs", total_time, all_pois.len());
         
         Ok(heatmap)
+    }
+
+    async fn fetch_category_direct(&self, category: PoiQueryCategory, bbox: &BoundingBox) -> Result<Vec<PointOfInterest>> {
+        let query = self.build_overpass_query_for_category(&category, bbox);
+        let poi_type = self.poi_type_for_category(&category);
+        self.execute_overpass_query(&query, poi_type).await
     }
 
     pub async fn get_location_heat(&self, location: &Location) -> Option<f64> {
@@ -805,6 +928,19 @@ impl PoiService {
         Ok(None)
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+enum PoiQueryCategory {
+    TransitAll,
+    TransitMetroOnly,
+    Venues,
+    PublicSpaces,
+    Neighborhoods,
+    Streets,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+struct TileXY { lat_index: i64, lon_index: i64 }
 
 #[derive(Debug)]
 struct BoundingBox {

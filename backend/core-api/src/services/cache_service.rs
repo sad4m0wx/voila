@@ -10,7 +10,7 @@ use anyhow::{Result, anyhow};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
-use crate::services::poi_service::PoiService;
+use crate::services::poi_service::{PoiService, PointOfInterest};
 
 
 pub const CACHE_TTL_SECONDS: u32 = 30 * 24 * 3600;
@@ -534,6 +534,131 @@ impl CacheService {
     async fn clear_corrupted_entry(&self, cache_key: &str) {
         if let Ok(mut conn) = self.redis.get_multiplexed_async_connection().await {
             let _ = redis::cmd("DEL").arg(cache_key).query_async::<_, ()>(&mut conn).await;
+        }
+    }
+
+    // =============================================================================
+    // POI TILE CACHE
+    // =============================================================================
+
+    fn poi_tile_key(&self, category: &str, tile_size_deg: f64, lat_idx: i64, lon_idx: i64) -> String {
+        format!(
+            "poi:tile:v1:{}:{:.4}:{}:{}",
+            category,
+            tile_size_deg,
+            lat_idx,
+            lon_idx
+        )
+    }
+
+    
+
+    pub async fn get_cached_poi_tile(
+        &self,
+        category: &str,
+        tile_size_deg: f64,
+        lat_idx: i64,
+        lon_idx: i64,
+    ) -> Option<Vec<PointOfInterest>> {
+        if !self.is_available().await {
+            return None;
+        }
+
+        let cache_key = self.poi_tile_key(category, tile_size_deg, lat_idx, lon_idx);
+        let mut conn = self.redis.get_multiplexed_async_connection().await.ok()?;
+        match redis::cmd("GET").arg(&cache_key).query_async::<_, Vec<u8>>(&mut conn).await {
+            Ok(data) if !data.is_empty() => {
+                match serde_json::from_slice::<Vec<PointOfInterest>>(&data) {
+                    Ok(pois) => Some(pois),
+                    Err(e) => {
+                        error!("Failed to deserialize cached POI tile {}: {}", cache_key, e);
+                        self.clear_corrupted_entry(&cache_key).await;
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub async fn cache_poi_tile(
+        &self,
+        category: &str,
+        tile_size_deg: f64,
+        lat_idx: i64,
+        lon_idx: i64,
+        pois: &[PointOfInterest],
+        ttl_seconds: Option<u32>,
+    ) -> Result<()> {
+        if !self.is_available().await {
+            return Ok(());
+        }
+
+        let cache_key = self.poi_tile_key(category, tile_size_deg, lat_idx, lon_idx);
+        let serialized = serde_json::to_vec(&pois)?;
+
+        let mut conn = self.redis.get_multiplexed_async_connection().await?;
+        let _: RedisResult<()> = redis::cmd("SETEX")
+            .arg(&cache_key)
+            .arg(ttl_seconds.unwrap_or(CACHE_TTL_SECONDS))
+            .arg(serialized)
+            .query_async(&mut conn).await;
+
+        info!("💾 Cached POI tile: {}", cache_key);
+        Ok(())
+    }
+
+    pub async fn acquire_poi_tile_lock(
+        &self,
+        category: &str,
+        tile_size_deg: f64,
+        lat_idx: i64,
+        lon_idx: i64,
+        lock_ttl_seconds: u32,
+    ) -> bool {
+        if !self.is_available().await {
+            return true;
+        }
+
+        let lock_key = format!(
+            "lock:{}",
+            self.poi_tile_key(category, tile_size_deg, lat_idx, lon_idx)
+        );
+
+        let mut conn = match self.redis.get_multiplexed_async_connection().await {
+            Ok(conn) => conn,
+            Err(_) => return true,
+        };
+
+        match redis::cmd("SET")
+            .arg(&lock_key)
+            .arg("computing")
+            .arg("NX")
+            .arg("EX")
+            .arg(lock_ttl_seconds)
+            .query_async::<_, Option<String>>(&mut conn).await {
+            Ok(Some(resp)) if resp == "OK" => true,
+            _ => false,
+        }
+    }
+
+    pub async fn release_poi_tile_lock(
+        &self,
+        category: &str,
+        tile_size_deg: f64,
+        lat_idx: i64,
+        lon_idx: i64,
+    ) {
+        if !self.is_available().await {
+            return;
+        }
+
+        let lock_key = format!(
+            "lock:{}",
+            self.poi_tile_key(category, tile_size_deg, lat_idx, lon_idx)
+        );
+        if let Ok(mut conn) = self.redis.get_multiplexed_async_connection().await {
+            let _: Result<(), _> = redis::cmd("DEL").arg(&lock_key).query_async(&mut conn).await;
         }
     }
 
