@@ -86,10 +86,13 @@ jobs:
               echo "GOOGLE_MAPS_GEOCODE_API_KEY=${{ secrets.GOOGLE_MAPS_GEOCODE_API_KEY }}"
             } > .env
             
+            echo "🛑 Stopping existing backend service..."
+            docker compose down rust-api || true
+
             echo "🚀 Pulling latest backend image..."
             docker compose pull rust-api
             
-            echo "🔄 Restarting backend service..."
+            echo "🔄 Starting backend service..."
             docker compose up -d rust-api
             
             echo "⏳ Waiting for backend to start..."
