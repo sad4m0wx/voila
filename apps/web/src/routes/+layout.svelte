@@ -41,16 +41,6 @@
     return () => window.removeEventListener('resize', handleResize);
   });
 
-  onMount(() => {
-    if ($page.url.pathname !== "/") {
-      goto("/", { replaceState: true });
-    }
-  });
-
-  $: if ($page.url.pathname !== "/") {
-    goto("/", { replaceState: true });
-  }
-
   function isMobileDevice() {
     if (typeof window === "undefined") return false;
     return (
