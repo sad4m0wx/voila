@@ -1,5 +1,17 @@
-import { Capacitor } from '@capacitor/core';
-import { Contacts } from '@capacitor-community/contacts';
+const Capacitor = (typeof window !== 'undefined' && window.Capacitor) || { isNativePlatform: () => false, getPlatform: () => 'web' };
+
+let _Contacts = null;
+async function getContacts() {
+  if (!_Contacts) {
+    try {
+      const m = await import(/* @vite-ignore */ '@capacitor-community/contacts');
+      _Contacts = m.Contacts;
+    } catch {
+      _Contacts = null;
+    }
+  }
+  return _Contacts;
+}
 
 /**
  * ContactService - A service for managing contacts using the official Capacitor Contacts plugin
@@ -15,6 +27,7 @@ export class ContactService {
     }
 
     try {
+      const Contacts = await getContacts();
       const result = await Contacts.checkPermissions();
       return { 
         granted: result.contacts === 'granted',
@@ -39,6 +52,7 @@ export class ContactService {
     }
 
     try {
+      const Contacts = await getContacts();
       const result = await Contacts.requestPermissions();
       return { 
         granted: result.contacts === 'granted',
@@ -76,6 +90,7 @@ export class ContactService {
       }
 
       // Get all contacts
+      const Contacts = await getContacts();
       const result = await Contacts.getContacts({
         projection: {
           name: true,

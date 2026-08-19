@@ -1,36 +1,28 @@
-// Conditional imports to prevent issues when Capacitor plugins aren't available
-let StatusBar, Style, Keyboard, KeyboardResize, Capacitor;
+let StatusBar, Style, Keyboard, KeyboardResize;
 
-// Check if we're running in a Capacitor environment
 const isCapacitorAvailable = () => {
   if (typeof window === 'undefined') return false;
-  return window.Capacitor && window.Capacitor.isNativePlatform;
+  return !!(window.Capacitor && window.Capacitor.isNativePlatform);
 };
 
-// Initialize Capacitor modules only when available
 async function initializeCapacitor() {
   if (!isCapacitorAvailable()) return false;
-  
+  if (!window.Capacitor.isNativePlatform()) return false;
+
   try {
-    const capacitorCore = await import('@capacitor/core');
-    Capacitor = capacitorCore.Capacitor;
-    
-    if (Capacitor.isNativePlatform()) {
-      const statusBarModule = await import('@capacitor/status-bar');
-      StatusBar = statusBarModule.StatusBar;
-      Style = statusBarModule.Style;
-      
-      const keyboardModule = await import('@capacitor/keyboard');
-      Keyboard = keyboardModule.Keyboard;
-      KeyboardResize = keyboardModule.KeyboardResize;
-      
-      return true;
-    }
+    const statusBarModule = await import(/* @vite-ignore */ '@capacitor/status-bar');
+    StatusBar = statusBarModule.StatusBar;
+    Style = statusBarModule.Style;
+
+    const keyboardModule = await import(/* @vite-ignore */ '@capacitor/keyboard');
+    Keyboard = keyboardModule.Keyboard;
+    KeyboardResize = keyboardModule.KeyboardResize;
+
+    return true;
   } catch (error) {
     console.warn('Capacitor modules not available:', error);
+    return false;
   }
-  
-  return false;
 }
 
 export const isNative = isCapacitorAvailable();
