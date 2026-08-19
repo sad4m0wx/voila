@@ -1,0 +1,32 @@
+graphhopper:
+  datareader.file: ile-de-france.osm.pbf
+  graph.location: graph-cache
+
+  profiles:
+    - name: foot
+      custom_model_files: [foot.json, foot_elevation.json]
+
+  profiles_ch: []
+
+  graph.encoded_values: |
+    foot_access, foot_average_speed, foot_priority, foot_road_access, hike_rating, average_slope,
+    country, road_class, roundabout, max_speed, road_environment
+
+  graph.elevation.provider: srtm
+  prepare.min_network_size: 200
+  prepare.subnetworks.threads: 1
+  graph.dataaccess.default_type: RAM
+
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: 0.0.0.0
+
+logging:
+  appenders:
+    - type: console
