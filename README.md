@@ -101,16 +101,10 @@ npm run dev
 ### Building
 
 ```bash
-# For Vercel
-npm run build
-
-# As a Capacitor mobile bundle
-npm run build:mobile
-
-# Open in Android Studio / Xcode
-npm run cap:android
-npm run cap:ios
+npm run build   # outputs to apps/web/build/
 ```
+
+For GitHub Pages, set the `BASE_PATH` env var to `/<repo-name>` at build time (handled automatically by the CI workflow).
 
 ---
 
@@ -152,4 +146,53 @@ NODE_ENV=production ./gradlew clean assembleRelease
 | Maps / Places | Google Maps Platform |
 | Auth (web) | Firebase Authentication |
 | Auth (mobile) | Supabase Auth |
-| Hosting | Vercel (web), Docker + Nginx (API), EAS (mobile) |
+| Hosting | GitHub Pages (web), Docker + Nginx (API), EAS (mobile) |
+
+---
+
+## Deployment
+
+### Frontend — GitHub Pages (automatic)
+
+Pushes to `main` that touch `apps/web/**` trigger `.github/workflows/deploy-web.yml`, which builds the SvelteKit app and deploys it to GitHub Pages.
+
+**One-time setup:**
+1. Repo → Settings → Pages → Source: **GitHub Actions**
+2. Repo → Settings → Secrets → Actions — add:
+   - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
+   - `VITE_FIREBASE_MEASUREMENT_ID`
+   - `VITE_CORE_API_URL` — your backend URL (e.g. `https://voila.duckdns.org`)
+
+The app will be live at `https://<username>.github.io/<repo-name>/`.
+
+### Backend — Docker on your server
+
+```bash
+# Clone and configure
+git clone <repo-url> /opt/voila && cd /opt/voila
+echo "MAPS_PLACES_API_KEY=your_key" > .env
+
+# Download OSM data for GraphHopper (Île-de-France ~500 MB)
+mkdir -p backend/graphhopper-data
+wget -O backend/graphhopper-data/ile-de-france.osm.pbf \
+  https://download.geofabrik.de/europe/france/ile-de-france-latest.osm.pbf
+
+# Start all services (GraphHopper processes OSM on first boot, ~5 min)
+docker compose up -d
+```
+
+**Nginx + TLS** (using a free DuckDNS subdomain):
+```bash
+# Replace voila-app.fr with your subdomain in the nginx config
+sed -i 's/voila-app.fr/voila.duckdns.org/g' server-nginx.conf
+sudo cp server-nginx.conf /etc/nginx/sites-enabled/voila
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d voila.duckdns.org
+```
+
+**Redeploying the backend after code changes:**
+```bash
+cd /opt/voila && git pull
+docker compose up -d --build rust-api
+```
