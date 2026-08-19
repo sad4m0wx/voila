@@ -25,13 +25,12 @@ export default defineConfig({
 		cssCodeSplit: false,
 
 		rollupOptions: {
+			external: [
+				/^@capacitor\//,
+				'@capacitor-community/contacts'
+			],
 			output: {
-			  manualChunks: undefined 
-			  /*{
-				'vendor': ['firebase', 'svelte'],
-				'maps': ['@googlemaps/js-api-loader'],
-				'mobile': [/mobile\/.*\.svelte$/]
-			  }*/
+			  manualChunks: undefined
 			}
 		}
 	}
