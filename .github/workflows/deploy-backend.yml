@@ -99,7 +99,7 @@ jobs:
             for i in {1..18}; do
               sleep 10
               echo "🔍 Health check attempt $i/6..."
-              if curl -f http://localhost:3000/health --max-time 10; then
+              if curl -f http://localhost:3001/health --max-time 10; then
                 echo "✅ Backend is healthy!"
                 break
               elif [ "$i" -eq 18 ]; then

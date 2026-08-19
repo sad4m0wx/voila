@@ -7,10 +7,10 @@ services:
       - graphhopper
       - redis
     ports:
-      - "3000:3000"  # Expose directly for nginx proxy
+      - "3001:3001"  # Expose directly for nginx proxy
     environment:
       - HOST=0.0.0.0
-      - PORT=3000
+      - PORT=3001
       - GRAPHHOPPER_URL=http://graphhopper:8989
       - REDIS_URL=redis://redis:6379
       - MAPS_PLACES_API_KEY=${MAPS_PLACES_API_KEY}
